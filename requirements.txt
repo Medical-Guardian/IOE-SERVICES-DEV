@@ -1,0 +1,44 @@
+# Do not include azure-functions-worker in this file
+# The Python Worker is managed by the Azure Functions platform
+# Manually managing azure-functions-worker may cause unexpected issues
+
+# Core Azure Functions
+azure-functions
+
+# Data Processing
+pandas                    # DataFrame operations and CSV processing
+numpy                     # Numerical operations (used by pandas)
+
+# Database Connectivity
+pymssql                   # SQL Server database connection (replaced pyodbc)
+
+# Azure Services
+azure-identity            # Azure authentication and credential management
+azure-keyvault-secrets    # Secure storage and retrieval of connection strings
+azure-storage-blob        # Blob storage operations for file management
+azure-servicebus
+# Data Validation
+pandera                   # DataFrame validation and schema enforcement
+
+# Reliability & Resilience
+tenacity                  # Retry logic for transient errors
+
+
+# For handling timezones
+pytz
+
+
+# For making HTTP requests to Bland AI API
+requests
+# Optional: Enhanced Logging and Monitoring
+# Uncomment these if you want enhanced observability
+# azure-monitor-opentelemetry-exporter  # Application Insights integration
+# opencensus-ext-azure                  # Advanced telemetry
+
+# Optional: Enhanced JSON Processing
+# Uncomment if you need advanced JSON validation beyond basic json module
+# jsonschema                            # JSON schema validation for care gaps
+
+# Optional: Enhanced Date/Time Processing
+# Uncomment if you need advanced timezone handling beyond basic datetime
+# pytz                                  # Comprehensive timezone support
