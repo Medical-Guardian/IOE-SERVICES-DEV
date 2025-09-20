@@ -29,11 +29,14 @@ class DatabaseOrchestrator:
     # Public API
     # -------------------------------------------------------------------------
     def execute_atomic_updates(
-        self,
-        webhook_data: Dict[str, Any],
-        mapped_data: MappedCallData,
-        enrollment_update: EnrollmentUpdate
+            self,
+            webhook_data: Dict[str, Any],
+            mapped_data: MappedCallData,
+            enrollment_update: EnrollmentUpdate,
+            request_id: Optional[str] = None,
     ) -> UpdateResult:
+        if request_id:
+            logger.info(f"[DB-ORCH] request_id={request_id} execute_atomic_updates starting")
         """
         Builds and executes the batched SQL statements as ONE transaction:
           1) INSERT engage360.bland_call_logs
