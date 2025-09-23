@@ -36,7 +36,7 @@ class BlandAIServiceWellness:
             if not results:
                 raise ValueError(f"No active campaign configuration found for campaign_id: {campaign_id}")
 
-            bland_parameters = results[0]['bland_parameters']
+            bland_parameters = results[0]['bland_parameters_global']
             config = json.loads(bland_parameters) if isinstance(bland_parameters, str) else bland_parameters
             logger.info(f"✅ [BlandAIServiceWellness] Campaign configuration retrieved: {list(config.keys())}")
             return config
@@ -159,7 +159,7 @@ class BlandAIServiceWellness:
                         "last_name": member.get("last_name"),
                         "called_number": member.get("primary_phone"),
                         "language_pref": member.get("language_pref"),
-                        "call_type_code": member.get("call_type_code")
+                        "call_type_code": member.get("call_type")
                     }
                 }
 

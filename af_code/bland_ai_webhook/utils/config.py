@@ -7,7 +7,7 @@ BLAND_AI_BATCH_URL = "https://api.bland.ai/v2/batches/create"
 
 # SQL Queries (using %s for pymssql parameter binding)
 GET_CAMPAIGN_CONFIG_QUERY = """
-    SELECT bland_parameters, call_type_code
+    SELECT bland_parameters_global, call_type
     FROM engage360.campaign_call_configs_enhanced 
     WHERE campaign_id = %s AND config_status = 'active'
 """

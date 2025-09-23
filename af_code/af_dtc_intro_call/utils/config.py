@@ -8,7 +8,7 @@ BLAND_AI_BATCH_URL = "https://api.bland.ai/v2/batches/create"
 # SQL Queries
 # CORRECTED: Replaced '?' with '%s' for pymssql compatibility
 GET_CAMPAIGN_CONFIG_QUERY = """
-SELECT bland_parameters, call_type_code
+SELECT bland_parameters_global, call_type
 FROM engage360.campaign_call_configs_enhanced 
 WHERE campaign_id = %s AND config_status = 'active'
 """
@@ -46,7 +46,7 @@ SELECT
     oa.attempt_id, 
     mce.campaign_id, 
     mce.enrollment_id,
-    cfg.call_type_code -- Added this field
+    cfg.call_type -- Added this field
 FROM engage360.outreach_attempts oa
 JOIN engage360.member_campaign_enrollments_enhanced mce ON oa.enrollment_id = mce.enrollment_id  
 JOIN engage360.members m ON mce.member_id = m.member_id
