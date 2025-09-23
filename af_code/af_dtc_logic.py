@@ -1571,16 +1571,13 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         WHEN MATCHED THEN
             UPDATE SET 
                 preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
-                current_status = 'PENDING'
-        WHEN NOT MATCHED THEN
-            INSERT (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, preferred_window)
-            VALUES (NEWID(), src.member_id, %s, SYSDATETIMEOFFSET(), 'PENDING', src.preferred_window);
+                current_status = 'PENDING';
         """
         cursor = db_manager.execute_with_retry(context.connection, update_enrollments_sql, (
-            str(context.file_batch_id), str(wellness_campaign_id), str(wellness_campaign_id)
+            str(context.file_batch_id), str(wellness_campaign_id)
         ))
         updated_enrollments = cursor.rowcount
-        logger.info(f"Updated/created {updated_enrollments} wellness enrollments")
+        logger.info(f"Updated {updated_enrollments} existing wellness enrollments")
 
         # Handle "unenroll"
         logger.info("Processing 'unenroll' records...")
