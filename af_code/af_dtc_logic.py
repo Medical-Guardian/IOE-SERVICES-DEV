@@ -1571,10 +1571,10 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         WHEN MATCHED THEN
             UPDATE SET 
                 preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
-                current_status = 'Active'
+                current_status = 'PENDING'
         WHEN NOT MATCHED THEN
             INSERT (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, preferred_window)
-            VALUES (NEWID(), src.member_id, %s, SYSDATETIMEOFFSET(), 'Active', src.preferred_window);
+            VALUES (NEWID(), src.member_id, %s, SYSDATETIMEOFFSET(), 'PENDING', src.preferred_window);
         """
         cursor = db_manager.execute_with_retry(context.connection, update_enrollments_sql, (
             str(context.file_batch_id), str(wellness_campaign_id), str(wellness_campaign_id)
