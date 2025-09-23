@@ -1556,8 +1556,8 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             SELECT m.member_id, 
                    CASE LTRIM(RTRIM(UPPER(stg.checkin_time)))
                        WHEN 'AM' THEN 'AM9-10'
-                       WHEN 'PM' THEN 'PM12-1'
-                       WHEN 'EV' THEN 'EV4-5'
+                       WHEN 'PM' THEN 'PM1-3'
+                       WHEN 'EV' THEN 'EV4-6'
                        ELSE NULL
                    END AS preferred_window
             FROM {context.config.staging_table} stg
