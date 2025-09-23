@@ -1524,7 +1524,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                m.member_id,
                %s,
                SYSDATETIMEOFFSET(),
-               'Enrolled',
+               'PENDING',
                CASE LTRIM(RTRIM(UPPER(stg.checkin_time)))
                    WHEN 'AM' THEN 'AM9-10'
                    WHEN 'PM' THEN 'PM1-3'

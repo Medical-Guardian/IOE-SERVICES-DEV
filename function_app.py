@@ -8,6 +8,7 @@ from functions import dtc_file_processor #DTC wellness file processor
 from functions import partner_file_processor  #Partner Campaign file processor
 from functions.dtc_intro_call_scheduler import dtc_intro_call_bp #DTC INTRO CALL
 from functions import bland_ai_webhook
+from functions.dtc_wellness_check_scheduler import dtc_wellness_check_bp
 
 # Register each blueprint with the main app
 logging.info("Registering DTC File Processor blueprint...")
@@ -25,6 +26,10 @@ app.register_functions(dtc_intro_call_bp)
 #bland ai webhook
 logging.info("Registering Bland AI Webhook...")
 app.register_functions(bland_ai_webhook.bp)
+
+#Registering DTC Wellness Check
+logging.info("Registering DTC Wellness Check Call ...")
+app.register_functions(dtc_wellness_check_bp)
 
 
 logging.info("All function blueprints have been registered successfully.")

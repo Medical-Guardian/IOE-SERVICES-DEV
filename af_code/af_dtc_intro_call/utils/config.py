@@ -104,7 +104,7 @@ LEFT JOIN (
 ) failed_attempts ON mce.enrollment_id = failed_attempts.enrollment_id
 WHERE
     c.status = 'Active'
-    AND mce.current_status = 'Enrolled'
+    AND mce.current_status = 'PENDING'
     AND m.timezone IS NOT NULL
     AND mce.preferred_window IS NOT NULL
     AND ISNULL(failed_attempts.failed_count, 0) <= 3
