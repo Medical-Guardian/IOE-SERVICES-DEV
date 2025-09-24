@@ -107,7 +107,7 @@ WHERE
     AND mce.current_status = 'PENDING'
     AND m.timezone IS NOT NULL
     AND mce.preferred_window IS NOT NULL
-    AND ISNULL(failed_attempts.failed_count, 0) <= 3
+    AND ISNULL(failed_attempts.failed_count, 0) <= 5
     AND c.campaign_id = %s
     AND NOT EXISTS (
         SELECT 1
