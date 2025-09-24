@@ -1599,6 +1599,35 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
 
         # Handle "update" - use wellness campaign
         logger.info("Processing 'update' records...")
+        
+        # 🔍 Check for duplicate update enrollments first
+        update_duplicates_sql = f"""
+        SELECT m.member_id, COUNT(*) as duplicate_count
+        FROM {context.config.staging_table} stg
+        JOIN engage360.members m 
+            ON m.org_id = stg.org_id 
+            AND m.salesforce_account_number = stg.salesforce_account_number
+        WHERE stg.file_batch_id = %s
+          AND stg.processing_status = 'TRANSFORMING'
+          AND LOWER(LTRIM(RTRIM(stg.enrollment_status))) = 'update'
+        GROUP BY m.member_id
+        HAVING COUNT(*) > 1
+        """
+        
+        cursor = db_manager.execute_with_retry(context.connection, update_duplicates_sql, (str(context.file_batch_id),))
+        update_duplicates = cursor.fetchall()
+        
+        if update_duplicates:
+            duplicate_details = []
+            for dup in update_duplicates:
+                duplicate_details.append(f"member_id: {dup[0]}, count: {dup[1]}")
+            
+            error_message = f"Duplicate update enrollments found:\n" + "\n".join(duplicate_details)
+            logger.error(f"❌ {error_message}")
+            raise ValueError(error_message)
+        
+        logger.info("✅ No duplicate update enrollments found")
+        
         update_enrollments_sql = f"""
         MERGE engage360.member_campaign_enrollments_enhanced AS tgt
         USING (
@@ -1651,6 +1680,37 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         logger.info(f"Unenrolled {unenrolled_count} members")
 
         # 📦 Handle device processing (if any devices in data)
+        logger.info("Checking for duplicate devices...")
+        
+        # 🔍 Check for duplicate devices first
+        device_duplicates_sql = f"""
+        SELECT stg.device_udi, COUNT(*) as duplicate_count
+        FROM {context.config.staging_table} stg
+        JOIN engage360.members m 
+            ON m.org_id = stg.org_id 
+            AND m.salesforce_account_number = stg.salesforce_account_number
+        WHERE stg.file_batch_id = %s
+          AND stg.processing_status = 'TRANSFORMING'
+          AND stg.device_udi IS NOT NULL
+          AND LTRIM(RTRIM(stg.device_udi)) != ''
+        GROUP BY stg.device_udi
+        HAVING COUNT(*) > 1
+        """
+        
+        cursor = db_manager.execute_with_retry(context.connection, device_duplicates_sql, (str(context.file_batch_id),))
+        device_duplicates = cursor.fetchall()
+        
+        if device_duplicates:
+            duplicate_details = []
+            for dup in device_duplicates:
+                duplicate_details.append(f"device_udi: {dup[0]}, count: {dup[1]}")
+            
+            error_message = f"Duplicate devices found:\n" + "\n".join(duplicate_details)
+            logger.error(f"❌ {error_message}")
+            raise ValueError(error_message)
+        
+        logger.info("✅ No duplicate devices found")
+        
         device_sql = f"""
         MERGE engage360.member_devices AS tgt
         USING (
