@@ -1565,37 +1565,40 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
 
         # Handle "enroll" - use intro campaign
         logger.info("Processing 'enroll' records...")
-        # HAVE TO CHNAGE TIME IN FUTUR
         enroll_sql = f"""
-        INSERT INTO engage360.member_campaign_enrollments_enhanced
-               (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, preferred_window)
-        SELECT NEWID(),
-               m.member_id,
-               %s,
-               SYSDATETIMEOFFSET(),
-               'PENDING',
-               CASE LTRIM(RTRIM(UPPER(stg.checkin_time)))
-                   WHEN 'AM' THEN 'AM9-10'
-                   WHEN 'PM' THEN 'PM1-3'
-                   WHEN 'EV' THEN 'EV4-6'
-                   ELSE NULL
-               END
-        FROM {context.config.staging_table} stg
-        JOIN engage360.members m 
-            ON m.org_id = stg.org_id 
-            AND m.salesforce_account_number = stg.salesforce_account_number
-        LEFT JOIN engage360.member_campaign_enrollments_enhanced e
-            ON e.member_id = m.member_id AND e.campaign_id = %s
-        WHERE stg.file_batch_id = %s
-          AND stg.processing_status = 'TRANSFORMING'
-          AND LOWER(LTRIM(RTRIM(stg.enrollment_status))) = 'enroll'
-          AND (e.enrollment_id IS NULL OR e.current_status = 'Unenrolled')
+        MERGE engage360.member_campaign_enrollments_enhanced AS tgt
+        USING (
+            SELECT m.member_id,
+                   %s AS campaign_id,
+                   CASE LTRIM(RTRIM(UPPER(stg.checkin_time)))
+                       WHEN 'AM' THEN 'AM9-10'
+                       WHEN 'PM' THEN 'PM1-3'
+                       WHEN 'EV' THEN 'EV4-6'
+                       ELSE NULL
+                   END AS preferred_window
+            FROM {context.config.staging_table} stg
+            JOIN engage360.members m 
+                ON m.org_id = stg.org_id 
+                AND m.salesforce_account_number = stg.salesforce_account_number
+            WHERE stg.file_batch_id = %s
+              AND stg.processing_status = 'TRANSFORMING'
+              AND LOWER(LTRIM(RTRIM(stg.enrollment_status))) = 'enroll'
+        ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
+        WHEN MATCHED AND tgt.current_status = 'Unenrolled' THEN
+            UPDATE SET 
+                current_status = 'PENDING',
+                enrollment_ts = SYSDATETIMEOFFSET(),
+                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
+                unenrollment_reason = NULL
+        WHEN NOT MATCHED THEN
+            INSERT (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, preferred_window)
+            VALUES (NEWID(), src.member_id, src.campaign_id, SYSDATETIMEOFFSET(), 'PENDING', src.preferred_window);
         """
         cursor = db_manager.execute_with_retry(context.connection, enroll_sql, (
-            str(intro_campaign_id), str(intro_campaign_id), str(context.file_batch_id)
+            str(intro_campaign_id), str(context.file_batch_id)
         ))
         new_enrollments = cursor.rowcount
-        logger.info(f"Created {new_enrollments} new enrollments")
+        logger.info(f"Processed {new_enrollments} enrollment records (new + re-enrolled)")
 
         # Handle "update" - use wellness campaign
         logger.info("Processing 'update' records...")
