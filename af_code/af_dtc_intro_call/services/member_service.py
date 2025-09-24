@@ -74,8 +74,8 @@ class MemberQualificationService:
 
             # Check failed attempts
             failed_attempts = member_data.get('todays_failed_attempts', 0)
-            if failed_attempts > 3:
-                return False, f"Too many failed attempts today ({failed_attempts} > 3)"
+            if failed_attempts > 5:
+                return False, f"Too many failed attempts today ({failed_attempts} > 5)"
 
             # Check time window
             preferred_window = member_data.get('preferred_window')
