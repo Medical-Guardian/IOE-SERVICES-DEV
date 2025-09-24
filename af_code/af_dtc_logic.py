@@ -1589,7 +1589,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         WHERE stg.file_batch_id = %s
           AND stg.processing_status = 'TRANSFORMING'
           AND LOWER(LTRIM(RTRIM(stg.enrollment_status))) = 'enroll'
-          AND e.enrollment_id IS NULL
+          AND (e.enrollment_id IS NULL OR e.current_status = 'Unenrolled')
         """
         cursor = db_manager.execute_with_retry(context.connection, enroll_sql, (
             str(intro_campaign_id), str(intro_campaign_id), str(context.file_batch_id)
