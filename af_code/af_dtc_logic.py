@@ -1590,6 +1590,9 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 enrollment_ts = SYSDATETIMEOFFSET(),
                 preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
                 unenrollment_reason = NULL
+        WHEN MATCHED THEN
+            UPDATE SET 
+                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window)
         WHEN NOT MATCHED THEN
             INSERT (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, preferred_window)
             VALUES (NEWID(), src.member_id, src.campaign_id, SYSDATETIMEOFFSET(), 'PENDING', src.preferred_window);
