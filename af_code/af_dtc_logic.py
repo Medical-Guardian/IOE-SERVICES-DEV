@@ -1437,6 +1437,38 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         logger.info(f"  Records with SF account: {staging_check[2]}")
         logger.info(f"  Records with enrollment status: {staging_check[3]}")
 
+        # 🔍 Check for duplicate members first
+        logger.info("Checking for duplicate members...")
+        
+        duplicate_check_sql = f"""
+        SELECT 
+            stg.org_id,
+            LTRIM(RTRIM(stg.salesforce_account_number)) AS salesforce_account_number,
+            COUNT(*) as duplicate_count
+        FROM {context.config.staging_table} stg
+        WHERE stg.file_batch_id = %s
+          AND stg.processing_status = 'TRANSFORMING'
+          AND stg.org_id IS NOT NULL
+          AND stg.salesforce_account_number IS NOT NULL
+          AND LTRIM(RTRIM(stg.salesforce_account_number)) != ''
+        GROUP BY stg.org_id, LTRIM(RTRIM(stg.salesforce_account_number))
+        HAVING COUNT(*) > 1
+        """
+        
+        cursor = db_manager.execute_with_retry(context.connection, duplicate_check_sql, (str(context.file_batch_id),))
+        duplicates = cursor.fetchall()
+        
+        if duplicates:
+            duplicate_details = []
+            for dup in duplicates:
+                duplicate_details.append(f"org_id: {dup[0]}, salesforce_account_number: {dup[1]}, count: {dup[2]}")
+            
+            error_message = f"Duplicate members found in staging data:\n" + "\n".join(duplicate_details)
+            logger.error(f"❌ {error_message}")
+            raise ValueError(error_message)
+        
+        logger.info("✅ No duplicate members found")
+
         # 👤 Upsert members with improved SQL
         logger.info("Upserting members...")
 
