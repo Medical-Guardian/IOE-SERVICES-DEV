@@ -1584,15 +1584,12 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
               AND stg.processing_status = 'TRANSFORMING'
               AND LOWER(LTRIM(RTRIM(stg.enrollment_status))) = 'enroll'
         ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
-        WHEN MATCHED AND tgt.current_status = 'Unenrolled' THEN
-            UPDATE SET 
-                current_status = 'PENDING',
-                enrollment_ts = SYSDATETIMEOFFSET(),
-                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
-                unenrollment_reason = NULL
         WHEN MATCHED THEN
             UPDATE SET 
-                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window)
+                current_status = CASE WHEN tgt.current_status = 'Unenrolled' THEN 'PENDING' ELSE tgt.current_status END,
+                enrollment_ts = CASE WHEN tgt.current_status = 'Unenrolled' THEN SYSDATETIMEOFFSET() ELSE tgt.enrollment_ts END,
+                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
+                unenrollment_reason = CASE WHEN tgt.current_status = 'Unenrolled' THEN NULL ELSE tgt.unenrollment_reason END
         WHEN NOT MATCHED THEN
             INSERT (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, preferred_window)
             VALUES (NEWID(), src.member_id, src.campaign_id, SYSDATETIMEOFFSET(), 'PENDING', src.preferred_window);
