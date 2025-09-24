@@ -266,13 +266,26 @@ def standardize_phone(phone: str) -> Optional[str]:
         phone: Raw phone number string
 
     Returns:
-        Standardized phone number in +1XXXXXXXXXX format or None if invalid
+        Standardized phone number in E.164 format or None if invalid
     """
     if not phone or pd.isna(phone):
         return None
 
+    # Convert to string and strip whitespace
+    phone_str = str(phone).strip()
+    
+    # If already in E.164 format (starts with +), validate and return
+    if phone_str.startswith('+'):
+        # Remove + and any non-numeric characters after it
+        digits_only = ''.join(c for c in phone_str[1:] if c.isdigit())
+        # E.164 format allows 7-15 digits after the +
+        if 7 <= len(digits_only) <= 15:
+            return f'+{digits_only}'
+        else:
+            return None
+
     # Remove all non-numeric characters
-    digits_only = ''.join(c for c in str(phone) if c.isdigit())
+    digits_only = ''.join(c for c in phone_str if c.isdigit())
 
     # Handle different phone number formats
     if len(digits_only) == 10 and digits_only[0] in '23456789':
@@ -280,6 +293,10 @@ def standardize_phone(phone: str) -> Optional[str]:
         return f'+1{digits_only}'
     elif len(digits_only) == 11 and digits_only[0] == '1' and digits_only[1] in '23456789':
         # 11-digit number starting with 1
+        return f'+{digits_only}'
+    elif 7 <= len(digits_only) <= 15:
+        # International number without + prefix
+        # For numbers that don't fit US patterns but are valid international lengths
         return f'+{digits_only}'
 
     return None
