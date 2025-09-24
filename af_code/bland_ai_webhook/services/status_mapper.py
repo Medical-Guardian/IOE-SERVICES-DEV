@@ -41,6 +41,11 @@ class StatusMapper:
                 'next_action': 'Retry',
                 'contact_made': False
             },
+            ('completed', 'COMPLETED_ACTION'): {
+                'disposition': 'Completed',
+                'next_action': 'Close',
+                'contact_made': True
+            },
             ('completed', 'OPT_OUT'): {
                 'disposition': 'OptOut',
                 'next_action': 'Close',
