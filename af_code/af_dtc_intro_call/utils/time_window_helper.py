@@ -10,7 +10,7 @@ class TimeWindowHelper:
     TIME_WINDOWS = {
         'AM9-10': (time(9, 0), time(10, 0)),
         'PM1-3': (time(13, 0), time(15, 0)),
-        'EV4-6': (time(2, 0), time(8, 0))
+        'EV4-6': (time(11, 0), time(13, 0))
         #'EV4-6': (time(16, 0), time(19, 0))
     }
 
