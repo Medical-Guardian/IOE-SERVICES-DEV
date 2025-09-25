@@ -51,6 +51,56 @@ class StatusMapper:
                 'next_action': 'Close',
                 'contact_made': True
             },
+            ('completed', 'INTERESTED'): {
+                'disposition': 'Completed',
+                'next_action': 'Follow_Up',
+                'contact_made': True
+            },
+            ('completed', 'NOT_INTERESTED'): {
+                'disposition': 'Completed',
+                'next_action': 'Close',
+                'contact_made': True
+            },
+            ('completed', 'FOLLOW_UP_REQUIRED'): {
+                'disposition': 'Completed',
+                'next_action': 'Follow_Up',
+                'contact_made': True
+            },
+            ('completed', 'CALL_BACK_SCHEDULED'): {
+                'disposition': 'Completed',
+                'next_action': 'Scheduled',
+                'contact_made': True
+            },
+            ('completed', 'TRANSFERRED'): {
+                'disposition': 'Completed',
+                'next_action': 'Transferred',
+                'contact_made': True
+            },
+            ('completed', 'OBJECTION_RAISED'): {
+                'disposition': 'Completed',
+                'next_action': 'Follow_Up',
+                'contact_made': True
+            },
+            ('completed', 'NEEDS_MORE_INFO'): {
+                'disposition': 'Completed',
+                'next_action': 'Follow_Up',
+                'contact_made': True
+            },
+            ('completed', 'NOT_QUALIFIED'): {
+                'disposition': 'Completed',
+                'next_action': 'Close',
+                'contact_made': True
+            },
+            ('completed', 'DO_NOT_CONTACT'): {
+                'disposition': 'OptOut',
+                'next_action': 'Close',
+                'contact_made': True
+            },
+            ('completed', 'AGENT_ENDED_CALL'): {
+                'disposition': 'NoAnswer',
+                'next_action': 'Retry',
+                'contact_made': False
+            },
             ('failed', None): {
                 'disposition': 'Failed',
                 'next_action': 'Retry',
@@ -59,6 +109,16 @@ class StatusMapper:
             ('failed', 'INVALID_NUMBER'): {
                 'disposition': 'Failed',
                 'next_action': 'Escalate',
+                'contact_made': False
+            },
+            ('failed', 'CANCELED'): {
+                'disposition': 'Failed',
+                'next_action': 'Retry',
+                'contact_made': False
+            },
+            ('failed', 'FAILED'): {
+                'disposition': 'Failed',
+                'next_action': 'Retry',
                 'contact_made': False
             },
             ('in-progress', None): {
@@ -127,7 +187,7 @@ class StatusMapper:
             response_summary=response_summary,
             vendor_session_id=call_id,
             call_completed=(status == 'completed'),
-            opt_out_requested=(disposition_tag == 'OPT_OUT'),
+            opt_out_requested=(disposition_tag in ['OPT_OUT', 'DO_NOT_CONTACT']),
             contact_made=contact_made,
             call_quality_score=call_quality_score,
             sentiment_analysis=sentiment_analysis,
