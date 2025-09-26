@@ -316,6 +316,20 @@ class DatabaseOrchestrator:
                 "ℹ️ [DB-ORCH] Enrollment update skipped (missing member_id/campaign_id/new_status)."
             )
             return None
+        
+        # Campaign IDs for auto-transition logic
+        INTRO_CAMPAIGN_ID = "34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"
+        WELLNESS_CAMPAIGN_ID = "E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B"
+        
+        # WELLNESS CAMPAIGN LOGIC: Skip status updates unless opt-out
+        is_wellness_campaign = campaign_id.upper() == WELLNESS_CAMPAIGN_ID.upper()
+        if is_wellness_campaign and new_status.upper() != 'OPTED_OUT':
+            logger.info(
+                f"🩺 [DB-ORCH] Wellness campaign call completed - No status update needed. "
+                f"Member {member_id} remains ENROLLED in wellness campaign {campaign_id}. "
+                f"Received status: {new_status}"
+            )
+            return None
 
         # Campaign IDs for auto-transition logic
         INTRO_CAMPAIGN_ID = "34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"
