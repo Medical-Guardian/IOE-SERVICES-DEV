@@ -3,7 +3,8 @@
 > **Intelligent Operations Engine** - Enterprise-grade Azure Functions for automated healthcare campaign processing, call management, and AI-powered customer interactions at Medical Guardian.
 
 [![Deploy Status](https://github.com/zubairashfaque/IOE-function/workflows/Deploy%20Python%20Azure%20Function/badge.svg)](https://github.com/zubairashfaque/IOE-function/actions)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
+[![Code Quality](https://img.shields.io/badge/code%20quality-protected-green.svg)](https://github.com/zubairashfaque/IOE-function/actions)
 [![Azure Functions](https://img.shields.io/badge/Azure-Functions-0078d4.svg)](https://azure.microsoft.com/en-us/services/functions/)
 [![Medical Guardian](https://img.shields.io/badge/Medical-Guardian-red.svg)](https://medicalguardian.com)
 
@@ -30,6 +31,8 @@ The **IOE (Intelligent Operations Engine) Azure Functions Platform** is a compre
 - **📊 Real-time Monitoring** - Complete observability with Azure Application Insights
 - **🔄 Resilient Processing** - Retry mechanisms and robust error handling
 - **📈 Campaign Analytics** - Advanced analytics for campaign performance tracking
+- **🏷️ Business Traceability** - Comprehensive BusinessCaseID tracking for compliance
+- **🛡️ Quality Gates** - Automated code quality validation with CI/CD pipeline protection
 
 ---
 
@@ -82,6 +85,54 @@ The **IOE (Intelligent Operations Engine) Azure Functions Platform** is a compre
 │
 └── 📁 __pycache__/                     # Python bytecode cache
     └── [Compiled Python files]
+```
+
+---
+
+## 🏷️ BusinessCaseID Traceability Framework
+
+The IOE platform implements comprehensive business case traceability to ensure every function maps to specific business requirements and compliance standards. Each module and function includes BusinessCaseID tags for complete audit trails.
+
+### Primary Business Cases
+
+| **BusinessCaseID** | **Functional Area** | **Description** | **Components** |
+|---|---|---|---|
+| **BC-101** | Webhook Processing | Real-time Bland AI webhook handling, validation, and routing | `bland_ai_webhook/` module |
+| **BC-102** | Disposition Mapping | Status translation and call outcome processing | `status_mapper.py`, disposition logic |
+| **BC-103** | Database Operations | Atomic data operations, connection management, queries | `database_*.py` files |
+| **BC-104** | Business Rules Engine | Enrollment logic, campaign-specific decision making | `business_rules_engine.py` |
+| **BC-105** | DTC Call Scheduling | Member qualification, time window management, batch creation | `af_dtc_intro_call/` module |
+| **BC-106** | Bland AI Integration | API communication, batch processing, error handling | `blandai_service.py` |
+| **BC-107** | Data Integrity | Duplicate detection, validation, data consistency | `duplicate_detector.py` |
+| **BC-108** | Configuration Management | Settings, secrets, environment-specific configs | `config_manager.py`, `config.py` |
+| **BC-109** | File Processing | ETL pipelines, partner file validation, data transformation | `dtc_file_processor.py`, partner logic |
+| **BC-110** | Time & Scheduling | Timezone handling, time windows, scheduling logic | `time_window_helper.py` |
+
+### Supporting Business Cases
+
+| **BusinessCaseID** | **Area** | **Purpose** |
+|---|---|---|
+| **BC-201** | Error Handling | Structured exception management, logging, monitoring |
+| **BC-202** | Data Models | Shared data structures, type definitions, validation |
+| **BC-203** | Security & Auth | Key vault integration, secure configuration, PII handling |
+| **BC-204** | Performance | Query optimization, caching, batch processing efficiency |
+| **BC-205** | Testing & QA | Unit tests, integration tests, quality assurance |
+
+### Implementation Example
+
+```python
+def map_webhook_to_internal_format(self, webhook_data: Dict[str, Any]) -> MappedCallData:
+    """
+    Transform Bland AI webhook data into standardized internal format.
+    
+    BusinessCaseID: BC-102
+    
+    Args:
+        webhook_data: Complete webhook payload from Bland AI
+        
+    Returns:
+        MappedCallData: Standardized call information ready for database storage
+    """
 ```
 
 ---
@@ -155,6 +206,25 @@ The **IOE (Intelligent Operations Engine) Azure Functions Platform** is a compre
 - Agent capacity management
 - Timezone accuracy validation
 
+**Enhanced Qualification Logic (BC-105)**:
+The call scheduling engine has been updated with simplified member qualification:
+
+**Previous Logic**: Members could receive up to 5 failed call attempts per day
+**New Logic**: **One call attempt per member per day** regardless of outcome
+
+**Qualification Criteria**:
+- ✅ Campaign status = 'Active'
+- ✅ Member enrollment status = 'PENDING'
+- ✅ Valid timezone and preferred window
+- ✅ Current time within member's preferred window
+- ✅ Today is a valid call day for the member
+- ❌ **NO attempt made today** (any previous attempt blocks qualification)
+
+**Benefits**:
+- **Improved member experience** - No repeated calls on same day
+- **Simplified logic** - Easier to understand and maintain
+- **Resource optimization** - Better distribution across member base
+
 ### 4. 🤖 Bland AI Voice Integration
 
 **Business Context**: Process real-time webhook data from Bland AI voice interactions to update customer records and trigger follow-up actions.
@@ -179,6 +249,27 @@ The **IOE (Intelligent Operations Engine) Azure Functions Platform** is a compre
 - Customer ID verification
 - Call status consistency checks
 - Business rules compliance
+
+**Enhanced Disposition Mapping (BC-102)**:
+The platform now supports comprehensive disposition tag mapping for granular call outcome tracking:
+
+**Engagement Dispositions**:
+- `INTERESTED` → Completed + Follow_Up
+- `NOT_INTERESTED` → Completed + Close
+- `FOLLOW_UP_REQUIRED` → Completed + Follow_Up
+- `CALL_BACK_SCHEDULED` → Completed + Scheduled
+- `OBJECTION_RAISED` → Completed + Follow_Up
+- `NEEDS_MORE_INFO` → Completed + Follow_Up
+
+**Administrative Dispositions**:
+- `NOT_QUALIFIED` → Completed + Close
+- `TRANSFERRED` → Completed + Transferred
+- `DO_NOT_CONTACT` → OptOut + Close
+- `AGENT_ENDED_CALL` → NoAnswer + Retry
+
+**System Dispositions**:
+- `CANCELED` → Failed + Retry
+- `FAILED` → Failed + Retry
 
 ---
 
@@ -305,7 +396,7 @@ The **IOE (Intelligent Operations Engine) Azure Functions Platform** is a compre
 
 ### Prerequisites
 
-- **Python 3.11+**
+- **Python 3.12+**
 - **Azure Functions Core Tools v4**
 - **Azure CLI**
 - **Azure Subscription** with appropriate permissions
@@ -457,27 +548,77 @@ def validate_customer_id(cls, v):
 
 ## 🚀 Deployment & CI/CD
 
-### Automated Deployment
+### Automated Deployment with Quality Gates
 
-GitHub Actions workflow for continuous deployment:
+Enhanced GitHub Actions workflow with comprehensive quality validation:
 
 ```yaml
-name: Deploy IOE Azure Functions
+name: Build and deploy Python project to Azure Function App - IOE-function
+
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Setup Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Deploy to Azure
-        run: func azure functionapp publish IOE-function-app
+          python-version: '3.12'
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Create deployment package
+        run: zip release.zip ./* -r
+
+  quality-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install quality tools
+        run: |
+          pip install black ruff mypy pytest pytest-cov bandit
+          pip install -r requirements.txt
+      - name: Run quality validation
+        run: |
+          black --check --line-length 100 .    # Code formatting
+          ruff check af_code/                  # Linting
+          mypy af_code/                        # Type checking
+          bandit -r af_code/                   # Security scan
+          pytest af_code/ --verbose            # Unit tests
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build, quality-checks]  # Deployment blocked if quality fails
+    steps:
+      - name: Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        with:
+          app-name: 'IOE-function'
+          package: './release.zip'
 ```
+
+### Quality Gate Protection
+
+**Deployment Protection**: Azure Functions deployment is **automatically blocked** if:
+- ❌ Code formatting doesn't meet PEP 8 standards (black)
+- ❌ Linting issues detected (ruff)
+- ❌ Type safety violations found (mypy)
+- ❌ Security vulnerabilities identified (bandit)
+- ❌ Unit tests fail or coverage below threshold (pytest)
+
+**Benefits**:
+- 🛡️ **Zero defect deployments** - Only validated code reaches production
+- 📊 **Quality metrics** - Comprehensive code quality visibility
+- 🚀 **Automated enforcement** - No manual quality gate oversight needed
+- 🔄 **Fast feedback** - Quality issues detected within minutes of push
 
 ### Manual Deployment
 
