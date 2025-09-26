@@ -299,6 +299,8 @@ class DatabaseOrchestrator:
         Prepare UPDATE for engage360.member_campaign_enrollments_enhanced
         using your schema (no update_reason; uses current_status, last_attempt_ts).
         Idempotent: only updates if the target status is different.
+        
+        NEW: Auto-transitions from intro campaign to wellness campaign when ENROLLED.
         """
         if not enrollment_update or not enrollment_update.should_update:
             return None
@@ -314,6 +316,10 @@ class DatabaseOrchestrator:
                 "ℹ️ [DB-ORCH] Enrollment update skipped (missing member_id/campaign_id/new_status)."
             )
             return None
+
+        # Campaign IDs for auto-transition logic
+        INTRO_CAMPAIGN_ID = "34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"
+        WELLNESS_CAMPAIGN_ID = "E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B"
 
         # Verify database constraint on first run
         self.verify_database_constraint()
@@ -377,19 +383,42 @@ class DatabaseOrchestrator:
             # Skip the update to prevent constraint violation
             return None
 
-        q = """
-            UPDATE engage360.member_campaign_enrollments_enhanced
-               SET current_status = %s,
-                   last_attempt_ts = SYSDATETIMEOFFSET()
-             WHERE member_id = %s
-               AND campaign_id = %s
-               AND (current_status IS NULL OR current_status <> %s)
-        """
+        # Check if this is intro campaign completion requiring auto-transition to wellness
+        should_transition_to_wellness = (
+            campaign_id == INTRO_CAMPAIGN_ID and 
+            new_status == "ENROLLED"
+        )
+
+        if should_transition_to_wellness:
+            logger.info(f"🔄 [DB-ORCH] Auto-transitioning member {member_id} from intro campaign to wellness campaign")
+            # Update both status AND campaign_id to transition to wellness campaign
+            q = """
+                UPDATE engage360.member_campaign_enrollments_enhanced
+                   SET current_status = %s,
+                       campaign_id = %s,
+                       last_attempt_ts = SYSDATETIMEOFFSET()
+                 WHERE member_id = %s
+                   AND campaign_id = %s
+                   AND (current_status IS NULL OR current_status <> %s)
+            """
+            params = (new_status, WELLNESS_CAMPAIGN_ID, member_id, campaign_id, new_status)
+            logger.info(f"✅ [DB-ORCH] Campaign transition: {campaign_id} → {WELLNESS_CAMPAIGN_ID}")
+        else:
+            # Standard status update without campaign change
+            q = """
+                UPDATE engage360.member_campaign_enrollments_enhanced
+                   SET current_status = %s,
+                       last_attempt_ts = SYSDATETIMEOFFSET()
+                 WHERE member_id = %s
+                   AND campaign_id = %s
+                   AND (current_status IS NULL OR current_status <> %s)
+            """
+            params = (new_status, member_id, campaign_id, new_status)
+
         # Final validation before sending to database
         logger.info(f"🔍 [DB-ORCH] Final status value being sent to database: {repr(new_status)}")
         logger.info(f"🔍 [DB-ORCH] SQL parameter bytes: {new_status.encode('utf-8').hex()}")
         
-        params = (new_status, member_id, campaign_id, new_status)
         return q, params
 
     # -------------------------------------------------------------------------
