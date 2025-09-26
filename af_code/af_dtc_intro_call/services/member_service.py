@@ -6,7 +6,7 @@ import pytz
 # Corrected absolute import paths
 from .database_service import DatabaseService
 from ..utils.time_window_helper import TimeWindowHelper
-from ..utils.config import ELIGIBLE_MEMBERS_QUERY
+from ..utils.config import ELIGIBLE_MEMBERS_QUERY_INTRO, ELIGIBLE_MEMBERS_QUERY_WELLNESS
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +27,19 @@ class MemberQualificationService:
             f"🔍 [MemberQualificationService] Starting member qualification for campaign: {campaign_id}"
         )
         
+        # Choose the correct query based on campaign type
         if is_wellness_campaign:
             logger.info(f"🩺 [MemberQualificationService-DEBUG] WELLNESS CAMPAIGN detected")
-            logger.info(f"🩺 [MemberQualificationService-DEBUG] About to execute ELIGIBLE_MEMBERS_QUERY")
+            logger.info(f"🩺 [MemberQualificationService-DEBUG] About to execute ELIGIBLE_MEMBERS_QUERY_WELLNESS")
+            query_to_use = ELIGIBLE_MEMBERS_QUERY_WELLNESS
+        else:
+            logger.info(f"📞 [MemberQualificationService-DEBUG] INTRO CAMPAIGN detected")
+            logger.info(f"📞 [MemberQualificationService-DEBUG] About to execute ELIGIBLE_MEMBERS_QUERY_INTRO")
+            query_to_use = ELIGIBLE_MEMBERS_QUERY_INTRO
         
         try:
             potential_members = self.db_service.execute_query(
-                ELIGIBLE_MEMBERS_QUERY, (campaign_id,)
+                query_to_use, (campaign_id,)
             )
             
             if is_wellness_campaign:

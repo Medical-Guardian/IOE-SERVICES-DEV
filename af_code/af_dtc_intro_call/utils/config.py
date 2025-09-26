@@ -71,7 +71,9 @@ WHERE batch_id = %s
 """
 
 # CORRECTED: Replaced '?' with '%s'
-ELIGIBLE_MEMBERS_QUERY = """
+# SEPARATED: Created specific queries for intro calls (PENDING) and wellness calls (ENROLLED)
+
+ELIGIBLE_MEMBERS_QUERY_INTRO = """
 DECLARE @CurrentUtcTimestamp DATETIMEOFFSET = SYSDATETIMEOFFSET();
 DECLARE @TodayStartUtc DATETIMEOFFSET = CAST(CAST(@CurrentUtcTimestamp AS DATE) AS DATETIMEOFFSET);
 DECLARE @TodayEndUtc DATETIMEOFFSET = DATEADD(DAY, 1, @TodayStartUtc);
@@ -104,10 +106,9 @@ LEFT JOIN (
 ) failed_attempts ON mce.enrollment_id = failed_attempts.enrollment_id
 WHERE
     c.status = 'Active'
-    AND mce.current_status = 'PENDING'
+    AND mce.current_status = 'PENDING'  -- INTRO: Members not yet called
     AND m.timezone IS NOT NULL
     AND mce.preferred_window IS NOT NULL
-    -- AND ISNULL(failed_attempts.failed_count, 0) <= 5  -- Commented out: No longer checking failed attempts limit
     AND c.campaign_id = %s
     AND NOT EXISTS (
         SELECT 1
@@ -115,6 +116,54 @@ WHERE
         WHERE oa.enrollment_id = mce.enrollment_id
           AND oa.attempt_ts >= @TodayStartUtc 
           AND oa.attempt_ts < @TodayEndUtc
-          -- AND oa.disposition = 'Completed'  -- Commented out: Now checking for ANY attempt, not just completed
     );
 """
+
+ELIGIBLE_MEMBERS_QUERY_WELLNESS = """
+DECLARE @CurrentUtcTimestamp DATETIMEOFFSET = SYSDATETIMEOFFSET();
+DECLARE @TodayStartUtc DATETIMEOFFSET = CAST(CAST(@CurrentUtcTimestamp AS DATE) AS DATETIMEOFFSET);
+DECLARE @TodayEndUtc DATETIMEOFFSET = DATEADD(DAY, 1, @TodayStartUtc);
+
+SELECT
+    m.member_id,
+    m.primary_phone,
+    m.timezone,
+    mce.enrollment_id,
+    mce.preferred_window,
+    c.name as campaign_name,
+    c.campaign_id,
+    c.call_days_of_week,
+    ISNULL(failed_attempts.failed_count, 0) as todays_failed_attempts
+FROM
+    engage360.members AS m
+JOIN
+    engage360.member_campaign_enrollments_enhanced AS mce ON m.member_id = mce.member_id  
+JOIN
+    engage360.campaigns_enhanced AS c ON mce.campaign_id = c.campaign_id
+LEFT JOIN (
+    SELECT 
+        oa.enrollment_id,
+        COUNT(*) as failed_count
+    FROM engage360.outreach_attempts oa
+    WHERE oa.attempt_ts >= @TodayStartUtc 
+      AND oa.attempt_ts < @TodayEndUtc
+      AND oa.disposition != 'Completed'
+    GROUP BY oa.enrollment_id
+) failed_attempts ON mce.enrollment_id = failed_attempts.enrollment_id
+WHERE
+    c.status = 'Active'
+    AND mce.current_status = 'ENROLLED'  -- WELLNESS: Members who completed intro calls
+    AND m.timezone IS NOT NULL
+    AND mce.preferred_window IS NOT NULL
+    AND c.campaign_id = %s
+    AND NOT EXISTS (
+        SELECT 1
+        FROM engage360.outreach_attempts oa
+        WHERE oa.enrollment_id = mce.enrollment_id
+          AND oa.attempt_ts >= @TodayStartUtc 
+          AND oa.attempt_ts < @TodayEndUtc
+    );
+"""
+
+# Backward compatibility: Keep original query name pointing to intro query
+ELIGIBLE_MEMBERS_QUERY = ELIGIBLE_MEMBERS_QUERY_INTRO
