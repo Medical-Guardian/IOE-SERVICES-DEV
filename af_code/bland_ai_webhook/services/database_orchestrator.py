@@ -258,6 +258,18 @@ class DatabaseOrchestrator:
             )
             return None
 
+        # Debug logging to help identify constraint violation
+        logger.info(f"🔍 [DB-ORCH] Attempting to set current_status = '{new_status}' for member_id = {member_id}, campaign_id = {campaign_id}")
+        logger.info(f"🔍 [DB-ORCH] Valid constraint values: OPTED_OUT, PENDING, ENROLLED, Unenrolled")
+        
+        # Validate status value against constraint
+        valid_statuses = ['OPTED_OUT', 'PENDING', 'ENROLLED', 'Unenrolled']
+        if new_status not in valid_statuses:
+            logger.error(f"❌ [DB-ORCH] INVALID STATUS: '{new_status}' is not in allowed values: {valid_statuses}")
+            logger.error(f"❌ [DB-ORCH] This will cause CHECK constraint violation CK_mcee_current_status")
+            # Skip the update to prevent constraint violation
+            return None
+
         q = """
             UPDATE engage360.member_campaign_enrollments_enhanced
                SET current_status = %s,

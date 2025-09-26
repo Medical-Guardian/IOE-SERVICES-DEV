@@ -71,6 +71,16 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
 
     def decide(self, webhook_data: Dict[str, Any], mapped: MappedCallData) -> EnrollmentUpdate:
         disp = mapped.disposition
+        disposition_tag = webhook_data.get("disposition_tag", "")
+
+        # COMPLETED_ACTION -> ENROLLED (specific rule for this disposition tag)
+        if disposition_tag == "COMPLETED_ACTION":
+            return EnrollmentUpdate(
+                should_update=True,
+                new_status="ENROLLED",
+                reason="DTC_INTRO_CALL: COMPLETED_ACTION disposition; enrolling member",
+                confidence_level="high",
+            )
 
         # Completed -> ENROLLED if spoke and not opted-out
         if disp == "Completed" and mapped.contact_made and not mapped.opt_out_requested:
