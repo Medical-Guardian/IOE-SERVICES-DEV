@@ -385,7 +385,7 @@ class DatabaseOrchestrator:
 
         # Check if this is intro campaign completion requiring auto-transition to wellness
         should_transition_to_wellness = (
-            campaign_id == INTRO_CAMPAIGN_ID and 
+            campaign_id.upper() == INTRO_CAMPAIGN_ID.upper() and 
             new_status == "ENROLLED"
         )
 
