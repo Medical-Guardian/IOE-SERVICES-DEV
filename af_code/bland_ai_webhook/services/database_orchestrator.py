@@ -340,29 +340,10 @@ class DatabaseOrchestrator:
 
         # Debug logging to help identify constraint violation
         logger.info(f"🔍 [DB-ORCH] Attempting to set current_status = '{new_status}' for member_id = {member_id}, campaign_id = {campaign_id}")
-        logger.info(f"🔍 [DB-ORCH] Valid constraint values: OPTED_OUT, PENDING, ENROLLED, Unenrolled")
+        logger.info(f"🔍 [DB-ORCH] Valid constraint values: OPTED_OUT, PENDING, ENROLLED, UNENROLLED")
         
-        # ENHANCED DEBUG: Byte-level analysis of status value
-        logger.info(f"🔬 [DB-ORCH] Status value byte analysis:")
-        logger.info(f"🔬 [DB-ORCH]   - String repr: {repr(new_status)}")
-        logger.info(f"🔬 [DB-ORCH]   - String length: {len(new_status)}")
-        logger.info(f"🔬 [DB-ORCH]   - Bytes (UTF-8): {new_status.encode('utf-8')}")
-        logger.info(f"🔬 [DB-ORCH]   - Hex representation: {new_status.encode('utf-8').hex()}")
-        logger.info(f"🔬 [DB-ORCH]   - ASCII ord values: {[ord(c) for c in new_status]}")
-        
-        # Check for invisible/problematic characters
-        cleaned_status = new_status.strip()
-        if cleaned_status != new_status:
-            logger.warning(f"⚠️ [DB-ORCH] Status has leading/trailing whitespace! Original: {repr(new_status)}, Cleaned: {repr(cleaned_status)}")
-            new_status = cleaned_status
-        
-        # Check for non-printable characters
-        non_printable = [c for c in new_status if ord(c) < 32 or ord(c) > 126]
-        if non_printable:
-            logger.error(f"❌ [DB-ORCH] Status contains non-printable characters: {[repr(c) for c in non_printable]}")
-        
-        # Validate status value against constraint
-        valid_statuses = ['OPTED_OUT', 'PENDING', 'ENROLLED', 'Unenrolled']
+        # Validate status value against constraint (updated to match database constraint)
+        valid_statuses = ['OPTED_OUT', 'PENDING', 'ENROLLED', 'UNENROLLED']
         
         # Enhanced validation with exact byte comparison
         is_valid = False
