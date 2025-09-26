@@ -98,7 +98,9 @@ class MemberQualificationService:
         is_wellness_campaign = False
         if potential_members:
             first_member_campaign = potential_members[0].get('campaign_id', '')
-            is_wellness_campaign = first_member_campaign.upper() == WELLNESS_CAMPAIGN_ID.upper()
+            # Convert UUID to string if needed
+            first_member_campaign_str = str(first_member_campaign) if first_member_campaign else ''
+            is_wellness_campaign = first_member_campaign_str.upper() == WELLNESS_CAMPAIGN_ID.upper()
         
         if is_wellness_campaign:
             logger.info(f"🩺 [MemberQualificationService-DEBUG] Filtering members for WELLNESS campaign")
