@@ -35,23 +35,30 @@ class DatabaseService:
     def _parse_to_pymssql_params(self, conn_string: str) -> Dict[str, Any]:
         """Parses a standard Azure SQL connection string into a pymssql-compatible dictionary."""
         params = {}
-        for part in conn_string.split(';'):
-            if '=' not in part: continue
-            key, value = part.split('=', 1)
-            key_map = {'server': 'server', 'database': 'database', 'initial catalog': 'database', 'user id': 'user',
-                       'password': 'password'}
+        for part in conn_string.split(";"):
+            if "=" not in part:
+                continue
+            key, value = part.split("=", 1)
+            key_map = {
+                "server": "server",
+                "database": "database",
+                "initial catalog": "database",
+                "user id": "user",
+                "password": "password",
+            }
             std_key = key_map.get(key.strip().lower())
             if std_key:
-                if std_key == 'server' and ',' in value:
-                    server_val, port_val = value.replace('tcp:', '').split(',')
-                    params['server'] = server_val
-                    params['port'] = port_val
+                if std_key == "server" and "," in value:
+                    server_val, port_val = value.replace("tcp:", "").split(",")
+                    params["server"] = server_val
+                    params["port"] = port_val
                 else:
-                    params[std_key] = value.replace('tcp:', '')
+                    params[std_key] = value.replace("tcp:", "")
         return params
 
-    def execute_query(self, query: str, params: tuple = None, fetch_results: bool = True) -> Optional[
-        List[Dict[str, Any]]]:
+    def execute_query(
+        self, query: str, params: tuple = None, fetch_results: bool = True
+    ) -> Optional[List[Dict[str, Any]]]:
         """Executes a single, auto-committed SQL query."""
         logger.info(f"💾 [DB-SERVICE] Executing single query (Fetch={fetch_results}).")
         try:
@@ -93,7 +100,9 @@ class DatabaseService:
                     cursor.execute(query, params)
                     total_rows_affected += cursor.rowcount
             conn.commit()
-            logger.info(f"✅ [DB-SERVICE] Transaction committed successfully. Rows affected: {total_rows_affected}.")
+            logger.info(
+                f"✅ [DB-SERVICE] Transaction committed successfully. Rows affected: {total_rows_affected}."
+            )
             return total_rows_affected
         except pymssql.Error as db_err:
             logger.error(f"💥 [DB-SERVICE] Transaction failed: {db_err}. Rolling back.")
@@ -108,4 +117,3 @@ class DatabaseService:
         finally:
             if conn:
                 conn.close()
-

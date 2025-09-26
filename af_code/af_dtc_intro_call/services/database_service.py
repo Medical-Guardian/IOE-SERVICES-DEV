@@ -40,7 +40,9 @@ class DatabaseService:
             secret = client.get_secret(DB_SECRET_NAME)
 
             if not secret or not secret.value:
-                logger.error(f"❌ [DatabaseService] Secret '{DB_SECRET_NAME}' was retrieved but is empty")
+                logger.error(
+                    f"❌ [DatabaseService] Secret '{DB_SECRET_NAME}' was retrieved but is empty"
+                )
                 raise ValueError(f"Secret '{DB_SECRET_NAME}' is empty")
 
             self._db_connection_params = self._parse_to_pymssql_params(secret.value)
@@ -82,8 +84,9 @@ class DatabaseService:
         logger.info("✅ [DatabaseService] Connection string parsed successfully")
         return conn_params
 
-    def execute_query(self, query: str, params: tuple = None, fetch_results: bool = True) -> Optional[
-        List[Dict[str, Any]]]:
+    def execute_query(
+        self, query: str, params: tuple = None, fetch_results: bool = True
+    ) -> Optional[List[Dict[str, Any]]]:
         """Execute a database query using pymssql."""
         logger.info(f"💾 [DatabaseService] Executing query (fetch_results={fetch_results})")
 

@@ -7,6 +7,7 @@ class ErrorSeverity(Enum):
 
     This classification helps prioritize error handling and response strategies.
     """
+
     LOW = "low"  # Minor issues that don't affect core functionality
     MEDIUM = "medium"  # Issues that may impact some operations
     HIGH = "high"  # Significant issues affecting multiple operations
@@ -19,6 +20,7 @@ class ErrorCategory(Enum):
 
     This categorization aids in identifying root causes and remediation strategies.
     """
+
     VALIDATION = "validation"  # Data validation failures
     DATABASE = "database"  # Database connectivity or query issues
     BUSINESS_LOGIC = "business_logic"  # Business rule processing errors

@@ -29,11 +29,11 @@ class DatabaseOrchestrator:
     # Public API
     # -------------------------------------------------------------------------
     def execute_atomic_updates(
-            self,
-            webhook_data: Dict[str, Any],
-            mapped_data: MappedCallData,
-            enrollment_update: EnrollmentUpdate,
-            request_id: Optional[str] = None,
+        self,
+        webhook_data: Dict[str, Any],
+        mapped_data: MappedCallData,
+        enrollment_update: EnrollmentUpdate,
+        request_id: Optional[str] = None,
     ) -> UpdateResult:
         if request_id:
             logger.info(f"[DB-ORCH] request_id={request_id} execute_atomic_updates starting")
@@ -71,19 +71,23 @@ class DatabaseOrchestrator:
             try:
                 self.db_service.execute_transaction(queries_to_run)
                 duration_ms = int((time.time() - start_time) * 1000)
-                logger.info(f"✅ [DB-ORCH] Transaction committed in {duration_ms} ms "
-                            f"(tables={tables_updated})")
+                logger.info(
+                    f"✅ [DB-ORCH] Transaction committed in {duration_ms} ms "
+                    f"(tables={tables_updated})"
+                )
                 return UpdateResult(
                     success=True,
                     tables_updated=tables_updated,
                     error_message=None,
                     records_affected=len(queries_to_run),
-                    operation_duration_ms=duration_ms
+                    operation_duration_ms=duration_ms,
                 )
             except Exception as e:
-                logger.error(f"🚨 [DB-ORCH] TX failed attempt {attempt + 1}/{self.max_retries}: {e}")
+                logger.error(
+                    f"🚨 [DB-ORCH] TX failed attempt {attempt + 1}/{self.max_retries}: {e}"
+                )
                 if attempt < self.max_retries - 1:
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2**attempt))
                 else:
                     duration_ms = int((time.time() - start_time) * 1000)
                     return UpdateResult(
@@ -91,7 +95,7 @@ class DatabaseOrchestrator:
                         tables_updated=[],
                         error_message=str(e),
                         records_affected=0,
-                        operation_duration_ms=duration_ms
+                        operation_duration_ms=duration_ms,
                     )
 
     # -------- Analysis queue helpers (optional, used by ServiceBus flow) ------
@@ -109,7 +113,9 @@ class DatabaseOrchestrator:
         self.db_service.execute_query(query, params, fetch_results=False)
         logger.info("✅ [DB-ORCH] Queue submission intent logged.")
 
-    def update_queue_submission_status(self, call_id: str, message_id: Optional[str], success: bool) -> None:
+    def update_queue_submission_status(
+        self, call_id: str, message_id: Optional[str], success: bool
+    ) -> None:
         """
         Update engage360.analysis_queue_status to PENDING on success, FAILED otherwise.
         """
@@ -132,7 +138,9 @@ class DatabaseOrchestrator:
             params = (call_id,)
 
         self.db_service.execute_query(query, params, fetch_results=False)
-        logger.info(f"✅ [DB-ORCH] Queue submission status updated ({'PENDING' if success else 'FAILED'}).")
+        logger.info(
+            f"✅ [DB-ORCH] Queue submission status updated ({'PENDING' if success else 'FAILED'})."
+        )
 
     # -------------------------------------------------------------------------
     # Builders
@@ -170,42 +178,35 @@ class DatabaseOrchestrator:
             webhook_data.get("summary"),
             self._safe_json(webhook_data.get("analysis")),
             webhook_data.get("batch_id"),
-
             md.get("first_name"),
             md.get("last_name"),
             md.get("member_id"),
             md.get("attempt_id"),
             md.get("language_pref"),
             md.get("call_type_code"),
-
             md.get("salesforce_account_number"),
             md.get("campaign_id"),
             webhook_data.get("completed"),
             webhook_data.get("created_at"),
             webhook_data.get("pathway_id"),
-
             webhook_data.get("answered_by"),
             self._safe_json(webhook_data.get("transcripts")),
             webhook_data.get("max_duration"),
             self._safe_json(webhook_data.get("pathway_logs")),
             self._safe_json(webhook_data.get("pathway_tags")),
-
             webhook_data.get("call_ended_by"),
             webhook_data.get("error_message"),
             webhook_data.get("recording_url"),
             webhook_data.get("analysis_schema"),
-
             webhook_data.get("disposition_tag"),
             webhook_data.get("corrected_duration"),
             webhook_data.get("concatenated_transcript"),
-            self._safe_json(webhook_data)  # full raw payload
+            self._safe_json(webhook_data),  # full raw payload
         )
         return q, params
 
     def _build_update_outreach_attempts(
-        self,
-        webhook_data: Dict[str, Any],
-        mapped_data: MappedCallData
+        self, webhook_data: Dict[str, Any], mapped_data: MappedCallData
     ) -> Optional[Tuple[str, Tuple]]:
         """
         Prepare UPDATE for engage360.outreach_attempts if attempt_id is present.
@@ -230,14 +231,12 @@ class DatabaseOrchestrator:
             mapped_data.duration_sec,
             mapped_data.response_summary,
             mapped_data.next_action,
-            attempt_id
+            attempt_id,
         )
         return q, params
 
     def _build_update_enrollment(
-        self,
-        webhook_data: Dict[str, Any],
-        enrollment_update: EnrollmentUpdate
+        self, webhook_data: Dict[str, Any], enrollment_update: EnrollmentUpdate
     ) -> Optional[Tuple[str, Tuple]]:
         """
         Prepare UPDATE for engage360.member_campaign_enrollments_enhanced
@@ -254,7 +253,9 @@ class DatabaseOrchestrator:
 
         if not member_id or not campaign_id or not new_status:
             # Missing keys -> skip enrollment update
-            logger.info("ℹ️ [DB-ORCH] Enrollment update skipped (missing member_id/campaign_id/new_status).")
+            logger.info(
+                "ℹ️ [DB-ORCH] Enrollment update skipped (missing member_id/campaign_id/new_status)."
+            )
             return None
 
         q = """
@@ -265,12 +266,7 @@ class DatabaseOrchestrator:
                AND campaign_id = %s
                AND (current_status IS NULL OR current_status <> %s)
         """
-        params = (
-            new_status,
-            member_id,
-            campaign_id,
-            new_status
-        )
+        params = (new_status, member_id, campaign_id, new_status)
         return q, params
 
     # -------------------------------------------------------------------------
@@ -280,6 +276,7 @@ class DatabaseOrchestrator:
     def _safe_json(obj: Any) -> Optional[str]:
         try:
             import json as _json
+
             return _json.dumps(obj) if obj is not None else None
         except Exception:
             return None

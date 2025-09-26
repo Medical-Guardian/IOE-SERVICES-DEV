@@ -31,7 +31,9 @@ class ConfigManager:
         if self._key_vault_url:
             try:
                 credential = DefaultAzureCredential()
-                self._secret_client = SecretClient(vault_url=self._key_vault_url, credential=credential)
+                self._secret_client = SecretClient(
+                    vault_url=self._key_vault_url, credential=credential
+                )
                 logger.info("🔑 [CONFIG-MANAGER] Azure Key Vault client connected successfully.")
             except Exception as e:
                 logger.error(f"🚨 [CONFIG-MANAGER] Failed to initialize Key Vault client: {str(e)}")
@@ -58,7 +60,9 @@ class ConfigManager:
         # Prioritize Key Vault if available
         if self._secret_client:
             try:
-                secret = self._secret_client.get_secret(key.replace("_", "-"))  # Key Vault prefers hyphens
+                secret = self._secret_client.get_secret(
+                    key.replace("_", "-")
+                )  # Key Vault prefers hyphens
                 value = secret.value
                 logger.info(f"✅ [CONFIG-MANAGER] Retrieved '{key}' from Key Vault.")
             except Exception:
@@ -97,14 +101,18 @@ class ConfigManager:
             connection_string = self.get_config("DB_CONNECTION_STRING")
 
         if not connection_string:
-            logger.critical("🚨 [CONFIG-MANAGER] Database connection string not found in Key Vault or environment.")
+            logger.critical(
+                "🚨 [CONFIG-MANAGER] Database connection string not found in Key Vault or environment."
+            )
             raise ValueError("Database connection string is not configured.")
 
         return connection_string
 
     def get_service_bus_connection_string(self) -> str:
         """Securely retrieves the Service Bus connection string."""
-        secret_name = self.get_config("SERVICE_BUS_SECRET_NAME", "IOE-POSTCALL-ANALYSIS-BUS-ENDPOINT")
+        secret_name = self.get_config(
+            "SERVICE_BUS_SECRET_NAME", "IOE-POSTCALL-ANALYSIS-BUS-ENDPOINT"
+        )
 
         connection_string = self.get_config(secret_name)
 

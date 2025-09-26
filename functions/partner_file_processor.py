@@ -8,9 +8,7 @@ bp = func.Blueprint()
 
 @bp.function_name(name="ProcessPartnerCampaignBlobValidationUI")
 @bp.blob_trigger(
-    arg_name="myblob",
-    path="fs-partner/landing/{name}",
-    connection="AzureWebJobsStorage"
+    arg_name="myblob", path="fs-partner/landing/{name}", connection="AzureWebJobsStorage"
 )
 def process_partner_campaign_blob(myblob: func.InputStream):
     """
@@ -21,20 +19,21 @@ def process_partner_campaign_blob(myblob: func.InputStream):
     """
 
     # Extract filename from the blob path
-    filename = myblob.name.split('/')[-1]
+    filename = myblob.name.split("/")[-1]
     logging.info(f"🟡 New Partner Campaign file detected: {filename}")
     logging.info(f"📁 Full blob path: {myblob.name}")
 
     # Educational: Pre-validation check
     # Before doing expensive processing, we do a quick filename check
-    if not filename.endswith('.csv'):
+    if not filename.endswith(".csv"):
         logging.warning(f"⚠️ File skipped - not a CSV file: {filename}")
         return
 
     # Educational: Filename pattern validation
     # Partner Campaign files should follow: PartnerName_CampaignName_YYYYMMDD[_Suffix].csv
     import re
-    pattern = r'^([A-Za-z0-9]+)_([A-Za-z0-9\/\s]+)_(\d{8})(_[A-Za-z0-9]+)?\.csv$'
+
+    pattern = r"^([A-Za-z0-9]+)_([A-Za-z0-9\/\s]+)_(\d{8})(_[A-Za-z0-9]+)?\.csv$"
     if not re.match(pattern, filename):
         logging.warning(f"⚠️ File skipped due to invalid naming pattern: {filename}")
         logging.info(f"Expected pattern: PartnerName_CampaignName_YYYYMMDD[_Suffix].csv")
@@ -47,7 +46,7 @@ def process_partner_campaign_blob(myblob: func.InputStream):
             file_path=filename,  # Just the filename - logic will handle blob operations
             connection_string="",  # Empty - logic gets secure connection from Key Vault
             uploaded_by_user="ai.admin@medicalguardian.com",  # Default system user
-            error_threshold_pct=15.0  # Allow up to 15% row errors
+            error_threshold_pct=15.0,  # Allow up to 15% row errors
         )
 
         if success:
@@ -55,7 +54,7 @@ def process_partner_campaign_blob(myblob: func.InputStream):
             logging.info(f"📊 Summary: {message}")
 
             # Educational: Log key metrics for monitoring
-            if 'records_processed' in details:
+            if "records_processed" in details:
                 logging.info(f"📈 Records processed: {details['records_processed']}")
                 logging.info(f"✅ Records succeeded: {details['records_succeeded']}")
                 logging.info(f"❌ Records failed: {details['records_failed']}")
@@ -65,9 +64,9 @@ def process_partner_campaign_blob(myblob: func.InputStream):
             logging.error(f"💥 Error: {message}")
 
             # Educational: Log additional error context for debugging
-            if 'error' in details:
+            if "error" in details:
                 logging.error(f"🔍 Error details: {details['error']}")
-            if 'validation_errors_count' in details:
+            if "validation_errors_count" in details:
                 logging.error(f"🚫 Validation errors: {details['validation_errors_count']}")
 
     except Exception as e:
@@ -79,4 +78,5 @@ def process_partner_campaign_blob(myblob: func.InputStream):
         # Educational: This ensures the Azure Function doesn't crash
         # but we still log the problem for investigation
         import traceback
+
         logging.error(f"🔍 Stack trace: {traceback.format_exc()}")

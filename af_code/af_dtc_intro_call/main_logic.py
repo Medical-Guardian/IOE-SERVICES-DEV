@@ -7,8 +7,9 @@ from .services.member_service import MemberQualificationService
 from .services.blandai_service import BlandAIService
 
 
-def create_bland_ai_batch_call(campaign_id: str, member_service: MemberQualificationService,
-                               bland_service: BlandAIService) -> Dict:
+def create_bland_ai_batch_call(
+    campaign_id: str, member_service: MemberQualificationService, bland_service: BlandAIService
+) -> Dict:
     """Main logic to find members, create a batch, and submit to Bland AI."""
     batch_id_for_error_handling = None
     try:
@@ -19,7 +20,7 @@ def create_bland_ai_batch_call(campaign_id: str, member_service: MemberQualifica
             return {"success": False, "message": message}
 
         original_count = len(qualified_members)
-        limited_members = qualified_members[:bland_service.MEMBER_LIMIT]
+        limited_members = qualified_members[: bland_service.MEMBER_LIMIT]
 
         config = bland_service.get_campaign_config(campaign_id)
         batch_id = bland_service.create_outreach_batch(campaign_id, len(limited_members))
@@ -27,7 +28,7 @@ def create_bland_ai_batch_call(campaign_id: str, member_service: MemberQualifica
 
         bland_service.create_outreach_attempts(limited_members, batch_id)
         members_with_attempts = bland_service.get_members_with_attempts(batch_id)
-        #payload = bland_service.build_bland_payload(config, members_with_attempts)
+        # payload = bland_service.build_bland_payload(config, members_with_attempts)
         payload = bland_service.build_bland_payload(config, members_with_attempts, batch_id)
         api_key = bland_service.get_bland_api_key()
         response = bland_service.call_bland_ai_api(payload, api_key)
@@ -39,9 +40,12 @@ def create_bland_ai_batch_call(campaign_id: str, member_service: MemberQualifica
         bland_service.update_batch_with_vendor_id(batch_id, vendor_batch_id)
 
         result = {
-            "success": True, "message": "Batch submitted successfully.", "batch_id": batch_id,
-            "vendor_batch_id": vendor_batch_id, "processed_count": len(limited_members),
-            "qualified_count": original_count
+            "success": True,
+            "message": "Batch submitted successfully.",
+            "batch_id": batch_id,
+            "vendor_batch_id": vendor_batch_id,
+            "processed_count": len(limited_members),
+            "qualified_count": original_count,
         }
         logging.info(f"🎉 [MAIN] Success: {json.dumps(result)}")
         return result

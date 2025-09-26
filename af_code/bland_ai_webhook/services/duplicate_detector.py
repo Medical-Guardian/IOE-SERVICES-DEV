@@ -24,8 +24,10 @@ class DuplicateDetector:
         """
         self.config_manager = config_manager
         self.db_service = db_service
-        self.call_log_table = self.config_manager.get_config("CALL_LOG_TABLE", "engage360.bland_call_logs")
-        logger.info(f"🔍 [DUPLICATE-DETECTOR] Initialized to use DatabaseService for checks.")
+        self.call_log_table = self.config_manager.get_config(
+            "CALL_LOG_TABLE", "engage360.bland_call_logs"
+        )
+        logger.info("🔍 [DUPLICATE-DETECTOR] Initialized to use DatabaseService for checks.")
         logger.info(f"   - Target Table: {self.call_log_table}")
 
     def check_duplicate(self, call_id: str) -> bool:
@@ -52,7 +54,7 @@ class DuplicateDetector:
             # This query is designed to be fast. We only need to know if at least one
             # record exists, so we select a single, indexed column.
             # NOTE: Using '%s' as the parameter marker, which is correct for pymssql.
-            query = f"SELECT call_id FROM {self.call_log_table} WHERE call_id = %s"
+            query = f"SELECT call_id FROM {self.call_log_table} WHERE call_id = %s"  # nosec B608 - Table name from config, user input is parameterized
 
             # Use the injected DatabaseService to execute the query.
             # fetch_results=True ensures we get back a list of rows if found.
@@ -61,10 +63,13 @@ class DuplicateDetector:
             # If the result is not None and not an empty list, a record was found.
             if result:
                 logger.warning(
-                    f"🚨 [DUPLICATE-DETECTOR] Duplicate detected. Call ID '{call_id}' already exists in the database.")
+                    f"🚨 [DUPLICATE-DETECTOR] Duplicate detected. Call ID '{call_id}' already exists in the database."
+                )
                 return True
             else:
-                logger.info(f"✅ [DUPLICATE-DETECTOR] No duplicate found for call_id: {call_id}. Proceeding.")
+                logger.info(
+                    f"✅ [DUPLICATE-DETECTOR] No duplicate found for call_id: {call_id}. Proceeding."
+                )
                 return False
 
         except Exception as e:
@@ -72,6 +77,9 @@ class DuplicateDetector:
             # To ensure system resilience, we "fail open" by assuming it is NOT a
             # duplicate. This prevents a database outage from blocking all incoming webhooks.
             logger.error(
-                f"💥 [DUPLICATE-DETECTOR] Database error during duplicate check for call_id '{call_id}': {str(e)}")
-            logger.warning("   - Fail-safe engaged: Assuming NOT a duplicate to avoid blocking processing.")
+                f"💥 [DUPLICATE-DETECTOR] Database error during duplicate check for call_id '{call_id}': {str(e)}"
+            )
+            logger.warning(
+                "   - Fail-safe engaged: Assuming NOT a duplicate to avoid blocking processing."
+            )
             return False

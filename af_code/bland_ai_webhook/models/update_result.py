@@ -10,6 +10,7 @@ class UpdateResult:
     This class serves as a comprehensive report for database operations, detailing
     success status, affected tables, and any errors encountered.
     """
+
     success: bool
     tables_updated: List[str]
     error_message: Optional[str]

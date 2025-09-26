@@ -10,6 +10,7 @@ class ValidationResult:
     This class acts as a quality control report, indicating whether the incoming
     data meets standards and detailing any errors or warnings.
     """
+
     is_valid: bool
     errors: List[str]
     warnings: List[str]

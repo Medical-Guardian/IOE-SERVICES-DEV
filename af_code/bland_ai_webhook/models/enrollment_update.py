@@ -10,6 +10,7 @@ class EnrollmentUpdate:
     This class communicates whether a member's enrollment status should change
     based on call outcomes, including the new status and decision rationale.
     """
+
     should_update: bool
     new_status: Optional[str]
     reason: str

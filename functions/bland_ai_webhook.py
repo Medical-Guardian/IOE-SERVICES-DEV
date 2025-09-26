@@ -41,9 +41,10 @@ webhook_handler_instance = WebhookHandler(
     db_orchestrator=db_orchestrator,
     business_rules=rules,
     error_handler=err_handler,
-    service_bus_handler=service_bus
+    service_bus_handler=service_bus,
 )
 logging.info("✅ Bland AI Webhook services initialized successfully.")
+
 
 @bp.function_name(name="BlandAIWebhook")
 @bp.route(route="bland-ai-webhook", methods=[func.HttpMethod.POST])

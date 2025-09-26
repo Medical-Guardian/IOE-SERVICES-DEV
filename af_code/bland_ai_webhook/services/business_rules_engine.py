@@ -7,6 +7,7 @@ status updates based on call outcomes and disposition results.
 Owner: IOE Development Team
 BusinessCaseIDs: BC-104, BC-105
 """
+
 from __future__ import annotations
 
 import logging
@@ -24,16 +25,18 @@ logger = logging.getLogger(__name__)
 # In-file "campaign modules"
 # =============================================================================
 
+
 class _CampaignRuleHandler:
     """
     Interface for campaign-specific decision logic.
-    
+
     BusinessCaseID: BC-104
     """
+
     def applicable(self, rule_name: Optional[str], campaign_id: Optional[str]) -> bool:
         """
         Check if this handler applies to the given rule and campaign.
-        
+
         BusinessCaseID: BC-104
         """
         raise NotImplementedError
@@ -41,7 +44,7 @@ class _CampaignRuleHandler:
     def decide(self, webhook_data: Dict[str, Any], mapped: MappedCallData) -> EnrollmentUpdate:
         """
         Make enrollment decision based on call outcome.
-        
+
         BusinessCaseID: BC-104
         """
         raise NotImplementedError
@@ -59,6 +62,7 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
       - NoAnswer                                            PENDING   (medium)
       - Failed                                              PENDING   (low)
     """
+
     RULE = "DTC_INTRO_CALL"
     CAMPAIGN = "34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"
 
@@ -74,7 +78,7 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
                 should_update=True,
                 new_status="ENROLLED",
                 reason="DTC_INTRO_CALL: Completed with contact; enrolling",
-                confidence_level="high"
+                confidence_level="high",
             )
 
         # OptOut -> OPTED_OUT if explicit request
@@ -83,7 +87,7 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
                 should_update=True,
                 new_status="OPTED_OUT",
                 reason="DTC_INTRO_CALL: Member requested opt-out",
-                confidence_level="high"
+                confidence_level="high",
             )
 
         # NoAnswer -> PENDING
@@ -92,7 +96,7 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
                 should_update=True,
                 new_status="PENDING",
                 reason="DTC_INTRO_CALL: No answer",
-                confidence_level="medium"
+                confidence_level="medium",
             )
 
         # Failed -> PENDING
@@ -101,7 +105,7 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
                 should_update=True,
                 new_status="PENDING",
                 reason="DTC_INTRO_CALL: Failed call",
-                confidence_level="low"
+                confidence_level="low",
             )
 
         # No change for everything else
@@ -109,11 +113,13 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
             should_update=False,
             new_status=None,
             reason="DTC_INTRO_CALL: No matching disposition condition",
-            confidence_level="low"
+            confidence_level="low",
         )
 
 
-def _get_campaign_handler(rule_name: Optional[str], campaign_id: Optional[str]) -> Optional[_CampaignRuleHandler]:
+def _get_campaign_handler(
+    rule_name: Optional[str], campaign_id: Optional[str]
+) -> Optional[_CampaignRuleHandler]:
     """Return the first handler that applies to (rule_name, campaign_id)."""
     handlers: List[_CampaignRuleHandler] = [
         _DtcIntroCall_34CC9155_Handler(),
@@ -128,6 +134,7 @@ def _get_campaign_handler(rule_name: Optional[str], campaign_id: Optional[str]) 
 # =============================================================================
 # Core engine
 # =============================================================================
+
 
 class BusinessRulesEngine:
     """
@@ -167,40 +174,45 @@ class BusinessRulesEngine:
                 "OptOut": {
                     "new_status": "OPTED_OUT",
                     "confidence": "high",
-                    "condition": lambda data: data.opt_out_requested
+                    "condition": lambda data: data.opt_out_requested,
                 }
             }
 
     # ---- main decision ----
-    def determine_enrollment_update(self, webhook_data: Dict[str, Any],
-                                    mapped_data: MappedCallData) -> EnrollmentUpdate:
+    def determine_enrollment_update(
+        self, webhook_data: Dict[str, Any], mapped_data: MappedCallData
+    ) -> EnrollmentUpdate:
         """
         Compute the enrollment update decision for this call.
         """
         logger.info(f"📈 [BUSINESS-RULES] Evaluating disposition: {mapped_data.disposition}")
 
         metadata = webhook_data.get("metadata", {}) or {}
-        rule_name = metadata.get("call_type_code")     # e.g., "DTC_INTRO_CALL"
-        campaign_id = metadata.get("campaign_id")      # e.g., "34CC9155-..."
+        rule_name = metadata.get("call_type_code")  # e.g., "DTC_INTRO_CALL"
+        campaign_id = metadata.get("campaign_id")  # e.g., "34CC9155-..."
 
         # (1) Campaign-specific module
         handler = _get_campaign_handler(rule_name, campaign_id)
         if handler:
             decision = handler.decide(webhook_data, mapped_data)
             if decision.should_update:
-                logger.info(f"✅ [BUSINESS-RULES] Campaign module applied: {rule_name}/{campaign_id}")
+                logger.info(
+                    f"✅ [BUSINESS-RULES] Campaign module applied: {rule_name}/{campaign_id}"
+                )
                 return decision
 
         # (2) Optional JSON rules (disposition-indexed)
         for disposition, rule in (self.enrollment_rules or {}).items():
             condition = rule.get("condition", lambda data: True)
-            if mapped_data.disposition == disposition and (not callable(condition) or condition(mapped_data)):
+            if mapped_data.disposition == disposition and (
+                not callable(condition) or condition(mapped_data)
+            ):
                 logger.info(f"✅ [BUSINESS-RULES] Matched JSON rule for disposition: {disposition}")
                 return EnrollmentUpdate(
                     should_update=True,
                     new_status=rule.get("new_status", "PENDING"),
                     reason=f"Config fallback matched for {disposition}",
-                    confidence_level=rule.get("confidence", "low")
+                    confidence_level=rule.get("confidence", "low"),
                 )
 
         # (3) Default fallback (no update if nothing matches)
@@ -209,5 +221,5 @@ class BusinessRulesEngine:
             should_update=False,
             new_status=None,
             reason="No matching rule; default fallback is OptOut-only",
-            confidence_level="low"
+            confidence_level="low",
         )

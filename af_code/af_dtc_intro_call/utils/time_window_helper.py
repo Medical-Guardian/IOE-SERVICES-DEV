@@ -1,16 +1,17 @@
 import logging
 from typing import Tuple, Optional
-from datetime import datetime, time
+from datetime import time
 
 logger = logging.getLogger(__name__)
 
+
 class TimeWindowHelper:
     """Helper class for time window operations"""
-    
+
     TIME_WINDOWS = {
-        'AM9-10': (time(9, 0), time(10, 0)),
-        'PM1-3': (time(13, 0), time(15, 0)),
-        'EV4-6': (time(11, 0), time(14, 0))
+        "AM9-10": (time(9, 0), time(10, 0)),
+        "PM1-3": (time(13, 0), time(15, 0)),
+        "EV4-6": (time(11, 0), time(14, 0)),
         #'EV4-6': (time(16, 0), time(19, 0))
     }
 
@@ -22,5 +23,7 @@ class TimeWindowHelper:
         if bounds == (None, None):
             logger.warning(f"⚠️ [TimeWindowHelper] Unknown preferred window: {preferred_window}")
         else:
-            logger.info(f"✅ [TimeWindowHelper] Window bounds: {bounds[0].strftime('%H:%M:%S')} - {bounds[1].strftime('%H:%M:%S')}")
+            logger.info(
+                f"✅ [TimeWindowHelper] Window bounds: {bounds[0].strftime('%H:%M:%S')} - {bounds[1].strftime('%H:%M:%S')}"
+            )
         return bounds
