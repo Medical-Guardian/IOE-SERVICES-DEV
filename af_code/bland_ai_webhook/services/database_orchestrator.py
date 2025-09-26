@@ -24,6 +24,7 @@ class DatabaseOrchestrator:
         self.db_service = db_service
         self.max_retries = max_retries
         self.retry_delay = retry_delay  # seconds (exponential backoff)
+        self._constraint_verified = False
 
     # -------------------------------------------------------------------------
     # Public API
@@ -97,6 +98,62 @@ class DatabaseOrchestrator:
                         records_affected=0,
                         operation_duration_ms=duration_ms,
                     )
+
+    def verify_database_constraint(self) -> None:
+        """
+        Verify the actual CHECK constraint definition in the database.
+        This helps identify discrepancies between code expectations and database reality.
+        """
+        if self._constraint_verified:
+            return
+        
+        try:
+            constraint_query = """
+                SELECT 
+                    cc.CONSTRAINT_NAME,
+                    cc.CHECK_CLAUSE,
+                    tc.TABLE_NAME,
+                    tc.TABLE_SCHEMA
+                FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
+                JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc 
+                    ON cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
+                WHERE cc.CONSTRAINT_NAME = 'CK_mcee_current_status'
+                    AND tc.TABLE_NAME = 'member_campaign_enrollments_enhanced'
+                    AND tc.TABLE_SCHEMA = 'engage360'
+            """
+            
+            results = self.db_service.execute_query(constraint_query, (), fetch_results=True)
+            
+            if results:
+                constraint_info = results[0]
+                logger.info(f"🔍 [DB-ORCH] Database constraint verification:")
+                logger.info(f"🔍 [DB-ORCH]   - Constraint name: {constraint_info.get('CONSTRAINT_NAME')}")
+                logger.info(f"🔍 [DB-ORCH]   - Table: {constraint_info.get('TABLE_SCHEMA')}.{constraint_info.get('TABLE_NAME')}")
+                logger.info(f"🔍 [DB-ORCH]   - Check clause: {constraint_info.get('CHECK_CLAUSE')}")
+                
+                # Extract allowed values from CHECK clause
+                check_clause = constraint_info.get('CHECK_CLAUSE', '')
+                logger.info(f"🔍 [DB-ORCH]   - Raw check clause bytes: {check_clause.encode('utf-8').hex()}")
+                
+                # Parse allowed values (basic extraction)
+                import re
+                status_pattern = r"current_status\s*=\s*'([^']+)'"
+                allowed_values = re.findall(status_pattern, check_clause)
+                if allowed_values:
+                    logger.info(f"🔍 [DB-ORCH]   - Extracted allowed values: {allowed_values}")
+                    for value in allowed_values:
+                        logger.info(f"🔍 [DB-ORCH]     * '{value}' (bytes: {value.encode('utf-8').hex()}, length: {len(value)})")
+                else:
+                    logger.warning(f"⚠️ [DB-ORCH] Could not extract allowed values from check clause")
+                
+            else:
+                logger.error(f"❌ [DB-ORCH] Could not find constraint CK_mcee_current_status in database")
+                
+            self._constraint_verified = True
+            
+        except Exception as e:
+            logger.error(f"❌ [DB-ORCH] Failed to verify database constraint: {e}")
+            # Continue execution even if verification fails
 
     # -------- Analysis queue helpers (optional, used by ServiceBus flow) ------
     def log_queue_submission_intent(self, call_id: str, submission_time) -> None:
@@ -258,15 +315,65 @@ class DatabaseOrchestrator:
             )
             return None
 
+        # Verify database constraint on first run
+        self.verify_database_constraint()
+
         # Debug logging to help identify constraint violation
         logger.info(f"🔍 [DB-ORCH] Attempting to set current_status = '{new_status}' for member_id = {member_id}, campaign_id = {campaign_id}")
         logger.info(f"🔍 [DB-ORCH] Valid constraint values: OPTED_OUT, PENDING, ENROLLED, Unenrolled")
         
+        # ENHANCED DEBUG: Byte-level analysis of status value
+        logger.info(f"🔬 [DB-ORCH] Status value byte analysis:")
+        logger.info(f"🔬 [DB-ORCH]   - String repr: {repr(new_status)}")
+        logger.info(f"🔬 [DB-ORCH]   - String length: {len(new_status)}")
+        logger.info(f"🔬 [DB-ORCH]   - Bytes (UTF-8): {new_status.encode('utf-8')}")
+        logger.info(f"🔬 [DB-ORCH]   - Hex representation: {new_status.encode('utf-8').hex()}")
+        logger.info(f"🔬 [DB-ORCH]   - ASCII ord values: {[ord(c) for c in new_status]}")
+        
+        # Check for invisible/problematic characters
+        cleaned_status = new_status.strip()
+        if cleaned_status != new_status:
+            logger.warning(f"⚠️ [DB-ORCH] Status has leading/trailing whitespace! Original: {repr(new_status)}, Cleaned: {repr(cleaned_status)}")
+            new_status = cleaned_status
+        
+        # Check for non-printable characters
+        non_printable = [c for c in new_status if ord(c) < 32 or ord(c) > 126]
+        if non_printable:
+            logger.error(f"❌ [DB-ORCH] Status contains non-printable characters: {[repr(c) for c in non_printable]}")
+        
         # Validate status value against constraint
         valid_statuses = ['OPTED_OUT', 'PENDING', 'ENROLLED', 'Unenrolled']
-        if new_status not in valid_statuses:
+        
+        # Enhanced validation with exact byte comparison
+        is_valid = False
+        for valid_status in valid_statuses:
+            if new_status == valid_status:
+                is_valid = True
+                logger.info(f"✅ [DB-ORCH] Status '{new_status}' matches valid status '{valid_status}' (exact match)")
+                break
+            elif new_status.upper() == valid_status.upper():
+                logger.warning(f"⚠️ [DB-ORCH] Status '{new_status}' matches '{valid_status}' case-insensitively but not exactly")
+            else:
+                # Byte-level comparison for debugging
+                status_bytes = new_status.encode('utf-8')
+                valid_bytes = valid_status.encode('utf-8')
+                if len(status_bytes) != len(valid_bytes):
+                    logger.debug(f"🔬 [DB-ORCH] Length mismatch: '{new_status}' ({len(status_bytes)} bytes) vs '{valid_status}' ({len(valid_bytes)} bytes)")
+                else:
+                    for i, (b1, b2) in enumerate(zip(status_bytes, valid_bytes)):
+                        if b1 != b2:
+                            logger.debug(f"🔬 [DB-ORCH] Byte difference at position {i}: {b1} vs {b2} ('{chr(b1)}' vs '{chr(b2)}')")
+                            break
+        
+        if not is_valid:
             logger.error(f"❌ [DB-ORCH] INVALID STATUS: '{new_status}' is not in allowed values: {valid_statuses}")
             logger.error(f"❌ [DB-ORCH] This will cause CHECK constraint violation CK_mcee_current_status")
+            
+            # Log each valid status with byte representation for comparison
+            logger.error(f"❌ [DB-ORCH] Valid statuses with byte representations:")
+            for vs in valid_statuses:
+                logger.error(f"❌ [DB-ORCH]   - '{vs}': {vs.encode('utf-8').hex()} (length: {len(vs)})")
+            
             # Skip the update to prevent constraint violation
             return None
 
@@ -278,6 +385,10 @@ class DatabaseOrchestrator:
                AND campaign_id = %s
                AND (current_status IS NULL OR current_status <> %s)
         """
+        # Final validation before sending to database
+        logger.info(f"🔍 [DB-ORCH] Final status value being sent to database: {repr(new_status)}")
+        logger.info(f"🔍 [DB-ORCH] SQL parameter bytes: {new_status.encode('utf-8').hex()}")
+        
         params = (new_status, member_id, campaign_id, new_status)
         return q, params
 
