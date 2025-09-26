@@ -225,11 +225,31 @@ class BusinessRulesEngine:
                     confidence_level=rule.get("confidence", "low"),
                 )
 
-        # (3) Default fallback (no update if nothing matches)
-        logger.info("📋 [BUSINESS-RULES] No update (module/JSON fallback missed).")
+        # (3) Default fallback - handle common disposition mappings
+        # If we have a 'Completed' disposition but no specific rule matched,
+        # check if it should be enrolled based on contact status
+        if mapped_data.disposition == "Completed" and mapped_data.contact_made and not mapped_data.opt_out_requested:
+            logger.info("📋 [BUSINESS-RULES] Default fallback: Completed with contact -> ENROLLED")
+            return EnrollmentUpdate(
+                should_update=True,
+                new_status="ENROLLED",
+                reason="Default fallback: Completed call with contact made",
+                confidence_level="medium",
+            )
+        elif mapped_data.disposition == "OptOut" and mapped_data.opt_out_requested:
+            logger.info("📋 [BUSINESS-RULES] Default fallback: OptOut requested -> OPTED_OUT")
+            return EnrollmentUpdate(
+                should_update=True,
+                new_status="OPTED_OUT",
+                reason="Default fallback: Opt-out requested",
+                confidence_level="high",
+            )
+        
+        # No update for other cases
+        logger.info("📋 [BUSINESS-RULES] No update (no matching rule or condition).")
         return EnrollmentUpdate(
             should_update=False,
             new_status=None,
-            reason="No matching rule; default fallback is OptOut-only",
+            reason="No matching rule; no default action applies",
             confidence_level="low",
         )
