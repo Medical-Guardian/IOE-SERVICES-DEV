@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
@@ -9,11 +11,22 @@ logger = logging.getLogger(__name__)
 class StatusMapper:
     """
     Sophisticated translation engine that converts Bland AI webhook data into our internal format.
+    
+    Purpose: Maps Bland AI webhook statuses and disposition tags to internal system dispositions
+    and next actions for consistent processing across the platform.
+    
+    Owner: IOE Development Team
+    BusinessCaseIDs: BC-102
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Initialize the status mapper with predefined translation rules.
+        
+        BusinessCaseID: BC-102
+        
+        Sets up comprehensive mapping rules for Bland AI webhook statuses and disposition
+        tags to internal system dispositions and next actions.
         """
         self.status_disposition_mapping = {
             ('completed', 'CONTACT_MADE'): {
@@ -143,12 +156,27 @@ class StatusMapper:
     def map_webhook_to_internal_format(self, webhook_data: Dict[str, Any]) -> MappedCallData:
         """
         Transform Bland AI webhook data into our standardized internal format.
+        
+        BusinessCaseID: BC-102
 
         Args:
-            webhook_data: Complete webhook payload from Bland AI
+            webhook_data: Complete webhook payload from Bland AI containing status,
+                         disposition_tag, call_id, and other call details
 
         Returns:
             MappedCallData: Standardized call information ready for database storage
+            including disposition, next_action, duration, and contact status
+            
+        Raises:
+            KeyError: If required webhook fields are missing
+            ValueError: If webhook data format is invalid
+            
+        Example:
+            >>> mapper = StatusMapper()
+            >>> webhook = {'status': 'completed', 'disposition_tag': 'INTERESTED'}
+            >>> result = mapper.map_webhook_to_internal_format(webhook)
+            >>> result.disposition
+            'Completed'
         """
         logger.info("🔄 [STATUS-MAPPER] Beginning webhook data transformation")
         status = webhook_data.get('status', '').lower()
@@ -199,6 +227,17 @@ class StatusMapper:
         return mapped_data
 
     def _extract_call_duration(self, webhook_data: Dict[str, Any]) -> Optional[int]:
+        """
+        Extract call duration from various webhook fields.
+        
+        BusinessCaseID: BC-102
+        
+        Args:
+            webhook_data: Webhook payload containing duration information
+            
+        Returns:
+            Call duration in seconds, or None if not found
+        """
         duration_fields = ['call_length', 'corrected_duration', 'duration_seconds', 'duration']
         for field_name in duration_fields:
             if field_name in webhook_data:
@@ -220,6 +259,19 @@ class StatusMapper:
         return None
 
     def _build_response_summary(self, webhook_data: Dict[str, Any], disposition: str, contact_made: bool) -> str:
+        """
+        Build comprehensive response summary from webhook data.
+        
+        BusinessCaseID: BC-102
+        
+        Args:
+            webhook_data: Complete webhook payload
+            disposition: Mapped disposition value
+            contact_made: Whether contact was successfully made
+            
+        Returns:
+            Formatted summary string with call details
+        """
         summary_parts = [f"Call disposition: {disposition}"]
         summary_parts.append(
             "Contact was successfully made with the member" if contact_made else "No contact was made with the member")
@@ -237,6 +289,17 @@ class StatusMapper:
         return " | ".join(summary_parts)
 
     def _extract_call_quality(self, webhook_data: Dict[str, Any]) -> Optional[float]:
+        """
+        Extract call quality score from webhook analysis data.
+        
+        BusinessCaseID: BC-102
+        
+        Args:
+            webhook_data: Webhook payload with analysis section
+            
+        Returns:
+            Quality score as float, or None if not available
+        """
         analysis = webhook_data.get('analysis', {})
         if isinstance(analysis, dict):
             quality_score = analysis.get('call_quality_score') or analysis.get('quality_rating')
@@ -245,6 +308,17 @@ class StatusMapper:
         return None
 
     def _extract_sentiment(self, webhook_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract sentiment analysis from webhook data.
+        
+        BusinessCaseID: BC-102
+        
+        Args:
+            webhook_data: Webhook payload with analysis section
+            
+        Returns:
+            Sentiment string, or None if not available
+        """
         analysis = webhook_data.get('analysis', {})
         if isinstance(analysis, dict):
             sentiment = analysis.get('sentiment') or analysis.get('overall_sentiment')
@@ -253,6 +327,17 @@ class StatusMapper:
         return None
 
     def _extract_key_topics(self, webhook_data: Dict[str, Any]) -> Optional[str]:
+        """
+        Extract key topics from webhook analysis data.
+        
+        BusinessCaseID: BC-102
+        
+        Args:
+            webhook_data: Webhook payload with analysis section
+            
+        Returns:
+            Comma-separated topics string, or None if not available
+        """
         analysis = webhook_data.get('analysis', {})
         if isinstance(analysis, dict):
             topics = analysis.get('key_topics') or analysis.get('topics') or analysis.get('themes')

@@ -107,7 +107,7 @@ WHERE
     AND mce.current_status = 'PENDING'
     AND m.timezone IS NOT NULL
     AND mce.preferred_window IS NOT NULL
-    AND ISNULL(failed_attempts.failed_count, 0) <= 5
+    -- AND ISNULL(failed_attempts.failed_count, 0) <= 5  -- Commented out: No longer checking failed attempts limit
     AND c.campaign_id = %s
     AND NOT EXISTS (
         SELECT 1
@@ -115,6 +115,6 @@ WHERE
         WHERE oa.enrollment_id = mce.enrollment_id
           AND oa.attempt_ts >= @TodayStartUtc 
           AND oa.attempt_ts < @TodayEndUtc
-          AND oa.disposition = 'Completed'
+          -- AND oa.disposition = 'Completed'  -- Commented out: Now checking for ANY attempt, not just completed
     );
 """

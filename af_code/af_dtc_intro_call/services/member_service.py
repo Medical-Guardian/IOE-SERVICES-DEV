@@ -73,9 +73,10 @@ class MemberQualificationService:
                 return False, f"Today ({current_day_name}) not in call_days_of_week ({call_days_of_week})"
 
             # Check failed attempts
-            failed_attempts = member_data.get('todays_failed_attempts', 0)
-            if failed_attempts > 5:
-                return False, f"Too many failed attempts today ({failed_attempts} > 5)"
+            # failed_attempts = member_data.get('todays_failed_attempts', 0)
+            # if failed_attempts > 5:
+            #     return False, f"Too many failed attempts today ({failed_attempts} > 5)"
+            # Commented out: No longer checking failed attempts limit - now checking for ANY attempt in SQL query
 
             # Check time window
             preferred_window = member_data.get('preferred_window')
@@ -87,7 +88,7 @@ class MemberQualificationService:
             if not (start_time <= current_time <= end_time):
                 return False, f"Current time ({current_time.strftime('%H:%M:%S')}) outside window ({start_time.strftime('%H:%M:%S')}-{end_time.strftime('%H:%M:%S')})"
 
-            return True, f"Eligible - Day: {current_day_name}, Time: {current_time.strftime('%H:%M:%S')} in window {start_time.strftime('%H:%M:%S')}-{end_time.strftime('%H:%M:%S')}, Failed attempts: {failed_attempts}"
+            return True, f"Eligible - Day: {current_day_name}, Time: {current_time.strftime('%H:%M:%S')} in window {start_time.strftime('%H:%M:%S')}-{end_time.strftime('%H:%M:%S')}"
 
         except Exception as e:
             return False, f"Error checking eligibility: {str(e)}"

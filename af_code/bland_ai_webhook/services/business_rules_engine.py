@@ -1,4 +1,14 @@
-# business_rules_engine.py
+"""
+Business Rules Engine for IOE Campaign Processing.
+
+Purpose: Applies campaign-specific business logic to determine member enrollment
+status updates based on call outcomes and disposition results.
+
+Owner: IOE Development Team
+BusinessCaseIDs: BC-104, BC-105
+"""
+from __future__ import annotations
+
 import logging
 import json
 from typing import Dict, Any, Optional, List
@@ -15,11 +25,25 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 class _CampaignRuleHandler:
-    """Interface for campaign-specific decision logic."""
+    """
+    Interface for campaign-specific decision logic.
+    
+    BusinessCaseID: BC-104
+    """
     def applicable(self, rule_name: Optional[str], campaign_id: Optional[str]) -> bool:
+        """
+        Check if this handler applies to the given rule and campaign.
+        
+        BusinessCaseID: BC-104
+        """
         raise NotImplementedError
 
     def decide(self, webhook_data: Dict[str, Any], mapped: MappedCallData) -> EnrollmentUpdate:
+        """
+        Make enrollment decision based on call outcome.
+        
+        BusinessCaseID: BC-104
+        """
         raise NotImplementedError
 
 
