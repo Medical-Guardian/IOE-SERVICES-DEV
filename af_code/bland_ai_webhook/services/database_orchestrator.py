@@ -51,7 +51,7 @@ class DatabaseOrchestrator:
         queries_to_run: List[Tuple[str, Tuple]] = []
 
         # 1) Call logs insert (always)
-        log_query, log_params = self._build_insert_bland_call_logs(webhook_data)
+        log_query, log_params = self._build_insert_bland_call_logs(webhook_data, mapped_data)
         queries_to_run.append((log_query, log_params))
         tables_updated.append("bland_call_logs")
 
@@ -202,7 +202,7 @@ class DatabaseOrchestrator:
     # -------------------------------------------------------------------------
     # Builders
     # -------------------------------------------------------------------------
-    def _build_insert_bland_call_logs(self, webhook_data: Dict[str, Any]) -> Tuple[str, Tuple]:
+    def _build_insert_bland_call_logs(self, webhook_data: Dict[str, Any], mapped_data: MappedCallData) -> Tuple[str, Tuple]:
         """
         Prepare the INSERT for engage360.bland_call_logs with fields commonly
         captured from Bland's webhook (raw JSON is also stored for audit).
@@ -256,7 +256,7 @@ class DatabaseOrchestrator:
             webhook_data.get("recording_url"),
             webhook_data.get("analysis_schema"),
             webhook_data.get("disposition_tag"),
-            webhook_data.get("corrected_duration"),
+            mapped_data.duration_sec,  # Use same processed duration as outreach_attempts
             webhook_data.get("concatenated_transcript"),
             self._safe_json(webhook_data),  # full raw payload
         )
