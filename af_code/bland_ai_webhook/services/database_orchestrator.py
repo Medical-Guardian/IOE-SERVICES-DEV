@@ -441,10 +441,8 @@ class DatabaseOrchestrator:
                         SELECT current_status FROM engage360.member_campaign_enrollments_enhanced 
                         WHERE member_id = %s AND campaign_id = %s
                     """
-                    cursor.execute(check_wellness_q, (member_id, WELLNESS_CAMPAIGN_ID))
-                    existing_wellness = cursor.fetchone()
-                    
-                    previous_wellness_status = existing_wellness[0] if existing_wellness else None
+                    existing_wellness_records = self.db_service.execute_query(check_wellness_q, (member_id, WELLNESS_CAMPAIGN_ID))
+                    previous_wellness_status = existing_wellness_records[0].get('current_status') if existing_wellness_records else None
                     
                     self.log_status_change(
                         member_id=member_id,
@@ -486,8 +484,7 @@ class DatabaseOrchestrator:
                 """
                 params = (new_status, member_id, campaign_id, new_status)
                 
-                cursor.execute(q, params)
-                rows_affected = cursor.rowcount
+                rows_affected = self.db_service.execute_update(q, params)
                 
                 # Log status change if update actually happened
                 if rows_affected > 0 and current_status != new_status:
