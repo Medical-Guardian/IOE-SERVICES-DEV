@@ -310,31 +310,42 @@ class DatabaseOrchestrator:
         campaign_id = md.get("campaign_id")
         new_status = enrollment_update.new_status
 
+        logger.info(f"🔍 [DB-ORCH] Processing enrollment update:")
+        logger.info(f"🔍 [DB-ORCH]   - Member ID: {member_id}")
+        logger.info(f"🔍 [DB-ORCH]   - Campaign ID: {campaign_id}")
+        logger.info(f"🔍 [DB-ORCH]   - New Status: {new_status}")
+
         if not member_id or not campaign_id or not new_status:
-            # Missing keys -> skip enrollment update
-            logger.info(
-                "ℹ️ [DB-ORCH] Enrollment update skipped (missing member_id/campaign_id/new_status)."
-            )
+            logger.warning(f"⚠️ [DB-ORCH] Enrollment update skipped - Missing required fields:")
+            logger.warning(f"⚠️ [DB-ORCH]   - member_id: {'✓' if member_id else '✗'}")
+            logger.warning(f"⚠️ [DB-ORCH]   - campaign_id: {'✓' if campaign_id else '✗'}")
+            logger.warning(f"⚠️ [DB-ORCH]   - new_status: {'✓' if new_status else '✗'}")
             return None
         
         # Campaign IDs for auto-transition logic
         INTRO_CAMPAIGN_ID = "34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"
         WELLNESS_CAMPAIGN_ID = "E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B"
         
-        # WELLNESS CAMPAIGN LOGIC: Only update status for opt-out
+        # CAMPAIGN IDENTIFICATION
+        is_intro_campaign = campaign_id.upper() == INTRO_CAMPAIGN_ID.upper()
         is_wellness_campaign = campaign_id.upper() == WELLNESS_CAMPAIGN_ID.upper()
+        
+        logger.info(f"🎯 [DB-ORCH] Campaign identification:")
+        logger.info(f"🎯 [DB-ORCH]   - Is Intro Campaign: {'✅' if is_intro_campaign else '❌'}")
+        logger.info(f"🎯 [DB-ORCH]   - Is Wellness Campaign: {'✅' if is_wellness_campaign else '❌'}")
+        logger.info(f"🎯 [DB-ORCH]   - Campaign Type: {'INTRO' if is_intro_campaign else 'WELLNESS' if is_wellness_campaign else 'UNKNOWN'}")
+        
+        # WELLNESS CAMPAIGN LOGIC: Only update status for opt-out
         if is_wellness_campaign:
             if new_status.upper() == 'OPTED_OUT':
-                logger.info(f"🩺 [DB-ORCH] Wellness campaign opt-out - updating status to OPTED_OUT")
+                logger.info(f"🩺 [DB-ORCH] ✅ Wellness campaign opt-out detected - proceeding with status update to OPTED_OUT")
                 # Continue with normal processing to update status to OPTED_OUT
             else:
-                logger.info(
-                    f"🩺 [DB-ORCH] Wellness campaign call completed - No status update needed. "
-                    f"Member {member_id} remains ENROLLED in wellness campaign {campaign_id}. "
-                    f"Received status: {new_status}"
-                )
-                # Log the call but don't change enrollment status
-                return self.update_outreach_attempts(webhook_data, mapped_data, {"rows_affected": 0})
+                logger.info(f"🩺 [DB-ORCH] ℹ️ Wellness campaign call completed successfully")
+                logger.info(f"🩺 [DB-ORCH] ℹ️ No enrollment status change needed - member remains ENROLLED")
+                logger.info(f"🩺 [DB-ORCH] ℹ️ Received status '{new_status}' will be logged in outreach_attempts only")
+                # Log the call but don't change enrollment status for wellness campaigns
+                return None
 
         # Campaign IDs for auto-transition logic
         INTRO_CAMPAIGN_ID = "34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"
@@ -383,11 +394,16 @@ class DatabaseOrchestrator:
             # Skip the update to prevent constraint violation
             return None
 
-        # Check if this is intro campaign completion requiring auto-transition to wellness
+        # AUTO-TRANSITION LOGIC: Check if intro campaign completion requires wellness transition
         should_transition_to_wellness = (
-            campaign_id.upper() == INTRO_CAMPAIGN_ID.upper() and 
+            is_intro_campaign and 
             new_status == "ENROLLED"
         )
+
+        logger.info(f"🔄 [DB-ORCH] Auto-transition evaluation:")
+        logger.info(f"🔄 [DB-ORCH]   - Is intro campaign: {'✅' if is_intro_campaign else '❌'}")
+        logger.info(f"🔄 [DB-ORCH]   - Status is ENROLLED: {'✅' if new_status == 'ENROLLED' else '❌'}")
+        logger.info(f"🔄 [DB-ORCH]   - Should auto-transition: {'✅ YES' if should_transition_to_wellness else '❌ NO'}")
 
         if should_transition_to_wellness:
             logger.info(f"🔄 [DB-ORCH] Auto-transitioning member {member_id} from intro campaign to wellness campaign")
@@ -456,16 +472,19 @@ class DatabaseOrchestrator:
                 logger.info(f"✅ [DB-ORCH] Intro campaign updated: {intro_rows} rows, Wellness campaign updated: {wellness_rows} rows")
                 logger.info(f"✅ [DB-ORCH] Campaign transition: {campaign_id} (UNENROLLED) → {WELLNESS_CAMPAIGN_ID} (ENROLLED)")
                 
-                return self.update_outreach_attempts(
-                    webhook_data, mapped_data, {"rows_affected": intro_rows + wellness_rows}
-                )
+                return None
             except Exception as e:
                 logger.error(f"❌ [DB-ORCH] Auto-transition failed: {e}")
                 return None
         else:
-            # Standard status update without campaign change
+            # STANDARD STATUS UPDATE: No auto-transition needed
+            logger.info(f"📝 [DB-ORCH] Processing standard enrollment status update")
+            logger.info(f"📝 [DB-ORCH]   - Campaign: {campaign_id}")
+            logger.info(f"📝 [DB-ORCH]   - Target status: {new_status}")
+            
             try:
                 # First get the current status for audit logging
+                logger.info(f"🔍 [DB-ORCH] Fetching current enrollment status for audit trail")
                 current_status_q = """
                     SELECT current_status FROM engage360.member_campaign_enrollments_enhanced 
                     WHERE member_id = %s AND campaign_id = %s
@@ -473,7 +492,11 @@ class DatabaseOrchestrator:
                 current_records = self.db_service.execute_query(current_status_q, (member_id, campaign_id))
                 current_status = current_records[0].get('current_status') if current_records else None
                 
+                logger.info(f"📊 [DB-ORCH] Current enrollment status: {current_status if current_status else 'NOT_FOUND'}")
+                logger.info(f"📊 [DB-ORCH] Status change: {current_status} → {new_status}")
+                
                 # Execute the update
+                logger.info(f"🔄 [DB-ORCH] Executing enrollment status update")
                 q = """
                     UPDATE engage360.member_campaign_enrollments_enhanced
                        SET current_status = %s,
@@ -486,8 +509,11 @@ class DatabaseOrchestrator:
                 
                 rows_affected = self.db_service.execute_query(q, params, fetch_results=False)
                 
+                logger.info(f"✅ [DB-ORCH] Enrollment update completed - {rows_affected} rows affected")
+                
                 # Log status change if update actually happened
                 if rows_affected > 0 and current_status != new_status:
+                    logger.info(f"📋 [DB-ORCH] Logging status change to audit history")
                     self.log_status_change(
                         member_id=member_id,
                         campaign_id=campaign_id,
@@ -496,12 +522,16 @@ class DatabaseOrchestrator:
                         change_source="WEBHOOK",
                         change_details=f"Webhook status update: {mapped_data.disposition}"
                     )
+                    logger.info(f"✅ [DB-ORCH] Status change audit logged successfully")
+                else:
+                    logger.info(f"ℹ️ [DB-ORCH] No status change audit needed (no rows updated or status unchanged)")
                 
                 # Final validation before sending to database
                 logger.info(f"🔍 [DB-ORCH] Final status value being sent to database: {repr(new_status)}")
                 logger.info(f"🔍 [DB-ORCH] SQL parameter bytes: {new_status.encode('utf-8').hex()}")
                 
-                return self.update_outreach_attempts(webhook_data, mapped_data, {"rows_affected": rows_affected})
+                # Return None since this method executed the update directly
+                return None
                 
             except Exception as e:
                 logger.error(f"❌ [DB-ORCH] Standard status update failed: {e}")
@@ -509,6 +539,111 @@ class DatabaseOrchestrator:
 
         # This should not be reached, but keeping for safety
         return None
+
+    def _handle_campaign_auto_transition(
+        self, webhook_data: Dict[str, Any], mapped_data: MappedCallData, 
+        member_id: str, campaign_id: str, new_status: str
+    ) -> bool:
+        """
+        Handle complex auto-transition logic (intro -> wellness).
+        Returns True if auto-transition was handled, False if standard processing should continue.
+        """
+        INTRO_CAMPAIGN_ID = "34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"
+        WELLNESS_CAMPAIGN_ID = "E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B"
+        
+        # Check if this is intro campaign completion requiring auto-transition to wellness
+        should_transition_to_wellness = (
+            campaign_id.upper() == INTRO_CAMPAIGN_ID.upper() and 
+            new_status == "ENROLLED"
+        )
+
+        if not should_transition_to_wellness:
+            logger.info(f"ℹ️ [DB-ORCH] No auto-transition needed - not intro campaign or status not ENROLLED")
+            return False
+            
+        logger.info(f"🚀 [DB-ORCH] STARTING AUTO-TRANSITION PROCESS")
+        logger.info(f"🚀 [DB-ORCH] Member: {member_id}")
+        logger.info(f"🚀 [DB-ORCH] From: Intro Campaign ({campaign_id}) → UNENROLLED")
+        logger.info(f"🚀 [DB-ORCH] To: Wellness Campaign ({WELLNESS_CAMPAIGN_ID}) → ENROLLED")
+        
+        # Step 1: Set intro campaign to UNENROLLED
+        intro_update_q = """
+            UPDATE engage360.member_campaign_enrollments_enhanced
+               SET current_status = 'UNENROLLED',
+                   last_attempt_ts = SYSDATETIMEOFFSET()
+             WHERE member_id = %s
+               AND campaign_id = %s
+        """
+        
+        # Step 2: Create/Update wellness campaign to ENROLLED
+        wellness_upsert_q = """
+            MERGE engage360.member_campaign_enrollments_enhanced AS tgt
+            USING (SELECT %s as member_id, %s as campaign_id, %s as new_status) AS src
+            ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
+            WHEN MATCHED THEN
+                UPDATE SET current_status = src.new_status, last_attempt_ts = SYSDATETIMEOFFSET()
+            WHEN NOT MATCHED THEN
+                INSERT (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, last_attempt_ts)
+                VALUES (NEWID(), src.member_id, src.campaign_id, SYSDATETIMEOFFSET(), src.new_status, SYSDATETIMEOFFSET());
+        """
+        
+        try:
+            # STEP 1: Update intro campaign to UNENROLLED
+            logger.info(f"🔧 [DB-ORCH] Step 1/2: Updating intro campaign status to UNENROLLED")
+            intro_rows = self.db_service.execute_query(intro_update_q, (member_id, campaign_id), fetch_results=False)
+            logger.info(f"✅ [DB-ORCH] Step 1/2 completed: {intro_rows} intro campaign rows updated")
+            
+            # Log intro campaign status change: ENROLLED -> UNENROLLED
+            if intro_rows > 0:
+                logger.info(f"📋 [DB-ORCH] Logging intro campaign status change to audit history")
+                self.log_status_change(
+                    member_id=member_id,
+                    campaign_id=campaign_id,
+                    previous_status="ENROLLED",
+                    new_status="UNENROLLED",
+                    change_source="WEBHOOK",
+                    change_details=f"Intro call successful - auto-transition to wellness campaign"
+                )
+                logger.info(f"✅ [DB-ORCH] Intro campaign audit log completed")
+            
+            # STEP 2: Create/Update wellness campaign to ENROLLED
+            logger.info(f"🔧 [DB-ORCH] Step 2/2: Creating/updating wellness campaign enrollment")
+            wellness_rows = self.db_service.execute_query(wellness_upsert_q, (member_id, WELLNESS_CAMPAIGN_ID, "ENROLLED"), fetch_results=False)
+            logger.info(f"✅ [DB-ORCH] Step 2/2 completed: {wellness_rows} wellness campaign rows affected")
+            
+            # Log wellness campaign status change
+            if wellness_rows > 0:
+                logger.info(f"📋 [DB-ORCH] Logging wellness campaign status change to audit history")
+                # Check if wellness record existed before
+                check_wellness_q = """
+                    SELECT current_status FROM engage360.member_campaign_enrollments_enhanced 
+                    WHERE member_id = %s AND campaign_id = %s
+                """
+                existing_wellness_records = self.db_service.execute_query(check_wellness_q, (member_id, WELLNESS_CAMPAIGN_ID))
+                previous_wellness_status = existing_wellness_records[0].get('current_status') if existing_wellness_records else None
+                
+                logger.info(f"📊 [DB-ORCH] Wellness campaign previous status: {previous_wellness_status if previous_wellness_status else 'NEW_RECORD'}")
+                
+                self.log_status_change(
+                    member_id=member_id,
+                    campaign_id=WELLNESS_CAMPAIGN_ID,
+                    previous_status=previous_wellness_status,
+                    new_status="ENROLLED",
+                    change_source="WEBHOOK",
+                    change_details=f"Auto-transitioned from intro campaign after successful call"
+                )
+                logger.info(f"✅ [DB-ORCH] Wellness campaign audit log completed")
+            
+            logger.info(f"🎉 [DB-ORCH] AUTO-TRANSITION COMPLETED SUCCESSFULLY!")
+            logger.info(f"🎉 [DB-ORCH] Summary:")
+            logger.info(f"🎉 [DB-ORCH]   - Intro campaign rows updated: {intro_rows}")
+            logger.info(f"🎉 [DB-ORCH]   - Wellness campaign rows affected: {wellness_rows}")
+            logger.info(f"🎉 [DB-ORCH]   - Final transition: {campaign_id} (UNENROLLED) → {WELLNESS_CAMPAIGN_ID} (ENROLLED)")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ [DB-ORCH] Auto-transition failed: {e}")
+            return False
 
     # -------------------------------------------------------------------------
     # Utils
