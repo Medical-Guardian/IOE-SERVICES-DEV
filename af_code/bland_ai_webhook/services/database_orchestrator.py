@@ -418,9 +418,7 @@ class DatabaseOrchestrator:
             
             try:
                 # Update intro campaign
-                cursor = self.connection.cursor()
-                cursor.execute(intro_update_q, (member_id, campaign_id))
-                intro_rows = cursor.rowcount
+                intro_rows = self.db_service.execute_update(intro_update_q, (member_id, campaign_id))
                 
                 # Log intro campaign status change: ENROLLED -> UNENROLLED
                 if intro_rows > 0:
@@ -434,8 +432,7 @@ class DatabaseOrchestrator:
                     )
                 
                 # Create/Update wellness campaign  
-                cursor.execute(wellness_upsert_q, (member_id, WELLNESS_CAMPAIGN_ID, "ENROLLED"))
-                wellness_rows = cursor.rowcount
+                wellness_rows = self.db_service.execute_update(wellness_upsert_q, (member_id, WELLNESS_CAMPAIGN_ID, "ENROLLED"))
                 
                 # Log wellness campaign status change
                 if wellness_rows > 0:
@@ -475,10 +472,8 @@ class DatabaseOrchestrator:
                     SELECT current_status FROM engage360.member_campaign_enrollments_enhanced 
                     WHERE member_id = %s AND campaign_id = %s
                 """
-                cursor = self.connection.cursor()
-                cursor.execute(current_status_q, (member_id, campaign_id))
-                current_record = cursor.fetchone()
-                current_status = current_record[0] if current_record else None
+                current_records = self.db_service.execute_query(current_status_q, (member_id, campaign_id))
+                current_status = current_records[0].get('current_status') if current_records else None
                 
                 # Execute the update
                 q = """
@@ -553,9 +548,8 @@ class DatabaseOrchestrator:
                     WHERE member_id = %s AND campaign_id = %s 
                     ORDER BY change_timestamp DESC
                 """
-                cursor = self.connection.cursor()
-                cursor.execute(last_change_query, (member_id, campaign_id))
-                last_change = cursor.fetchone()
+                last_change_records = self.db_service.execute_query(last_change_query, (member_id, campaign_id))
+                last_change = last_change_records[0] if last_change_records else None
                 
                 if last_change:
                     # Calculate duration in hours
@@ -563,7 +557,7 @@ class DatabaseOrchestrator:
                     from datetime import datetime
                     
                     current_time = datetime.now(pytz.UTC)
-                    last_time = last_change[0]
+                    last_time = last_change.get('change_timestamp')
                     if last_time.tzinfo is None:
                         last_time = pytz.UTC.localize(last_time)
                     
@@ -578,8 +572,7 @@ class DatabaseOrchestrator:
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             
-            cursor = self.connection.cursor()
-            cursor.execute(audit_query, (
+            self.db_service.execute_update(audit_query, (
                 member_id, campaign_id, previous_status, new_status, 
                 duration_hours, change_source, change_details
             ))
