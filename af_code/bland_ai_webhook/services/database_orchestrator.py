@@ -62,7 +62,7 @@ class DatabaseOrchestrator:
             tables_updated.append("outreach_attempts")
 
         # 3) Enrollment update (conditional + idempotent)
-        enr_qp = self._build_update_enrollment(webhook_data, enrollment_update)
+        enr_qp = self._build_update_enrollment(webhook_data, enrollment_update, mapped_data)
         if enr_qp:
             queries_to_run.append(enr_qp)
             tables_updated.append("member_campaign_enrollments_enhanced")
@@ -293,7 +293,7 @@ class DatabaseOrchestrator:
         return q, params
 
     def _build_update_enrollment(
-        self, webhook_data: Dict[str, Any], enrollment_update: EnrollmentUpdate
+        self, webhook_data: Dict[str, Any], enrollment_update: EnrollmentUpdate, mapped_data: MappedCallData
     ) -> Optional[Tuple[str, Tuple]]:
         """
         Prepare UPDATE for engage360.member_campaign_enrollments_enhanced
