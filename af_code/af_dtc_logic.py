@@ -1983,7 +1983,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = %s
         WHEN MATCHED THEN
             UPDATE SET 
-                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window)
+                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window);
                 -- Remove: current_status = 'PENDING' - preserve existing status
         """
         cursor = db_manager.execute_with_retry(
