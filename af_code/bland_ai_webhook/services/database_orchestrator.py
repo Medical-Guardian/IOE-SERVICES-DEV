@@ -418,7 +418,7 @@ class DatabaseOrchestrator:
             
             try:
                 # Update intro campaign
-                intro_rows = self.db_service.execute_update(intro_update_q, (member_id, campaign_id))
+                intro_rows = self.db_service.execute_query(intro_update_q, (member_id, campaign_id), fetch_results=False)
                 
                 # Log intro campaign status change: ENROLLED -> UNENROLLED
                 if intro_rows > 0:
@@ -432,7 +432,7 @@ class DatabaseOrchestrator:
                     )
                 
                 # Create/Update wellness campaign  
-                wellness_rows = self.db_service.execute_update(wellness_upsert_q, (member_id, WELLNESS_CAMPAIGN_ID, "ENROLLED"))
+                wellness_rows = self.db_service.execute_query(wellness_upsert_q, (member_id, WELLNESS_CAMPAIGN_ID, "ENROLLED"), fetch_results=False)
                 
                 # Log wellness campaign status change
                 if wellness_rows > 0:
@@ -484,7 +484,7 @@ class DatabaseOrchestrator:
                 """
                 params = (new_status, member_id, campaign_id, new_status)
                 
-                rows_affected = self.db_service.execute_update(q, params)
+                rows_affected = self.db_service.execute_query(q, params, fetch_results=False)
                 
                 # Log status change if update actually happened
                 if rows_affected > 0 and current_status != new_status:
@@ -569,10 +569,10 @@ class DatabaseOrchestrator:
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
             """
             
-            self.db_service.execute_update(audit_query, (
+            self.db_service.execute_query(audit_query, (
                 member_id, campaign_id, previous_status, new_status, 
                 duration_hours, change_source, change_details
-            ))
+            ), fetch_results=False)
             
             logger.info(f"📋 [DB-ORCH] Status change logged: {member_id} {previous_status}→{new_status} ({change_source})")
             
