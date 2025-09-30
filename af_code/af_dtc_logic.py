@@ -900,6 +900,57 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
         )
 
 
+def log_enrollment_status_change(connection, member_id: str, campaign_id: str, 
+                                 previous_status: Optional[str], new_status: str, 
+                                 change_source: str, change_details: Optional[str] = None):
+    """Log status changes to member_enrollment_status_history table for CSV processing."""
+    logger = logging.getLogger("dtc_file_processor")
+    try:
+        # Calculate duration since last change
+        duration_hours = None
+        if previous_status:
+            last_change_query = """
+                SELECT TOP 1 change_timestamp 
+                FROM engage360.member_enrollment_status_history 
+                WHERE member_id = %s AND campaign_id = %s 
+                ORDER BY change_timestamp DESC
+            """
+            cursor = connection.cursor()
+            cursor.execute(last_change_query, (member_id, campaign_id))
+            last_change = cursor.fetchone()
+            
+            if last_change:
+                from datetime import datetime, timezone
+                current_time = datetime.now(timezone.utc)
+                last_time = last_change[0]
+                
+                if last_time.tzinfo is None:
+                    import pytz
+                    last_time = pytz.UTC.localize(last_time)
+                
+                duration_delta = current_time - last_time
+                duration_hours = round(duration_delta.total_seconds() / 3600, 2)
+        
+        # Insert audit record
+        audit_query = """
+            INSERT INTO engage360.member_enrollment_status_history 
+            (member_id, campaign_id, previous_status, new_status, duration_since_last_change_hours, 
+             change_source, change_details)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """
+        
+        cursor = connection.cursor()
+        cursor.execute(audit_query, (
+            member_id, campaign_id, previous_status, new_status, 
+            duration_hours, change_source, change_details
+        ))
+        
+        logger.info(f"📋 [DTC-AUDIT] Status change logged: {member_id} {previous_status}→{new_status} ({change_source})")
+        
+    except Exception as e:
+        logger.error(f"❌ [DTC-AUDIT] Failed to log status change: {e}")
+
+
 def validate_and_cleanse_data_before_insert(
     df: pd.DataFrame, context: DTCProcessingContext
 ) -> Tuple[pd.DataFrame, List[Dict]]:
@@ -937,56 +988,6 @@ def validate_and_cleanse_data_before_insert(
     logger.info(f"Initialized clean columns. DataFrame now has {len(df_clean.columns)} columns")
 
     logger.info("Starting comprehensive data validation and cleansing...")
-
-    # Audit logging function for status changes
-    def log_enrollment_status_change(connection, member_id: str, campaign_id: str, 
-                                     previous_status: Optional[str], new_status: str, 
-                                     change_source: str, change_details: Optional[str] = None):
-        """Log status changes to member_enrollment_status_history table for CSV processing."""
-        try:
-            # Calculate duration since last change
-            duration_hours = None
-            if previous_status:
-                last_change_query = """
-                    SELECT TOP 1 change_timestamp 
-                    FROM engage360.member_enrollment_status_history 
-                    WHERE member_id = %s AND campaign_id = %s 
-                    ORDER BY change_timestamp DESC
-                """
-                cursor = connection.cursor()
-                cursor.execute(last_change_query, (member_id, campaign_id))
-                last_change = cursor.fetchone()
-                
-                if last_change:
-                    from datetime import datetime, timezone
-                    current_time = datetime.now(timezone.utc)
-                    last_time = last_change[0]
-                    
-                    if last_time.tzinfo is None:
-                        import pytz
-                        last_time = pytz.UTC.localize(last_time)
-                    
-                    duration_delta = current_time - last_time
-                    duration_hours = round(duration_delta.total_seconds() / 3600, 2)
-            
-            # Insert audit record
-            audit_query = """
-                INSERT INTO engage360.member_enrollment_status_history 
-                (member_id, campaign_id, previous_status, new_status, duration_since_last_change_hours, 
-                 change_source, change_details)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """
-            
-            cursor = connection.cursor()
-            cursor.execute(audit_query, (
-                member_id, campaign_id, previous_status, new_status, 
-                duration_hours, change_source, change_details
-            ))
-            
-            logger.info(f"📋 [DTC-AUDIT] Status change logged: {member_id} {previous_status}→{new_status} ({change_source})")
-            
-        except Exception as e:
-            logger.error(f"❌ [DTC-AUDIT] Failed to log status change: {e}")
 
     # Step 1: Handle Empty Values and NULL Conversion
     def clean_empty_values(value, target_type="string"):
