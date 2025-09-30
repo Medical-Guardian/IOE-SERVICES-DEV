@@ -24,6 +24,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from datetime import date  # For date handling
 from azure.storage.blob import BlobServiceClient
 from io import BytesIO
+import re  # For special character cleaning
 
 
 def get_blob_service_client():
@@ -936,6 +937,56 @@ def validate_and_cleanse_data_before_insert(
 
     logger.info("Starting comprehensive data validation and cleansing...")
 
+    # Audit logging function for status changes
+    def log_enrollment_status_change(connection, member_id: str, campaign_id: str, 
+                                     previous_status: Optional[str], new_status: str, 
+                                     change_source: str, change_details: Optional[str] = None):
+        """Log status changes to member_enrollment_status_history table for CSV processing."""
+        try:
+            # Calculate duration since last change
+            duration_hours = None
+            if previous_status:
+                last_change_query = """
+                    SELECT TOP 1 change_timestamp 
+                    FROM engage360.member_enrollment_status_history 
+                    WHERE member_id = %s AND campaign_id = %s 
+                    ORDER BY change_timestamp DESC
+                """
+                cursor = connection.cursor()
+                cursor.execute(last_change_query, (member_id, campaign_id))
+                last_change = cursor.fetchone()
+                
+                if last_change:
+                    from datetime import datetime, timezone
+                    current_time = datetime.now(timezone.utc)
+                    last_time = last_change[0]
+                    
+                    if last_time.tzinfo is None:
+                        import pytz
+                        last_time = pytz.UTC.localize(last_time)
+                    
+                    duration_delta = current_time - last_time
+                    duration_hours = round(duration_delta.total_seconds() / 3600, 2)
+            
+            # Insert audit record
+            audit_query = """
+                INSERT INTO engage360.member_enrollment_status_history 
+                (member_id, campaign_id, previous_status, new_status, duration_since_last_change_hours, 
+                 change_source, change_details)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            cursor = connection.cursor()
+            cursor.execute(audit_query, (
+                member_id, campaign_id, previous_status, new_status, 
+                duration_hours, change_source, change_details
+            ))
+            
+            logger.info(f"📋 [DTC-AUDIT] Status change logged: {member_id} {previous_status}→{new_status} ({change_source})")
+            
+        except Exception as e:
+            logger.error(f"❌ [DTC-AUDIT] Failed to log status change: {e}")
+
     # Step 1: Handle Empty Values and NULL Conversion
     def clean_empty_values(value, target_type="string"):
         """Convert various empty representations to proper NULL values"""
@@ -965,6 +1016,8 @@ def validate_and_cleanse_data_before_insert(
         partner_name = clean_empty_values(row.get("partner_name"))
         if not partner_name:
             row_errors.append(f"{row_id}: Missing required partner_name")
+        elif len(partner_name) > 100:
+            row_errors.append(f"Invalid partner_name: '{partner_name}' (exceeds the 100 character limit)")
         elif partner_name != "Medical Guardian":
             row_errors.append(
                 f"Invalid partner_name: '{partner_name}' (expected 'Medical Guardian')"
@@ -1047,9 +1100,19 @@ def validate_and_cleanse_data_before_insert(
         # Member First Name
         first_name = clean_empty_values(row.get("member_first_name"))
         if first_name:
-            proper_first = proper_case(first_name)
-            df_clean.loc[idx, "member_first_name"] = proper_first
-            df_clean.loc[idx, "first_name_clean"] = proper_first
+            # Remove special characters but allow letters, spaces, and apostrophes
+            cleaned_first = re.sub(r"[^a-zA-Z\s']", "", first_name)
+            if len(cleaned_first) > 50:
+                row_errors.append("member_first_name exceeds maximum length of 50 characters")
+                cleaned_first = None
+
+            if cleaned_first:
+                proper_first = proper_case(cleaned_first)
+                df_clean.loc[idx, "member_first_name"] = proper_first
+                df_clean.loc[idx, "first_name_clean"] = proper_first
+            else:
+                df_clean.loc[idx, "member_first_name"] = None
+                df_clean.loc[idx, "first_name_clean"] = None
         else:
             df_clean.loc[idx, "member_first_name"] = None
             df_clean.loc[idx, "first_name_clean"] = None
@@ -1071,9 +1134,19 @@ def validate_and_cleanse_data_before_insert(
         # Member Last Name
         last_name = clean_empty_values(row.get("member_last_name"))
         if last_name:
-            proper_last = proper_case(last_name)
-            df_clean.loc[idx, "member_last_name"] = proper_last
-            df_clean.loc[idx, "last_name_clean"] = proper_last
+            # Remove special characters but allow letters, spaces, and apostrophes
+            cleaned_last = re.sub(r"[^a-zA-Z\s']", "", last_name)
+            if len(cleaned_last) > 50:
+                row_errors.append("member_last_name exceeds maximum length of 50 characters")
+                cleaned_last = None
+
+            if cleaned_last:
+                proper_last = proper_case(cleaned_last)
+                df_clean.loc[idx, "member_last_name"] = proper_last
+                df_clean.loc[idx, "last_name_clean"] = proper_last
+            else:
+                df_clean.loc[idx, "member_last_name"] = None
+                df_clean.loc[idx, "last_name_clean"] = None
         else:
             df_clean.loc[idx, "member_last_name"] = None
             df_clean.loc[idx, "last_name_clean"] = None
@@ -1084,18 +1157,38 @@ def validate_and_cleanse_data_before_insert(
         # 🔥 FIXED: Caregiver Names Processing
         caregiver_first = clean_empty_values(row.get("caregiver_first_name"))
         if caregiver_first:
-            proper_caregiver_first = proper_case(caregiver_first)
-            df_clean.loc[idx, "caregiver_first_name"] = proper_caregiver_first
-            df_clean.loc[idx, "caregiver_first_clean"] = proper_caregiver_first
+            # Remove special characters but allow letters, spaces, and apostrophes
+            cleaned_caregiver_first = re.sub(r"[^a-zA-Z\s']", "", caregiver_first)
+            if len(cleaned_caregiver_first) > 50:
+                row_errors.append("caregiver_first_name exceeds maximum length of 50 characters")
+                cleaned_caregiver_first = None
+
+            if cleaned_caregiver_first:
+                proper_caregiver_first = proper_case(cleaned_caregiver_first)
+                df_clean.loc[idx, "caregiver_first_name"] = proper_caregiver_first
+                df_clean.loc[idx, "caregiver_first_clean"] = proper_caregiver_first
+            else:
+                df_clean.loc[idx, "caregiver_first_name"] = None
+                df_clean.loc[idx, "caregiver_first_clean"] = None
         else:
             df_clean.loc[idx, "caregiver_first_name"] = None
             df_clean.loc[idx, "caregiver_first_clean"] = None
 
         caregiver_last = clean_empty_values(row.get("caregiver_last_name"))
         if caregiver_last:
-            proper_caregiver_last = proper_case(caregiver_last)
-            df_clean.loc[idx, "caregiver_last_name"] = proper_caregiver_last
-            df_clean.loc[idx, "caregiver_last_clean"] = proper_caregiver_last
+            # Remove special characters but allow letters, spaces, and apostrophes
+            cleaned_caregiver_last = re.sub(r"[^a-zA-Z\s']", "", caregiver_last)
+            if len(cleaned_caregiver_last) > 50:
+                row_errors.append("caregiver_last_name exceeds maximum length of 50 characters")
+                cleaned_caregiver_last = None
+
+            if cleaned_caregiver_last:
+                proper_caregiver_last = proper_case(cleaned_caregiver_last)
+                df_clean.loc[idx, "caregiver_last_name"] = proper_caregiver_last
+                df_clean.loc[idx, "caregiver_last_clean"] = proper_caregiver_last
+            else:
+                df_clean.loc[idx, "caregiver_last_name"] = None
+                df_clean.loc[idx, "caregiver_last_clean"] = None
         else:
             df_clean.loc[idx, "caregiver_last_name"] = None
             df_clean.loc[idx, "caregiver_last_clean"] = None
@@ -1729,8 +1822,67 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             (enrollment_start_time, str(context.file_batch_id)),
         )
 
-        # Handle "enroll" - use intro campaign
+        # Handle "enroll" - use intro campaign, but first handle UNENROLLED wellness transitions
         logger.info("Processing 'enroll' records...")
+        
+        # First, transition UNENROLLED wellness members back to intro campaign
+        logger.info("Handling UNENROLLED wellness members transition to intro campaign...")
+        wellness_to_intro_sql = f"""
+        UPDATE wellness_enroll
+        SET campaign_id = %s,
+            current_status = 'ENROLLED',
+            enrollment_ts = SYSDATETIMEOFFSET(),
+            unenrollment_reason = NULL
+        FROM engage360.member_campaign_enrollments_enhanced wellness_enroll
+        JOIN engage360.members m ON wellness_enroll.member_id = m.member_id
+        JOIN {context.config.staging_table} stg 
+            ON m.org_id = stg.org_id 
+            AND m.salesforce_account_number = stg.salesforce_account_number
+        WHERE stg.file_batch_id = %s
+          AND stg.processing_status = 'TRANSFORMING'
+          AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'ENROLL'
+          AND wellness_enroll.campaign_id = %s
+          AND wellness_enroll.current_status = 'UNENROLLED'
+        """
+        cursor = db_manager.execute_with_retry(
+            context.connection, 
+            wellness_to_intro_sql, 
+            (str(intro_campaign_id), str(context.file_batch_id), str(wellness_campaign_id))
+        )
+        transitioned_wellness = cursor.rowcount
+        logger.info(f"Transitioned {transitioned_wellness} UNENROLLED wellness members back to intro campaign")
+        
+        # Log status changes for transitioned members
+        if transitioned_wellness > 0:
+            # Get the member IDs that were transitioned for audit logging
+            transitioned_members_sql = f"""
+                SELECT DISTINCT m.member_id
+                FROM engage360.members m
+                JOIN {context.config.staging_table} stg 
+                    ON m.org_id = stg.org_id 
+                    AND m.salesforce_account_number = stg.salesforce_account_number
+                JOIN engage360.member_campaign_enrollments_enhanced e ON e.member_id = m.member_id
+                WHERE stg.file_batch_id = %s
+                  AND stg.processing_status = 'TRANSFORMING'
+                  AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'ENROLL'
+                  AND e.campaign_id = %s
+            """
+            cursor = db_manager.execute_with_retry(
+                context.connection, 
+                transitioned_members_sql, 
+                (str(context.file_batch_id), str(intro_campaign_id))
+            )
+            transitioned_member_ids = cursor.fetchall()
+            
+            for member_record in transitioned_member_ids:
+                member_id = str(member_record[0])
+                log_enrollment_status_change(
+                    context.connection, member_id, str(intro_campaign_id),
+                    "UNENROLLED", "ENROLLED", "CSV_PROCESSING",
+                    "Re-enrollment: Transitioned from UNENROLLED wellness back to intro ENROLLED"
+                )
+        
+        # Then handle normal intro campaign enrollments (new enrollments and re-enrollments)
         enroll_sql = f"""
         MERGE engage360.member_campaign_enrollments_enhanced AS tgt
         USING (
@@ -1748,23 +1900,34 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 AND m.salesforce_account_number = stg.salesforce_account_number
             WHERE stg.file_batch_id = %s
               AND stg.processing_status = 'TRANSFORMING'
-              AND LOWER(LTRIM(RTRIM(stg.enrollment_status))) = 'enroll'
+              AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'ENROLL'
+              -- Exclude members who already have wellness enrollments (handled above)
+              AND NOT EXISTS (
+                  SELECT 1 FROM engage360.member_campaign_enrollments_enhanced existing
+                  WHERE existing.member_id = m.member_id 
+                    AND existing.campaign_id = %s
+              )
         ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
         WHEN MATCHED THEN
             UPDATE SET 
-                current_status = CASE WHEN tgt.current_status = 'Unenrolled' THEN 'PENDING' ELSE tgt.current_status END,
-                enrollment_ts = CASE WHEN tgt.current_status = 'Unenrolled' THEN SYSDATETIMEOFFSET() ELSE tgt.enrollment_ts END,
+                current_status = CASE WHEN tgt.current_status = 'UNENROLLED' THEN 'ENROLLED' ELSE tgt.current_status END,
+                enrollment_ts = CASE WHEN tgt.current_status = 'UNENROLLED' THEN SYSDATETIMEOFFSET() ELSE tgt.enrollment_ts END,
                 preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
-                unenrollment_reason = CASE WHEN tgt.current_status = 'Unenrolled' THEN NULL ELSE tgt.unenrollment_reason END
+                unenrollment_reason = CASE WHEN tgt.current_status = 'UNENROLLED' THEN NULL ELSE tgt.unenrollment_reason END
         WHEN NOT MATCHED THEN
             INSERT (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, preferred_window)
-            VALUES (NEWID(), src.member_id, src.campaign_id, SYSDATETIMEOFFSET(), 'PENDING', src.preferred_window);
+            VALUES (NEWID(), src.member_id, src.campaign_id, SYSDATETIMEOFFSET(), 'ENROLLED', src.preferred_window);
         """
         cursor = db_manager.execute_with_retry(
-            context.connection, enroll_sql, (str(intro_campaign_id), str(context.file_batch_id))
+            context.connection, 
+            enroll_sql, 
+            (str(intro_campaign_id), str(context.file_batch_id), str(wellness_campaign_id))
         )
         new_enrollments = cursor.rowcount
-        logger.info(f"Processed {new_enrollments} enrollment records (new + re-enrolled)")
+        logger.info(f"Processed {new_enrollments} intro campaign enrollment records (new + re-enrolled)")
+        
+        total_enrollments = transitioned_wellness + new_enrollments
+        logger.info(f"Total enrollment processing: {total_enrollments} records (transitions + new/re-enrolled)")
 
         # Handle "update" - use wellness campaign
         logger.info("Processing 'update' records...")
@@ -1778,7 +1941,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             AND m.salesforce_account_number = stg.salesforce_account_number
         WHERE stg.file_batch_id = %s
           AND stg.processing_status = 'TRANSFORMING'
-          AND LOWER(LTRIM(RTRIM(stg.enrollment_status))) = 'update'
+          AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UPDATE'
         GROUP BY m.member_id
         HAVING COUNT(*) > 1
         """
@@ -1815,12 +1978,12 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 AND m.salesforce_account_number = stg.salesforce_account_number
             WHERE stg.file_batch_id = %s
               AND stg.processing_status = 'TRANSFORMING'
-              AND LOWER(LTRIM(RTRIM(stg.enrollment_status))) = 'update'
+              AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UPDATE'
         ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = %s
         WHEN MATCHED THEN
             UPDATE SET 
-                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
-                current_status = 'PENDING';
+                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window)
+                -- Remove: current_status = 'PENDING' - preserve existing status
         """
         cursor = db_manager.execute_with_retry(
             context.connection,
@@ -1834,7 +1997,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         logger.info("Processing 'unenroll' records...")
         unenroll_sql = f"""
         UPDATE e
-        SET current_status = 'Unenrolled',
+        SET current_status = 'UNENROLLED',
             unenrollment_reason = COALESCE(stg.unenrollment_reason, 'Updated via file processing')
         FROM engage360.member_campaign_enrollments_enhanced e
         JOIN engage360.members m ON e.member_id = m.member_id
@@ -1843,7 +2006,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             AND m.salesforce_account_number = stg.salesforce_account_number
         WHERE stg.file_batch_id = %s
           AND stg.processing_status = 'TRANSFORMING'
-          AND LOWER(LTRIM(RTRIM(stg.enrollment_status))) = 'unenroll'
+          AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UNENROLL'
           AND e.campaign_id IN (%s, %s)
         """
         cursor = db_manager.execute_with_retry(
@@ -1853,6 +2016,39 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         )
         unenrolled_count = cursor.rowcount
         logger.info(f"Unenrolled {unenrolled_count} members")
+        
+        # Log status changes for unenrolled members
+        if unenrolled_count > 0:
+            # Get the member IDs and campaign IDs that were unenrolled for audit logging
+            unenrolled_members_sql = f"""
+                SELECT DISTINCT m.member_id, e.campaign_id, e.current_status
+                FROM engage360.members m
+                JOIN {context.config.staging_table} stg 
+                    ON m.org_id = stg.org_id 
+                    AND m.salesforce_account_number = stg.salesforce_account_number
+                JOIN engage360.member_campaign_enrollments_enhanced e ON e.member_id = m.member_id
+                WHERE stg.file_batch_id = %s
+                  AND stg.processing_status = 'TRANSFORMING'
+                  AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UNENROLL'
+                  AND e.campaign_id IN (%s, %s)
+                  AND e.current_status = 'UNENROLLED'
+            """
+            cursor = db_manager.execute_with_retry(
+                context.connection,
+                unenrolled_members_sql,
+                (str(context.file_batch_id), str(intro_campaign_id), str(wellness_campaign_id)),
+            )
+            unenrolled_member_records = cursor.fetchall()
+            
+            for member_record in unenrolled_member_records:
+                member_id = str(member_record[0])
+                campaign_id = str(member_record[1])
+                # Assume previous status was ENROLLED (since we only unenroll active members)
+                log_enrollment_status_change(
+                    context.connection, member_id, campaign_id,
+                    "ENROLLED", "UNENROLLED", "CSV_PROCESSING",
+                    "CSV unenroll processing"
+                )
 
         # 📦 Handle device processing (if any devices in data)
         logger.info("Checking for duplicate devices...")

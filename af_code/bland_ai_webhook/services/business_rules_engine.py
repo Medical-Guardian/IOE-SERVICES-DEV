@@ -91,6 +91,15 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
                 confidence_level="high",
             )
 
+        # INTERESTED -> ENROLLED (successful intro call)
+        if disposition_tag == "INTERESTED":
+            return EnrollmentUpdate(
+                should_update=True,
+                new_status="ENROLLED",
+                reason="DTC_INTRO_CALL: Member interested; enrolling",
+                confidence_level="high",
+            )
+
         # OptOut -> OPTED_OUT if explicit request
         if disp == "OptOut" and mapped.opt_out_requested:
             return EnrollmentUpdate(
@@ -100,21 +109,21 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
                 confidence_level="high",
             )
 
-        # NoAnswer -> PENDING
+        # NoAnswer -> Keep ENROLLED (retry)
         if disp == "NoAnswer":
             return EnrollmentUpdate(
-                should_update=True,
-                new_status="PENDING",
-                reason="DTC_INTRO_CALL: No answer",
+                should_update=False,
+                new_status=None,
+                reason="DTC_INTRO_CALL: No answer - keeping ENROLLED for retry",
                 confidence_level="medium",
             )
 
-        # Failed -> PENDING
+        # Failed -> Keep ENROLLED (retry)
         if disp == "Failed":
             return EnrollmentUpdate(
-                should_update=True,
-                new_status="PENDING",
-                reason="DTC_INTRO_CALL: Failed call",
+                should_update=False,
+                new_status=None,
+                reason="DTC_INTRO_CALL: Failed call - keeping ENROLLED for retry",
                 confidence_level="low",
             )
 
