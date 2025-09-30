@@ -106,7 +106,7 @@ LEFT JOIN (
 ) failed_attempts ON mce.enrollment_id = failed_attempts.enrollment_id
 WHERE
     c.status = 'Active'
-    AND mce.current_status = 'PENDING'  -- INTRO: Members not yet called
+    AND mce.current_status = 'ENROLLED'  -- INTRO: Members enrolled and ready for intro calls
     AND m.timezone IS NOT NULL
     AND mce.preferred_window IS NOT NULL
     AND c.campaign_id = %s
@@ -152,10 +152,18 @@ LEFT JOIN (
 ) failed_attempts ON mce.enrollment_id = failed_attempts.enrollment_id
 WHERE
     c.status = 'Active'
-    AND mce.current_status = 'ENROLLED'  -- WELLNESS: Members who completed intro calls
+    AND mce.current_status = 'ENROLLED'  -- WELLNESS: Members enrolled in wellness campaign
     AND m.timezone IS NOT NULL
     AND mce.preferred_window IS NOT NULL
     AND c.campaign_id = %s
+    AND EXISTS (
+        -- Ensure intro campaign is UNENROLLED (intro call completed)
+        SELECT 1
+        FROM engage360.member_campaign_enrollments_enhanced intro_mce
+        WHERE intro_mce.member_id = m.member_id
+          AND intro_mce.campaign_id = '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC'  -- DTC Intro Campaign
+          AND intro_mce.current_status = 'UNENROLLED'
+    )
     AND NOT EXISTS (
         SELECT 1
         FROM engage360.outreach_attempts oa
