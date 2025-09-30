@@ -575,18 +575,10 @@ class DatabaseOrchestrator:
                AND campaign_id = %s
         """
         
-        # Step 2: Create/Update wellness campaign to ENROLLED (copy preferred_window from intro)
+        # Step 2: Create/Update wellness campaign to ENROLLED (use preferred_window from intro)
         wellness_upsert_q = """
             MERGE engage360.member_campaign_enrollments_enhanced AS tgt
-            USING (
-                SELECT 
-                    %s as member_id, 
-                    %s as campaign_id, 
-                    %s as new_status,
-                    intro.preferred_window
-                FROM engage360.member_campaign_enrollments_enhanced intro
-                WHERE intro.member_id = %s AND intro.campaign_id = %s
-            ) AS src
+            USING (SELECT %s as member_id, %s as campaign_id, %s as new_status, %s as preferred_window) AS src
             ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
             WHEN MATCHED THEN
                 UPDATE SET current_status = src.new_status, last_attempt_ts = SYSDATETIMEOFFSET()
@@ -596,6 +588,25 @@ class DatabaseOrchestrator:
         """
         
         try:
+            # STEP 0: Get current intro campaign data BEFORE making changes
+            logger.info(f"🔍 [DB-ORCH] Step 0: Fetching intro campaign data before auto-transition")
+            get_intro_data_q = """
+                SELECT current_status, preferred_window 
+                FROM engage360.member_campaign_enrollments_enhanced 
+                WHERE member_id = %s AND campaign_id = %s
+            """
+            intro_data = self.db_service.execute_query(get_intro_data_q, (member_id, campaign_id))
+            
+            if intro_data:
+                current_intro_status = intro_data[0].get('current_status')
+                preferred_window = intro_data[0].get('preferred_window')
+                logger.info(f"📊 [DB-ORCH] Intro campaign current data:")
+                logger.info(f"📊 [DB-ORCH]   - Current status: {current_intro_status}")
+                logger.info(f"📊 [DB-ORCH]   - Preferred window: {preferred_window}")
+            else:
+                logger.error(f"❌ [DB-ORCH] No intro campaign record found for member {member_id}, campaign {campaign_id}")
+                return False
+            
             # STEP 1: Update intro campaign to UNENROLLED
             logger.info(f"🔧 [DB-ORCH] Step 1/2: Updating intro campaign status to UNENROLLED")
             intro_rows = self.db_service.execute_query(intro_update_q, (member_id, campaign_id), fetch_results=False)
@@ -616,8 +627,8 @@ class DatabaseOrchestrator:
             
             # STEP 2: Create/Update wellness campaign to ENROLLED
             logger.info(f"🔧 [DB-ORCH] Step 2/2: Creating/updating wellness campaign enrollment")
-            logger.info(f"🔧 [DB-ORCH] Copying preferred_window from intro campaign {campaign_id} to wellness campaign {WELLNESS_CAMPAIGN_ID}")
-            wellness_rows = self.db_service.execute_query(wellness_upsert_q, (member_id, WELLNESS_CAMPAIGN_ID, "ENROLLED", member_id, campaign_id), fetch_results=False)
+            logger.info(f"🔧 [DB-ORCH] Using preferred_window '{preferred_window}' from intro campaign {campaign_id}")
+            wellness_rows = self.db_service.execute_query(wellness_upsert_q, (member_id, WELLNESS_CAMPAIGN_ID, "ENROLLED", preferred_window), fetch_results=False)
             logger.info(f"✅ [DB-ORCH] Step 2/2 completed: {wellness_rows} wellness campaign rows affected")
             
             # Log wellness campaign status change
