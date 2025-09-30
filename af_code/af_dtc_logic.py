@@ -907,6 +907,7 @@ def validate_and_cleanse_data_before_insert(
     Comprehensive data validation and cleansing before database insertion.
     Returns cleansed DataFrame and list of validation errors.
     """
+    import re
     logger = logging.getLogger("dtc_file_processor")
     validation_errors = []
     df_clean = df.copy()
