@@ -18,7 +18,12 @@ from dataclasses import dataclass, field
 import pymssql
 import json
 import re
-from azure.storage.blob import BlobServiceClient
+try:
+    from azure.storage.blob import BlobServiceClient
+    AZURE_STORAGE_AVAILABLE = True
+except ImportError:
+    BlobServiceClient = None
+    AZURE_STORAGE_AVAILABLE = False
 from io import BytesIO
 
 

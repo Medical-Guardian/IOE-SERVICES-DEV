@@ -4,7 +4,7 @@ from datetime import datetime
 from ..models.qualified_campaign import QualifiedCampaign
 from ..models.eligible_member import EligibleMember
 from ..models.batch_request import BatchResult
-from ...shared.database_service import DatabaseService
+from ...bland_ai_webhook.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

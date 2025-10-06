@@ -3,7 +3,7 @@ import aiohttp
 import json
 from typing import Dict, Any, Optional
 from datetime import datetime
-from .config_manager import ConfigManager
+from ..bland_ai_webhook.services.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 

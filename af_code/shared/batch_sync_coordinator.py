@@ -1,8 +1,8 @@
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from .database_service import DatabaseService
-from .config_manager import ConfigManager
+from ..bland_ai_webhook.services.database_service import DatabaseService
+from ..bland_ai_webhook.services.config_manager import ConfigManager
 from .bland_ai_batch_monitor import BlandAIBatchMonitor
 
 logger = logging.getLogger(__name__)

@@ -18,11 +18,25 @@ from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass, field
 import pymssql  # Replaced pyodbc
 from pathlib import Path
-import pandera as pa
-from pandera import Column, DataFrameSchema, Check
+try:
+    import pandera as pa
+    from pandera import Column, DataFrameSchema, Check
+    PANDERA_AVAILABLE = True
+except ImportError:
+    # Fallback when pandera is not available
+    PANDERA_AVAILABLE = False
+    pa = None
+    Column = None
+    DataFrameSchema = None
+    Check = None
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from datetime import date  # For date handling
-from azure.storage.blob import BlobServiceClient
+try:
+    from azure.storage.blob import BlobServiceClient
+    AZURE_STORAGE_AVAILABLE = True
+except ImportError:
+    BlobServiceClient = None
+    AZURE_STORAGE_AVAILABLE = False
 from io import BytesIO
 import re  # For special character cleaning
 

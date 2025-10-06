@@ -2,7 +2,7 @@ import logging
 from typing import List, Dict, Any
 from ..models.qualified_campaign import QualifiedCampaign
 from ..models.eligible_member import EligibleMember
-from ...shared.database_service import DatabaseService
+from ...bland_ai_webhook.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

@@ -2,7 +2,7 @@ import logging
 from typing import List, Optional
 from datetime import datetime, time
 from ..models.qualified_campaign import QualifiedCampaign
-from ...shared.database_service import DatabaseService
+from ...bland_ai_webhook.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 

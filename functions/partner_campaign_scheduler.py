@@ -4,6 +4,7 @@ import json
 import traceback
 from datetime import datetime
 
+
 # Create the blueprint
 partner_campaign_bp = func.Blueprint()
 

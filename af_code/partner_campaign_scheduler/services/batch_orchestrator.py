@@ -5,7 +5,7 @@ from ..models.qualified_campaign import QualifiedCampaign
 from ..models.eligible_member import EligibleMember
 from ..models.batch_request import BatchRequest, BatchResult
 from ...shared.bland_ai_client import BlandAIClient
-from ...shared.config_manager import ConfigManager
+from ...bland_ai_webhook.services.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 

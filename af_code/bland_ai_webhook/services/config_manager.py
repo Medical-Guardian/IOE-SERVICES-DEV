@@ -120,8 +120,8 @@ class ConfigManager:
             connection_string = self.get_config("SERVICE_BUS_CONNECTION_STRING")
 
         if not connection_string:
-            logger.critical("🚨 [CONFIG-MANAGER] Service Bus connection string not configured.")
-            raise ValueError("Service Bus connection string is not configured.")
+            logger.warning("⚠️ [CONFIG-MANAGER] Service Bus connection string not configured.")
+            return None
 
         return connection_string
 

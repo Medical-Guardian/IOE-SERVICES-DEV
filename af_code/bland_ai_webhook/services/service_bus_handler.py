@@ -27,6 +27,7 @@ class ServiceBusHandler:
         """
         self.config_manager = config_manager
         self.connection_string = self.config_manager.get_service_bus_connection_string()
+        self.enabled = self.connection_string is not None
         self.queue_name = self.config_manager.get_config(
             "SERVICE_BUS_QUEUE_NAME", "IOE-POSTCALL-ANALYSIS"
         )
@@ -39,8 +40,8 @@ class ServiceBusHandler:
         )
 
         if not self.connection_string:
-            logger.error("🚨 [SERVICE-BUS] SERVICE_BUS_CONNECTION_STRING not configured")
-            raise ValueError("Service Bus connection string is required")
+            logger.warning("⚠️ [SERVICE-BUS] SERVICE_BUS_CONNECTION_STRING not configured - Service Bus disabled")
+            return
 
         logger.info(
             f"🚌 [SERVICE-BUS] Handler initialized - Queue: {self.queue_name}, Max retries: {self.max_retries}"
@@ -60,6 +61,10 @@ class ServiceBusHandler:
         Returns:
             tuple[bool, Optional[str]]: (success, message_id or error_message)
         """
+        if not self.enabled:
+            logger.warning(f"⚠️ [SERVICE-BUS] Service Bus not enabled, skipping message for request_id: {request_id}")
+            return True, "service_bus_disabled"
+            
         logger.info(f"🚌 [SERVICE-BUS] Sending analysis message for request_id: {request_id}")
 
         message_content = self._prepare_message_content(webhook_data, mapped_data, request_id)
