@@ -15,7 +15,7 @@ class MemberEligibilityService:
         self.db_service = db_service
         logger.info("🔧 [MEMBER-ELIGIBILITY] Service initialized")
     
-    async def get_eligible_members(self, campaign: QualifiedCampaign) -> List[EligibleMember]:
+    def get_eligible_members(self, campaign: QualifiedCampaign) -> List[EligibleMember]:
         """
         Find eligible members with timezone-aware filtering and enhanced frequency protection
         """

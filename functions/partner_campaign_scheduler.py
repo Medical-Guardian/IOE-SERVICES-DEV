@@ -55,7 +55,7 @@ async def partner_campaign_scheduler_timer(timer: func.TimerRequest) -> None:
         
         # Step 1: Find qualified campaigns
         logging.info("🔍 [PARTNER-SCHEDULER] Starting campaign qualification process...")
-        qualified_campaigns = await campaign_qualifier.get_qualified_campaigns()
+        qualified_campaigns = campaign_qualifier.get_qualified_campaigns()  # Remove await - sync method
         
         if not qualified_campaigns:
             logging.info("📋 [PARTNER-SCHEDULER] No qualified Partner campaigns found - execution complete")
@@ -81,7 +81,7 @@ async def partner_campaign_scheduler_timer(timer: func.TimerRequest) -> None:
             
             # Step 3: Find eligible members for this campaign
             logging.info(f"👥 [PARTNER-SCHEDULER] Finding eligible members...")
-            eligible_members = await member_service.get_eligible_members(campaign)
+            eligible_members = member_service.get_eligible_members(campaign)  # Remove await - sync method
             
             if not eligible_members:
                 logging.info(f"⚠️ [PARTNER-SCHEDULER] No eligible members found for campaign: {campaign.name}")
@@ -103,7 +103,7 @@ async def partner_campaign_scheduler_timer(timer: func.TimerRequest) -> None:
                 
                 if batch_result.success:
                     # Track successful submissions
-                    await status_tracker.log_batch_submission(campaign, batch, batch_result)
+                    status_tracker.log_batch_submission(campaign, batch, batch_result)  # Remove await - sync method
                     total_batches_submitted += 1
                     logging.info(f"✅ [PARTNER-SCHEDULER] Batch {batch_num} submitted successfully (Bland Batch ID: {batch_result.batch_id})")
                 else:

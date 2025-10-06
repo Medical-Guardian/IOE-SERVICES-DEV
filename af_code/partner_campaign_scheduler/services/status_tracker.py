@@ -17,7 +17,7 @@ class StatusTracker:
         self.db_service = db_service
         logger.info("🔧 [STATUS-TRACKER] Service initialized")
     
-    async def log_batch_submission(self, campaign: QualifiedCampaign, members: List[EligibleMember], batch_result: BatchResult) -> None:
+    def log_batch_submission(self, campaign: QualifiedCampaign, members: List[EligibleMember], batch_result: BatchResult) -> None:
         """
         Log successful batch submission using existing outreach tables
         """
@@ -27,10 +27,10 @@ class StatusTracker:
         
         try:
             # Step 1: Create batch record in outreach_batches
-            batch_id = await self._create_batch_record(campaign, batch_result)
+            batch_id = self._create_batch_record(campaign, batch_result)
             
             # Step 2: Create individual outreach attempt records
-            await self._create_outreach_attempts(campaign, members, batch_id, batch_result)
+            self._create_outreach_attempts(campaign, members, batch_id, batch_result)
             
             logger.info(f"✅ [STATUS-TRACKER] Successfully logged batch submission")
             logger.info(f"📦 [STATUS-TRACKER] Internal Batch ID: {batch_id}")
@@ -40,7 +40,7 @@ class StatusTracker:
             logger.error(f"🚨 [STATUS-TRACKER] Error logging batch submission: {str(e)}")
             raise
     
-    async def _create_batch_record(self, campaign: QualifiedCampaign, batch_result: BatchResult) -> str:
+    def _create_batch_record(self, campaign: QualifiedCampaign, batch_result: BatchResult) -> str:
         """
         Create batch tracking record using existing outreach_batches table
         """
@@ -71,7 +71,7 @@ class StatusTracker:
         logger.info(f"✅ [STATUS-TRACKER] Created batch record with ID: {batch_id}")
         return batch_id
     
-    async def _create_outreach_attempts(self, campaign: QualifiedCampaign, members: List[EligibleMember], 
+    def _create_outreach_attempts(self, campaign: QualifiedCampaign, members: List[EligibleMember], 
                                       batch_id: str, batch_result: BatchResult) -> None:
         """
         Create individual outreach attempt records using existing outreach_attempts table
@@ -118,7 +118,7 @@ class StatusTracker:
     
     # Note: _track_batch_members method removed - duplicate prevention handled by existing tables
     
-    async def update_batch_status(self, vendor_batch_id: str, new_status: str, error_message: str = None) -> None:
+    def update_batch_status(self, vendor_batch_id: str, new_status: str, error_message: str = None) -> None:
         """
         Update batch status using existing outreach_batches table
         """
@@ -140,7 +140,7 @@ class StatusTracker:
         else:
             logger.warning(f"⚠️ [STATUS-TRACKER] No batch found with vendor ID: {vendor_batch_id}")
     
-    async def get_batch_statistics(self, campaign_id: str) -> dict:
+    def get_batch_statistics(self, campaign_id: str) -> dict:
         """
         Get batch submission statistics using existing outreach_batches table
         """

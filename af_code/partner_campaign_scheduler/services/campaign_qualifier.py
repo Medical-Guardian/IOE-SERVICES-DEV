@@ -16,7 +16,7 @@ class CampaignQualifier:
         self.db_service = db_service
         logger.info("🔧 [CAMPAIGN-QUALIFIER] Service initialized")
     
-    async def get_qualified_campaigns(self) -> List[QualifiedCampaign]:
+    def get_qualified_campaigns(self) -> List[QualifiedCampaign]:
         """
         Find all Partner campaigns that are qualified to run right now
         """
