@@ -17,7 +17,7 @@ except ImportError as e:
     raise
 
 @batch_completion_bp.schedule(
-    schedule="0 */30 * * * *",  # Every 30 minutes at minute 0
+    schedule="0 */30 * * * *",  # Every 30 minutes at minute 0 (before partner scheduler)
     arg_name="timer", 
     run_on_startup=False
 )

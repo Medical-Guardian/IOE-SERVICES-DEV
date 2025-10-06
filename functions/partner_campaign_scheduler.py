@@ -22,7 +22,7 @@ except ImportError as e:
     raise
 
 @partner_campaign_bp.schedule(
-    schedule="0 */30 * * * *", 
+    schedule="5 */30 * * * *",  # Every 30 minutes at minute 5 (staggered from batch reconciler)
     arg_name="timer", 
     run_on_startup=False
 )
