@@ -1,10 +1,23 @@
 import logging
 import pymssql
+import os
 from typing import List, Dict, Optional, Any, Tuple
 
 from .config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
+
+# Verify critical environment variables
+KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL")
+DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
+
+logger.info(f"🔍 [DB-SERVICE] Environment check:")
+logger.info(f"   KEY_VAULT_URL: {'✅ Set' if KEY_VAULT_URL else '❌ Missing'}")
+logger.info(f"   DB_SECRET_NAME: {'✅ Set' if DB_SECRET_NAME else '❌ Missing'}")
+
+if not KEY_VAULT_URL:
+    logger.error("❌ [DB-SERVICE] CRITICAL: KEY_VAULT_URL environment variable is not set!")
+    logger.error("   This will cause database connections to fail.")
 
 
 class DatabaseService:

@@ -1,8 +1,21 @@
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Environment variables
 KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL")
 DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
+
+# Verify critical environment variables
+logger.info(f"🔍 [DTC-CONFIG] Environment check:")
+logger.info(f"   KEY_VAULT_URL: {'✅ Set' if KEY_VAULT_URL else '❌ Missing'}")
+logger.info(f"   DB_SECRET_NAME: {'✅ Set' if DB_SECRET_NAME else '❌ Missing'}")
+
+if not KEY_VAULT_URL:
+    logger.error("❌ [DTC-CONFIG] CRITICAL: KEY_VAULT_URL environment variable is not set!")
+    logger.error("   This will cause all database-dependent functions to fail.")
+
 BLAND_AI_BATCH_URL = "https://api.bland.ai/v2/batches/create"
 
 # SQL Queries

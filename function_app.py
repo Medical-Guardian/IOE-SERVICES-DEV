@@ -1,5 +1,18 @@
 import azure.functions as func
 import logging
+import os
+
+# Verify critical environment variables at startup
+KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL")
+DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
+
+logging.info(f"🔍 Environment check:")
+logging.info(f"   KEY_VAULT_URL: {'✅ Set' if KEY_VAULT_URL else '❌ Missing'}")
+logging.info(f"   DB_SECRET_NAME: {'✅ Set' if DB_SECRET_NAME else '❌ Missing'}")
+
+if not KEY_VAULT_URL:
+    logging.error("❌ CRITICAL: KEY_VAULT_URL environment variable is not set!")
+    logging.error("   This will cause all database-dependent functions to fail during import.")
 
 # Create the main app instance
 app = func.FunctionApp()
