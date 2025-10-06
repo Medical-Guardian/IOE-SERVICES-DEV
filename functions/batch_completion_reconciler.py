@@ -8,9 +8,9 @@ batch_completion_bp = func.Blueprint()
 
 # Import services (following existing IOE pattern)
 try:
-    from ..shared.batch_sync_coordinator import BatchSyncCoordinator
-    from ..shared.config_manager import ConfigManager
-    from ..shared.database_service import DatabaseService
+    from af_code.shared.batch_sync_coordinator import BatchSyncCoordinator
+    from af_code.bland_ai_webhook.services.config_manager import ConfigManager
+    from af_code.bland_ai_webhook.services.database_service import DatabaseService
     logging.info("✅ Batch Completion Reconciler imports successful")
 except ImportError as e:
     logging.error(f"❌ Import error in Batch Completion Reconciler: {e}")

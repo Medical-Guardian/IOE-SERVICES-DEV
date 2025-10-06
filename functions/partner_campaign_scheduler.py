@@ -9,12 +9,12 @@ partner_campaign_bp = func.Blueprint()
 
 # Import services (following your existing pattern)
 try:
-    from ..partner_campaign_scheduler.services.campaign_qualifier import CampaignQualifier
-    from ..partner_campaign_scheduler.services.member_eligibility import MemberEligibilityService
-    from ..partner_campaign_scheduler.services.batch_orchestrator import BatchOrchestrator
-    from ..partner_campaign_scheduler.services.status_tracker import StatusTracker
-    from ..shared.config_manager import ConfigManager
-    from ..shared.database_service import DatabaseService
+    from af_code.partner_campaign_scheduler.services.campaign_qualifier import CampaignQualifier
+    from af_code.partner_campaign_scheduler.services.member_eligibility import MemberEligibilityService
+    from af_code.partner_campaign_scheduler.services.batch_orchestrator import BatchOrchestrator
+    from af_code.partner_campaign_scheduler.services.status_tracker import StatusTracker
+    from af_code.bland_ai_webhook.services.config_manager import ConfigManager
+    from af_code.bland_ai_webhook.services.database_service import DatabaseService
     logging.info("✅ Partner Campaign Scheduler imports successful")
 except ImportError as e:
     logging.error(f"❌ Import error in Partner Campaign Scheduler: {e}")
