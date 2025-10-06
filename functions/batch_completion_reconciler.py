@@ -16,12 +16,12 @@ except ImportError as e:
     logging.error(f"❌ Import error in Batch Completion Reconciler: {e}")
     raise
 
-@batch_completion_bp.schedule(
+@batch_completion_bp.timer_trigger(
     schedule="0 */30 * * * *",  # Every 30 minutes at minute 0 (before partner scheduler)
     arg_name="timer", 
     run_on_startup=False
 )
-async def batch_completion_reconciler_timer(timer: func.TimerRequest) -> None:
+def batch_completion_reconciler_timer(timer: func.TimerRequest) -> None:
     """
     Batch Completion Reconciler - Timer Function
     
