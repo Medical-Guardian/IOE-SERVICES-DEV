@@ -16,8 +16,16 @@ class BatchOrchestrator:
     
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.bland_client = BlandAIClient(config_manager)
-        logger.info("🔧 [BATCH-ORCHESTRATOR] Service initialized")
+        self.enabled = False
+        
+        try:
+            self.bland_client = BlandAIClient(config_manager)
+            self.enabled = True
+            logger.info("🔧 [BATCH-ORCHESTRATOR] Service initialized with Bland AI client")
+        except ValueError as e:
+            logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] Bland AI client unavailable: {str(e)}")
+            logger.info("🔧 [BATCH-ORCHESTRATOR] Service initialized in disabled mode")
+            self.bland_client = None
     
     async def submit_batch(self, campaign: QualifiedCampaign, members: List[EligibleMember]) -> BatchResult:
         """
@@ -31,6 +39,15 @@ class BatchOrchestrator:
             BatchResult with success status and details
         """
         logger.info(f"🚀 [BATCH-ORCHESTRATOR] Submitting batch of {len(members)} members for campaign: {campaign.name}")
+        
+        if not self.enabled:
+            logger.warning("⚠️ [BATCH-ORCHESTRATOR] Batch orchestrator disabled - skipping submission")
+            return BatchResult(
+                success=False,
+                error="Batch orchestrator disabled (Bland AI API key not configured)",
+                members_count=len(members),
+                campaign_id=campaign.campaign_id
+            )
         
         try:
             # Build Bland AI batch request
