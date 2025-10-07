@@ -30,6 +30,7 @@ pytz
 
 # For making HTTP requests to Bland AI API
 requests
+aiohttp                   # Async HTTP client for Bland AI batch operations
 # Optional: Enhanced Logging and Monitoring
 # Uncomment these if you want enhanced observability
 # azure-monitor-opentelemetry-exporter  # Application Insights integration
