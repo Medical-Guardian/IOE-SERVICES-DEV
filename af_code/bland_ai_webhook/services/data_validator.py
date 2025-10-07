@@ -71,7 +71,10 @@ class DataValidator:
                 )
 
         # Validate status
-        status = webhook_data.get("status", "").lower()
+        status_raw = webhook_data.get("status")
+        if status_raw is None:
+            logger.warning("⚠️ [DATA-VALIDATOR] Status field is None, treating as empty string")
+        status = status_raw.lower() if status_raw is not None else ""
         valid_statuses = {"completed", "failed", "in-progress", "cancelled"}
         if status not in valid_statuses:
             warnings.append(
