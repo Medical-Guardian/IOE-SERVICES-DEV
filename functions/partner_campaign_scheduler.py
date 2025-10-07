@@ -41,91 +41,122 @@ def partner_campaign_scheduler_timer(timer: func.TimerRequest) -> None:
     logging.info("=" * 80)
     
     try:
-        # Initialize services with enhanced logging
-        logging.info("🔧 [PARTNER-SCHEDULER] Initializing services...")
+        # Step 1: Initialize services with enhanced logging
+        logging.info("🔧 [PARTNER-SCHEDULER] Step 1: Initializing services...")
+        logging.info("🔧 [PARTNER-SCHEDULER] Step 1.1: Creating ConfigManager...")
         config_manager = ConfigManager()
+        logging.info("✅ [PARTNER-SCHEDULER] Step 1.1: ConfigManager created successfully")
+        
+        logging.info("🔧 [PARTNER-SCHEDULER] Step 1.2: Creating DatabaseService...")
         db_service = DatabaseService(config_manager)
-        logging.info("✅ [PARTNER-SCHEDULER] Database service initialized")
+        logging.info("✅ [PARTNER-SCHEDULER] Step 1.2: DatabaseService created successfully")
         
+        logging.info("🔧 [PARTNER-SCHEDULER] Step 1.3: Creating service components...")
+        logging.info("🔧 [PARTNER-SCHEDULER] Step 1.3a: Creating CampaignQualifier...")
         campaign_qualifier = CampaignQualifier(db_service)
-        member_service = MemberEligibilityService(db_service)
-        batch_orchestrator = BatchOrchestrator(config_manager)
-        status_tracker = StatusTracker(db_service)
-        logging.info("✅ [PARTNER-SCHEDULER] All services initialized successfully")
+        logging.info("✅ [PARTNER-SCHEDULER] Step 1.3a: CampaignQualifier created")
         
-        # Step 1: Find qualified campaigns
-        logging.info("🔍 [PARTNER-SCHEDULER] Starting campaign qualification process...")
-        qualified_campaigns = campaign_qualifier.get_qualified_campaigns()  # Remove await - sync method
+        logging.info("🔧 [PARTNER-SCHEDULER] Step 1.3b: Creating MemberEligibilityService...")
+        member_service = MemberEligibilityService(db_service)
+        logging.info("✅ [PARTNER-SCHEDULER] Step 1.3b: MemberEligibilityService created")
+        
+        logging.info("🔧 [PARTNER-SCHEDULER] Step 1.3c: Creating BatchOrchestrator...")
+        batch_orchestrator = BatchOrchestrator(config_manager)
+        logging.info("✅ [PARTNER-SCHEDULER] Step 1.3c: BatchOrchestrator created")
+        
+        logging.info("🔧 [PARTNER-SCHEDULER] Step 1.3d: Creating StatusTracker...")
+        status_tracker = StatusTracker(db_service)
+        logging.info("✅ [PARTNER-SCHEDULER] Step 1.3d: StatusTracker created")
+        
+        logging.info("✅ [PARTNER-SCHEDULER] Step 1: All services initialized successfully")
+        
+        # Step 2: Find qualified campaigns
+        logging.info("🔍 [PARTNER-SCHEDULER] Step 2: Starting campaign qualification process...")
+        logging.info("🔍 [PARTNER-SCHEDULER] Step 2.1: Calling campaign_qualifier.get_qualified_campaigns()...")
+        qualified_campaigns = campaign_qualifier.get_qualified_campaigns()
+        logging.info(f"🔍 [PARTNER-SCHEDULER] Step 2.1: Retrieved {len(qualified_campaigns) if qualified_campaigns else 0} campaigns")
         
         if not qualified_campaigns:
-            logging.info("📋 [PARTNER-SCHEDULER] No qualified Partner campaigns found - execution complete")
+            logging.info("📋 [PARTNER-SCHEDULER] Step 2: No qualified Partner campaigns found - execution complete")
             _log_execution_summary(request_id, start_time, 0, 0, 0)
             return
             
-        logging.info(f"📊 [PARTNER-SCHEDULER] Found {len(qualified_campaigns)} qualified campaigns")
-        for campaign in qualified_campaigns:
-            logging.info(f"  📌 Campaign: {campaign.name} (ID: {campaign.campaign_id})")
+        logging.info(f"📊 [PARTNER-SCHEDULER] Step 2: Found {len(qualified_campaigns)} qualified campaigns")
+        for i, campaign in enumerate(qualified_campaigns, 1):
+            logging.info(f"  📌 [PARTNER-SCHEDULER] Campaign {i}: {campaign.name} (ID: {campaign.campaign_id})")
         
-        # Processing metrics
+        # Initialize processing metrics
         total_campaigns_processed = 0
         total_members_found = 0
         total_batches_submitted = 0
         
-        # Step 2: Process each campaign
-        for campaign in qualified_campaigns:
-            logging.info("-" * 60)
-            logging.info(f"🎯 [PARTNER-SCHEDULER] Processing campaign: {campaign.name}")
-            logging.info(f"🏢 [PARTNER-SCHEDULER] Organization: {campaign.org_type}")
-            logging.info(f"⏰ [PARTNER-SCHEDULER] Schedule: {campaign.scheduling_mode}, {campaign.frequency_value} {campaign.frequency_unit}")
-            logging.info(f"📦 [PARTNER-SCHEDULER] Audience batch: {campaign.audience_file_batch}")
+        # Step 3: Process each campaign
+        logging.info("🎯 [PARTNER-SCHEDULER] Step 3: Processing qualified campaigns...")
+        for campaign_num, campaign in enumerate(qualified_campaigns, 1):
+            logging.info("=" * 60)
+            logging.info(f"🎯 [PARTNER-SCHEDULER] Step 3.{campaign_num}: Processing campaign: {campaign.name}")
+            logging.info(f"🏢 [PARTNER-SCHEDULER] Step 3.{campaign_num}: Organization: {campaign.org_type}")
+            logging.info(f"⏰ [PARTNER-SCHEDULER] Step 3.{campaign_num}: Schedule: {campaign.scheduling_mode}, {campaign.frequency_value} {campaign.frequency_unit}")
+            logging.info(f"📦 [PARTNER-SCHEDULER] Step 3.{campaign_num}: Audience batch: {campaign.audience_file_batch}")
             
-            # Step 3: Find eligible members for this campaign
-            logging.info(f"👥 [PARTNER-SCHEDULER] Finding eligible members...")
-            eligible_members = member_service.get_eligible_members(campaign)  # Remove await - sync method
+            # Step 3.x.1: Find eligible members for this campaign
+            logging.info(f"👥 [PARTNER-SCHEDULER] Step 3.{campaign_num}.1: Finding eligible members...")
+            logging.info(f"👥 [PARTNER-SCHEDULER] Step 3.{campaign_num}.1: Calling member_service.get_eligible_members()...")
+            eligible_members = member_service.get_eligible_members(campaign)
+            logging.info(f"👥 [PARTNER-SCHEDULER] Step 3.{campaign_num}.1: Retrieved {len(eligible_members) if eligible_members else 0} members")
             
             if not eligible_members:
-                logging.info(f"⚠️ [PARTNER-SCHEDULER] No eligible members found for campaign: {campaign.name}")
+                logging.info(f"⚠️ [PARTNER-SCHEDULER] Step 3.{campaign_num}.1: No eligible members found for campaign: {campaign.name}")
+                logging.info(f"⚠️ [PARTNER-SCHEDULER] Step 3.{campaign_num}: Skipping campaign - no eligible members")
                 continue
                 
-            logging.info(f"✅ [PARTNER-SCHEDULER] Found {len(eligible_members)} eligible members")
+            logging.info(f"✅ [PARTNER-SCHEDULER] Step 3.{campaign_num}.1: Found {len(eligible_members)} eligible members")
             total_members_found += len(eligible_members)
             
-            # Step 4: Create and submit batches (1000 members per batch)
-            logging.info(f"📦 [PARTNER-SCHEDULER] Creating batches (max 1000 per batch)...")
+            # Step 3.x.2: Create and process batches
+            logging.info(f"📦 [PARTNER-SCHEDULER] Step 3.{campaign_num}.2: Creating batches (max 1000 per batch)...")
+            logging.info(f"📦 [PARTNER-SCHEDULER] Step 3.{campaign_num}.2: Calling member_service.create_batches()...")
             batches = member_service.create_batches(eligible_members, batch_size=1000)
-            logging.info(f"📊 [PARTNER-SCHEDULER] Created {len(batches)} batches")
+            logging.info(f"📊 [PARTNER-SCHEDULER] Step 3.{campaign_num}.2: Created {len(batches)} batches")
             
+            # Step 3.x.3: Process each batch
             for batch_num, batch in enumerate(batches, 1):
-                logging.info(f"📋 [PARTNER-SCHEDULER] Batch {batch_num}/{len(batches)}: {len(batch)} members identified")
+                logging.info(f"📋 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Processing batch {batch_num}/{len(batches)}")
+                logging.info(f"📋 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Batch contains {len(batch)} members")
                 
                 # Note: Batch submission to Bland AI requires async operations
                 # which are not supported in sync timer functions.
                 # For now, we identify eligible members but skip actual submission.
-                logging.info(f"⚠️ [PARTNER-SCHEDULER] Skipping batch submission (async not supported in sync timer)")
-                logging.info(f"📊 [PARTNER-SCHEDULER] Members ready for submission: {len(batch)}")
+                logging.info(f"⚠️ [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Skipping batch submission (async not supported in sync timer)")
+                logging.info(f"📊 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Members ready for submission: {len(batch)}")
                 
                 total_batches_submitted += 1  # Count batches processed
+                logging.info(f"✅ [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Batch processing completed")
             
             total_campaigns_processed += 1
-            logging.info(f"✅ [PARTNER-SCHEDULER] Campaign processing complete: {campaign.name}")
+            logging.info(f"✅ [PARTNER-SCHEDULER] Step 3.{campaign_num}: Campaign processing complete: {campaign.name}")
         
-        # Final summary
+        # Step 4: Final summary
+        logging.info("🎉 [PARTNER-SCHEDULER] Step 4: All campaigns processed successfully")
         _log_execution_summary(request_id, start_time, total_campaigns_processed, total_members_found, total_batches_submitted)
         
     except Exception as e:
         error_details = traceback.format_exc()
         logging.error("🚨 [PARTNER-SCHEDULER] CRITICAL ERROR during execution:")
         logging.error(f"🚨 [PARTNER-SCHEDULER] Error: {str(e)}")
+        logging.error(f"🚨 [PARTNER-SCHEDULER] Error Type: {type(e).__name__}")
         logging.error(f"🚨 [PARTNER-SCHEDULER] Traceback: {error_details}")
         logging.error(f"🚨 [PARTNER-SCHEDULER] Request ID: {request_id}")
         
-        # Log error summary
+        # Log error summary with execution context
         end_time = datetime.utcnow()
         duration = (end_time - start_time).total_seconds()
         logging.error("=" * 80)
         logging.error(f"💥 [PARTNER-SCHEDULER] EXECUTION FAILED")
         logging.error(f"⏱️ [PARTNER-SCHEDULER] Duration: {duration:.2f} seconds")
         logging.error(f"📋 [PARTNER-SCHEDULER] Request ID: {request_id}")
+        logging.error(f"🔧 [PARTNER-SCHEDULER] Error Type: {type(e).__name__}")
+        logging.error(f"📊 [PARTNER-SCHEDULER] Partial Results: {locals().get('total_campaigns_processed', 0)} campaigns, {locals().get('total_members_found', 0)} members, {locals().get('total_batches_submitted', 0)} batches")
         logging.error("=" * 80)
         
         raise

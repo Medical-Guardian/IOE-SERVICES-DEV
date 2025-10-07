@@ -14,12 +14,13 @@ class BlandAIClient:
     
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.api_key = config_manager.get_config("BLAND_AI_API_KEY")
+        # Use the same Key Vault secret name as DTC functions
+        self.api_key = config_manager.get_config("BlandAIkey")
         self.base_url = config_manager.get_config("BLAND_AI_BASE_URL", "https://api.bland.ai")
         self.webhook_url = config_manager.get_config("BLAND_WEBHOOK_URL")
         
         if not self.api_key:
-            logger.error("🚨 [BLAND-CLIENT] BLAND_AI_API_KEY not configured")
+            logger.error("🚨 [BLAND-CLIENT] BlandAIkey not configured in Key Vault")
             raise ValueError("Bland AI API key is required")
         
         if not self.webhook_url:

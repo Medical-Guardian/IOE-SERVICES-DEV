@@ -16,12 +16,15 @@ class BlandAIBatchMonitor:
     
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        self.api_key = config_manager.get_config("BLAND_AI_API_KEY")
+        # Use the same Key Vault secret name as DTC functions
+        self.api_key = config_manager.get_config("BlandAIkey")
         self.base_url = config_manager.get_config("BLAND_AI_BASE_URL", "https://api.bland.ai")
+        self.enabled = bool(self.api_key)
         
         if not self.api_key:
-            logger.error("🚨 [BATCH-MONITOR] BLAND_AI_API_KEY not configured")
-            raise ValueError("Bland AI API key is required for batch monitoring")
+            logger.warning("⚠️ [BATCH-MONITOR] BlandAIkey not configured in Key Vault - Batch monitoring disabled")
+            logger.info("🔧 [BATCH-MONITOR] Batch monitor initialized in disabled mode")
+            return
         
         logger.info("🔧 [BATCH-MONITOR] Batch monitor initialized successfully")
         logger.info(f"🌐 [BATCH-MONITOR] Base URL: {self.base_url}")
@@ -281,13 +284,17 @@ class BlandAIBatchMonitor:
                 "error": str(e)
             }
     
-    async def check_api_health(self) -> bool:
+    def check_api_health(self) -> bool:
         """
         Check if Bland AI API is accessible
         
         Returns:
-            bool: True if API is responding, False otherwise
+            bool: True if API is responding or monitoring disabled, False if error
         """
+        if not self.enabled:
+            logger.info("🏥 [BATCH-MONITOR] API monitoring disabled - health check skipped")
+            return True  # Return True when disabled to allow function to continue
+        
         logger.info("🏥 [BATCH-MONITOR] Checking Bland AI API health...")
         
         try:
