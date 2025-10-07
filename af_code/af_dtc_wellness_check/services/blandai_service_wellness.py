@@ -226,12 +226,39 @@ class BlandAIServiceWellness:
             logger.error(f"💥 [BlandAIServiceWellness] Failed to fetch Bland AI API key: {str(e)}")
             raise
 
+    def get_bland_encrypted_key(self) -> str:
+        """Get Bland AI encrypted key from Azure Key Vault."""
+        logger.info("🔐 [BlandAIServiceWellness] Getting Bland AI encrypted key")
+        try:
+            if not KEY_VAULT_URL:
+                raise ValueError("Environment variable 'KEY_VAULT_URL' is not set")
+
+            credential = DefaultAzureCredential()
+            client = SecretClient(vault_url=KEY_VAULT_URL, credential=credential)
+            secret = client.get_secret("Blandaitwilio")
+
+            if not secret or not secret.value:
+                raise ValueError("Blandaitwilio secret is empty")
+
+            logger.info("✅ [BlandAIServiceWellness] Bland AI encrypted key retrieved")
+            return secret.value
+        except Exception as e:
+            logger.error(f"💥 [BlandAIServiceWellness] Failed to fetch Bland AI encrypted key: {str(e)}")
+            raise
+
     def call_bland_ai_api(self, payload: Dict, api_key: str) -> Dict:
         """Make API call to Bland AI."""
         logger.info(
             f"🚀 [BlandAIServiceWellness] Making Bland AI API call with {len(payload.get('call_objects', []))} calls"
         )
-        headers = {"Authorization": api_key, "Content-Type": "application/json"}
+        # Get encrypted key from Azure Key Vault
+        encrypted_key_value = self.get_bland_encrypted_key()
+        
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "encrypted_key": encrypted_key_value
+        }
         try:
             response = requests.post(BLAND_AI_BATCH_URL, json=payload, headers=headers, timeout=30)
             response.raise_for_status()
