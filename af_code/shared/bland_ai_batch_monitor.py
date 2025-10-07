@@ -298,28 +298,30 @@ class BlandAIBatchMonitor:
         logger.info("🏥 [BATCH-MONITOR] Checking Bland AI API health...")
         
         try:
+            # For simplified version, we use requests instead of aiohttp since this is called from sync context
+            import requests
+            
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
             
-            async with aiohttp.ClientSession() as session:
-                # Try to get batch list as a health check
-                async with session.get(
-                    f"{self.base_url}/v2/batches/list",
-                    headers=headers,
-                    params={"take": 1},  # Minimal request
-                    timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
-                    
-                    is_healthy = response.status in [200, 404]  # 404 is ok if no batches exist
-                    
-                    if is_healthy:
-                        logger.info("✅ [BATCH-MONITOR] Bland AI API is healthy")
-                    else:
-                        logger.warning(f"⚠️ [BATCH-MONITOR] Bland AI API returned status: {response.status}")
-                    
-                    return is_healthy
+            # Try to get batch list as a health check
+            response = requests.get(
+                f"{self.base_url}/v2/batches/list",
+                headers=headers,
+                params={"take": 1},  # Minimal request
+                timeout=10
+            )
+            
+            is_healthy = response.status_code in [200, 404]  # 404 is ok if no batches exist
+            
+            if is_healthy:
+                logger.info("✅ [BATCH-MONITOR] Bland AI API is healthy")
+            else:
+                logger.warning(f"⚠️ [BATCH-MONITOR] Bland AI API returned status: {response.status_code}")
+            
+            return is_healthy
                     
         except Exception as e:
             logger.error(f"🚨 [BATCH-MONITOR] API health check failed: {str(e)}")
