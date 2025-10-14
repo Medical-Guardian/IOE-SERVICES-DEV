@@ -336,8 +336,8 @@ def standardize_phone(phone: str) -> Optional[str]:
     if phone_str.startswith("+"):
         # Remove + and any non-numeric characters after it
         digits_only = "".join(c for c in phone_str[1:] if c.isdigit())
-        # E.164 format allows 7-15 digits after the +
-        if 7 <= len(digits_only) <= 15:
+        # E.164 format allows 11-15 digits after the +
+        if 11 <= len(digits_only) <= 15:
             return f"+{digits_only}"
         else:
             return None
@@ -352,7 +352,7 @@ def standardize_phone(phone: str) -> Optional[str]:
     elif len(digits_only) == 11 and digits_only[0] == "1" and digits_only[1] in "23456789":
         # 11-digit number starting with 1
         return f"+{digits_only}"
-    elif 7 <= len(digits_only) <= 15:
+    elif 11 <= len(digits_only) <= 15:
         # International number without + prefix
         # For numbers that don't fit US patterns but are valid international lengths
         return f"+{digits_only}"
