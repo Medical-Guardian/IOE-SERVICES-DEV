@@ -1,26 +1,37 @@
-# 🚀 IOE Azure Functions Platform
+# 🚀 IOE Services Platform
 
-> **Intelligent Operations Engine** - Enterprise-grade Azure Functions for automated healthcare campaign processing, call management, and AI-powered customer interactions at Medical Guardian.
+> **Intelligence Orchestration Engine** - Enterprise-grade IOE Services for automated healthcare campaign processing, call management, and AI-powered customer interactions at Medical Guardian.
 
-[![Deploy Status](https://github.com/zubairashfaque/IOE-function/workflows/Deploy%20Python%20Azure%20Function/badge.svg)](https://github.com/zubairashfaque/IOE-function/actions)
+**Platform Architecture**: Each IOE Service runs as an individual Azure Function within the IOE Services platform, providing scalable and independent microservices for healthcare automation.
+
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
-[![Code Quality](https://img.shields.io/badge/code%20quality-protected-green.svg)](https://github.com/zubairashfaque/IOE-function/actions)
-[![Azure Functions](https://img.shields.io/badge/Azure-Functions-0078d4.svg)](https://azure.microsoft.com/en-us/services/functions/)
+[![Code Quality](https://img.shields.io/badge/code%20quality-protected-green.svg)](https://github.com/Medical-Guardian/IOE-services/actions)
+[![IOE Services](https://img.shields.io/badge/IOE-Services-0078d4.svg)](https://azure.microsoft.com/en-us/services/functions/)
 [![Medical Guardian](https://img.shields.io/badge/Medical-Guardian-red.svg)](https://medicalguardian.com)
 
 ---
 
 ## 🏢 Development Team
 
-**Created by**: Zubair Ashfaque - Tech Lead, Data Science Team  
+**Created by**: AI-POD Team - Data Science Team  
 **Team**: AI-POD at Medical Guardian  
-**Contact**: For bugs, issues, or technical support, please email: [zubair.ashfaque@medicalguardian.com](mailto:zubair.ashfaque@medicalguardian.com)
+**Contact**: For bugs, issues, or technical support, please contact the AI-POD Team at Medical Guardian
 
 ---
 
 ## 📖 Overview
 
-The **IOE (Intelligent Operations Engine) Azure Functions Platform** is a comprehensive serverless solution designed to automate and optimize healthcare customer engagement workflows at Medical Guardian. This enterprise-grade platform processes DTC (Direct-to-Consumer) wellness campaigns, partner campaign files, manages intro call scheduling, and integrates with Bland AI for intelligent voice interactions.
+The **IOE (Intelligence Orchestration Engine) Services Platform** is a comprehensive serverless solution designed to automate and optimize healthcare customer engagement workflows at Medical Guardian. This enterprise-grade platform consists of multiple intelligent services that process DTC (Direct-to-Consumer) wellness campaigns, partner campaign files, manage intro call scheduling, and integrate with Bland AI for intelligent voice interactions.
+
+**What is IOE?**  
+IOE stands for **Intelligence Orchestration Engine** - a smart system that coordinates and manages different healthcare processes automatically. Think of it as a digital conductor that orchestrates various healthcare services to work together seamlessly.
+
+**How IOE Services Work**:  
+Each IOE Service runs as an independent Azure Function within the IOE Services platform. This means:
+- Each service can scale independently based on demand
+- Services can be updated without affecting others
+- Each service has its own trigger mechanism (file uploads, timers, webhooks)
+- All services work together as part of the larger IOE ecosystem
 
 ### 🎯 Key Features
 
@@ -39,17 +50,17 @@ The **IOE (Intelligent Operations Engine) Azure Functions Platform** is a compre
 ## 🏗️ Project Structure
 
 ```
-📦 IOE-Functions/
-├── 📄 function_app.py                    # Main application entry point and blueprint registration
-├── 📄 host.json                         # Azure Functions host configuration
+📦 IOE-Services/
+├── 📄 function_app.py                    # Main application entry point and IOE service registration
+├── 📄 host.json                         # IOE Services host configuration
 ├── 📄 requirements.txt                  # Python dependencies and packages
 ├── 📄 local.settings.json               # Local development environment settings
 │
-├── 🎯 functions/                        # Azure Function triggers and entry points
-│   ├── dtc_file_processor.py           # Blob trigger for DTC wellness file processing
-│   ├── partner_file_processor.py       # Blob trigger for partner campaign files
-│   ├── dtc_intro_call_scheduler.py     # Timer/HTTP triggers for call scheduling
-│   └── bland_ai_webhook.py             # HTTP trigger for Bland AI webhook processing
+├── 🎯 services/                         # IOE Service triggers and entry points (each runs as Azure Function)
+│   ├── dtc_file_processor.py           # File Processing Service - monitors and processes DTC wellness files
+│   ├── partner_file_processor.py       # Partner Integration Service - handles partner campaign files
+│   ├── dtc_intro_call_scheduler.py     # Call Scheduling Service - manages intro call scheduling
+│   └── bland_ai_webhook.py             # AI Integration Service - processes Bland AI webhook data
 │
 ├── 🧠 af_code/                         # Core application logic and business rules
 │   ├── af_dtc_logic.py                 # DTC campaign processing business logic
@@ -91,7 +102,7 @@ The **IOE (Intelligent Operations Engine) Azure Functions Platform** is a compre
 
 ## 🏷️ BusinessCaseID Traceability Framework
 
-The IOE platform implements comprehensive business case traceability to ensure every function maps to specific business requirements and compliance standards. Each module and function includes BusinessCaseID tags for complete audit trails.
+The IOE platform implements comprehensive business case traceability to ensure every service maps to specific business requirements and compliance standards. Each module and service includes BusinessCaseID tags for complete audit trails.
 
 ### Primary Business Cases
 
@@ -137,7 +148,53 @@ def map_webhook_to_internal_format(self, webhook_data: Dict[str, Any]) -> Mapped
 
 ---
 
-## 🎯 Business Use Cases & Workflows
+## 🔧 IOE Services Overview
+
+The IOE platform consists of four main intelligent services. Each service runs as an independent Azure Function within the IOE Services platform, with different triggers and purposes:
+
+### 1. 📁 **File Processing Service** (`dtc_file_processor.py`)
+**What it does**: Automatically processes customer wellness data files  
+**How it works**: Watches for new CSV files containing customer information  
+**Azure Function Trigger**: Blob Storage Trigger  
+**Example**: When a file named `MedicalGuardian_DTCWellness_20241015_Delta.csv` is uploaded:
+- ✅ Validates the file format and naming convention
+- ✅ Checks customer data quality and phone number formats (E.164 with 11-15 digits)
+- ✅ Updates the database with new customer information
+- ✅ Sends notifications if there are any errors
+
+### 2. 🤝 **Partner Integration Service** (`partner_file_processor.py`)
+**What it does**: Handles campaign files from business partners  
+**How it works**: Processes files from external partners and converts them to our format  
+**Azure Function Trigger**: Blob Storage Trigger  
+**Example**: When a partner uploads their customer list:
+- ✅ Verifies the partner's permissions and credentials
+- ✅ Converts their data format to IOE standards
+- ✅ Creates new marketing campaigns in the system
+- ✅ Notifies campaign managers of new partner data
+
+### 3. ⏰ **Call Scheduling Service** (`dtc_intro_call_scheduler.py`)
+**What it does**: Automatically schedules introduction calls with customers  
+**How it works**: Runs on a schedule to find customers ready for calls  
+**Azure Function Trigger**: Timer Trigger (every 30 minutes) + HTTP Trigger (manual)  
+**Example**: Every 30 minutes during business hours:
+- ✅ Finds customers who need intro calls (one attempt per day)
+- ✅ Checks their time zones and call preferences
+- ✅ Matches them with available wellness agents
+- ✅ Schedules the calls and sends reminders
+
+### 4. 🤖 **AI Integration Service** (`bland_ai_webhook.py`)
+**What it does**: Processes real-time data from AI voice calls  
+**How it works**: Receives instant updates when AI calls complete  
+**Azure Function Trigger**: HTTP Webhook Trigger (real-time)  
+**Example**: When an AI voice call finishes:
+- ✅ Receives the call results instantly via webhook
+- ✅ Updates customer status based on call outcome
+- ✅ Triggers follow-up actions (like scheduling callbacks)
+- ✅ Records conversation summaries and disposition codes
+
+---
+
+## 🎯 Detailed Business Use Cases & Workflows
 
 ### 1. 📋 DTC Wellness Campaign Processing
 
@@ -357,19 +414,19 @@ The platform now supports comprehensive disposition tag mapping for granular cal
 
 | File | Purpose | Functionality |
 |------|---------|---------------|
-| `function_app.py` | **Application Bootstrap** | Registers all function blueprints and initializes the Azure Functions app |
+| `function_app.py` | **Application Bootstrap** | Registers all IOE service blueprints and initializes the Azure Functions app |
 | `host.json` | **Runtime Configuration** | Timeout settings, logging levels, and performance tuning |
 | `requirements.txt` | **Dependency Management** | Python packages for Azure, database, AI, and validation |
 | `local.settings.json` | **Development Config** | Local environment variables and connection strings |
 
-### Function Triggers
+### IOE Services Summary
 
-| File | Trigger Type | Business Purpose |
-|------|--------------|------------------|
-| `dtc_file_processor.py` | **Blob Storage** | Processes DTC wellness campaign files for customer eligibility |
-| `partner_file_processor.py` | **Blob Storage** | Handles partner campaign file ingestion and validation |
-| `dtc_intro_call_scheduler.py` | **Timer/HTTP** | Schedules intro calls for new wellness program participants |
-| `bland_ai_webhook.py` | **HTTP Webhook** | Processes real-time AI voice interaction data |
+| IOE Service | Azure Function Trigger | Business Purpose |
+|-------------|------------------------|------------------|
+| `dtc_file_processor.py` | **Blob Storage Trigger** | Processes DTC wellness campaign files for customer eligibility |
+| `partner_file_processor.py` | **Blob Storage Trigger** | Handles partner campaign file ingestion and validation |
+| `dtc_intro_call_scheduler.py` | **Timer + HTTP Trigger** | Schedules intro calls for new wellness program participants |
+| `bland_ai_webhook.py` | **HTTP Webhook Trigger** | Processes real-time AI voice interaction data |
 
 ### Business Logic Layer
 
@@ -407,8 +464,8 @@ The platform now supports comprehensive disposition tag mapping for granular cal
 
 1. **Clone Repository**
    ```bash
-   git clone https://github.com/zubairashfaque/IOE-function.git
-   cd IOE-function
+   git clone https://github.com/Medical-Guardian/IOE-services.git
+   cd IOE-services
    ```
 
 2. **Setup Python Environment**
@@ -454,7 +511,7 @@ The platform now supports comprehensive disposition tag mapping for granular cal
 
 ### Azure Resource Requirements
 
-- **Azure Function App** (Python 3.11, Consumption or Premium plan)
+- **Azure Function App** (Python 3.12, Consumption or Premium plan) - hosts all IOE Services
 - **Azure Storage Account** (Standard performance, blob storage)
 - **Azure SQL Database** (Standard tier minimum)
 - **Azure Key Vault** (Standard tier)
@@ -467,7 +524,7 @@ The platform now supports comprehensive disposition tag mapping for granular cal
 
 | Layer | Technologies | Purpose |
 |-------|-------------|---------|
-| **Runtime** | Azure Functions, Python 3.11 | Serverless compute platform |
+| **Runtime** | Azure Functions, Python 3.12 | Serverless IOE Services platform |
 | **Data Processing** | Pandas, NumPy, Pandera | File processing and validation |
 | **Database** | Azure SQL, PyMSSQL | Data persistence and querying |
 | **Security** | Azure Key Vault, Azure Identity | Secure credential management |
@@ -488,7 +545,7 @@ The platform includes comprehensive health monitoring capabilities:
 - **Database Connectivity** - Real-time database health checks
 - **Storage Account Status** - Blob storage accessibility validation
 - **External API Health** - Bland AI service availability
-- **Function Performance** - Execution time and success rate tracking
+- **IOE Service Performance** - Execution time and success rate tracking
 
 ### Logging Strategy
 
@@ -513,7 +570,7 @@ logging.info(f"🟢 Processing file: {filename}", extra={
 - **Call Scheduling Success** - Percentage of successful call schedules
 - **Webhook Response Time** - Bland AI webhook processing latency
 - **Database Query Performance** - Average query execution time
-- **Error Rate Tracking** - Error percentage by function and category
+- **Error Rate Tracking** - Error percentage by IOE service and category
 
 ---
 
@@ -550,10 +607,10 @@ def validate_customer_id(cls, v):
 
 ### Automated Deployment with Quality Gates
 
-Enhanced GitHub Actions workflow with comprehensive quality validation:
+Enhanced GitHub Actions workflow with comprehensive quality validation for IOE Services:
 
 ```yaml
-name: Build and deploy Python project to Azure Function App - IOE-function
+name: Build and deploy Python project to Azure Function App - IOE Services
 
 on:
   push:
@@ -607,7 +664,7 @@ jobs:
 
 ### Quality Gate Protection
 
-**Deployment Protection**: Azure Functions deployment is **automatically blocked** if:
+**Deployment Protection**: IOE Services deployment is **automatically blocked** if:
 - ❌ Code formatting doesn't meet PEP 8 standards (black)
 - ❌ Linting issues detected (ruff)
 - ❌ Type safety violations found (mypy)
@@ -626,18 +683,18 @@ jobs:
 # Login to Azure
 az login
 
-# Deploy function app
-func azure functionapp publish IOE-function-app --python
+# Deploy IOE services
+func azure functionapp publish IOE-services-app --python
 
 # Verify deployment
-curl https://ioe-function-app.azurewebsites.net/api/health
+curl https://ioe-services-app.azurewebsites.net/api/health
 ```
 
 ### Environment Promotion
 
-1. **Development** → `dev-ioe-function-app`
-2. **Staging** → `staging-ioe-function-app`  
-3. **Production** → `ioe-function-app`
+1. **Development** → `dev-ioe-services-app`
+2. **Staging** → `staging-ioe-services-app`  
+3. **Production** → `ioe-services-app`
 
 ---
 
@@ -714,9 +771,9 @@ SCHEDULES = {
 ### Support Channels
 
 **Technical Support**:
-📧 **Primary Contact**: [zubair.ashfaque@medicalguardian.com](mailto:zubair.ashfaque@medicalguardian.com)  
+📧 **Primary Contact**: AI-POD Team at Medical Guardian  
 🏢 **Team**: AI-POD Data Science Team at Medical Guardian  
-📋 **Issues**: [GitHub Issues](https://github.com/zubairashfaque/IOE-function/issues)  
+📋 **Issues**: [GitHub Issues](https://github.com/Medical-Guardian/IOE-services/issues)  
 📞 **Emergency**: Contact Medical Guardian IT Operations
 
 **Response Times**:
@@ -742,7 +799,7 @@ This project is proprietary software owned by Medical Guardian.
 
 <div align="center">
 
-**🏥 Developed with ❤️ by Zubair Ashfaque & AI-POD Team at Medical Guardian**
+**🏥 Developed with ❤️ by AI-POD Team at Medical Guardian**
 
 *Enhancing healthcare through intelligent automation and data-driven insights*
 
