@@ -20,6 +20,7 @@ BLAND_AI_BATCH_URL = "https://api.bland.ai/v2/batches/create"
 
 # SQL Queries
 # CORRECTED: Replaced '?' with '%s' for pymssql compatibility
+# BUSINESS RULE: One DTC outreach per member per day (intro OR wellness) - other campaigns remain independent
 GET_CAMPAIGN_CONFIG_QUERY = """
 SELECT bland_parameters_global, call_type
 FROM engage360.campaign_call_configs_enhanced 
@@ -124,9 +125,15 @@ WHERE
     AND mce.preferred_window IS NOT NULL
     AND c.campaign_id = %s
     AND NOT EXISTS (
+        -- Check for ANY DTC outreach attempts for this member today (intro OR wellness)
         SELECT 1
         FROM engage360.outreach_attempts oa
-        WHERE oa.enrollment_id = mce.enrollment_id
+        JOIN engage360.member_campaign_enrollments_enhanced other_mce ON oa.enrollment_id = other_mce.enrollment_id
+        WHERE other_mce.member_id = m.member_id  -- Same member across all enrollments
+          AND other_mce.campaign_id IN (
+              '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro Campaign
+              'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness Campaign
+          )
           AND oa.attempt_ts >= @TodayStartUtc 
           AND oa.attempt_ts < @TodayEndUtc
     );
@@ -178,9 +185,15 @@ WHERE
           AND intro_mce.current_status = 'UNENROLLED'
     )
     AND NOT EXISTS (
+        -- Check for ANY DTC outreach attempts for this member today (intro OR wellness)
         SELECT 1
         FROM engage360.outreach_attempts oa
-        WHERE oa.enrollment_id = mce.enrollment_id
+        JOIN engage360.member_campaign_enrollments_enhanced other_mce ON oa.enrollment_id = other_mce.enrollment_id
+        WHERE other_mce.member_id = m.member_id  -- Same member across all enrollments
+          AND other_mce.campaign_id IN (
+              '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro Campaign
+              'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness Campaign
+          )
           AND oa.attempt_ts >= @TodayStartUtc 
           AND oa.attempt_ts < @TodayEndUtc
     );
