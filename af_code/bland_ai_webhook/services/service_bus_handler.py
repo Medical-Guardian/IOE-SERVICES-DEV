@@ -1,4 +1,3 @@
-# /bland_ai_webhook/services/service_bus_handler.py
 
 import logging
 import json

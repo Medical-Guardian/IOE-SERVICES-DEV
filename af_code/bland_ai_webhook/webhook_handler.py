@@ -14,9 +14,6 @@ from .services.business_rules_engine import BusinessRulesEngine
 from .services.error_handler import ErrorHandler
 from .services.service_bus_handler import ServiceBusHandler
 
-# REMOVED: Unused imports from this specific file. The ServiceBusHandler now manages these.
-# from azure.servicebus.aio import ServiceBusClient as AsyncServiceBusClient
-# from azure.servicebus import ServiceBusMessage
 
 logger = logging.getLogger(__name__)
 
@@ -50,10 +47,7 @@ class WebhookHandler:
         self.error_handler = error_handler
         self.service_bus_handler = service_bus_handler
 
-    # REMOVED: This function was unused and its logic has been superseded by the ServiceBusHandler
-    # and the main handle_webhook flow.
-    # async def _trigger_post_call_analysis(self, call_id: str) -> None:
-    #     ...
+
 
     async def handle_webhook(self, req: func.HttpRequest) -> func.HttpResponse:
         """
@@ -145,8 +139,6 @@ class WebhookHandler:
                 )
                 raise
 
-            # REMOVED: The entire block of old, duplicated, and unreachable code that followed was deleted.
-            # This includes the incorrect second "Phase 5", "Phase 6", and "Phase 7" comments and logic.
 
             # --- Phase 6: Success Response --- (This is the new final step)
             logger.info(

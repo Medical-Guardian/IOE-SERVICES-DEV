@@ -2,7 +2,7 @@
 Engage360 DTC File Processing Workflow
 =====================================
 
-Industry-standard implementation for processing DTC wellness CSV files.
+Implementation for processing DTC wellness CSV files.
 Follows modular architecture with staging → core table flow and comprehensive validation.
 """
 

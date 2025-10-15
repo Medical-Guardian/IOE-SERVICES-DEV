@@ -1,4 +1,3 @@
-# NEW FILE: This service is a modified copy for the DTC Wellness Check campaign.
 # It handles all interactions with the Bland AI API and database logging for this specific campaign.
 
 import logging
