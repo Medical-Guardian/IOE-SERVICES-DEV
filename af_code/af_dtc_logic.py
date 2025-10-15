@@ -302,7 +302,7 @@ def get_dtc_schema() -> DataFrameSchema:
                 checks=Check.isin(["Y", "N", "Yes", "No", "True", "False", "1", "0", None]),
             ),
             "device_phone_number": Column(str, nullable=True),
-            "checkin_time": Column(str, nullable=True, checks=Check.isin(["AM", "PM", "EV", None])),
+            "checkin_time": Column(str, nullable=False, checks=Check.isin(["AM", "PM", "EV"])),
             "enrollment_status": Column(
                 str, nullable=False, checks=Check.isin(["enroll", "update", "unenroll"])
             ),
@@ -1338,6 +1338,14 @@ def validate_and_cleanse_data_before_insert(
 
         checkin_time = clean_empty_values(row.get("checkin_time"))
         valid_checkin_times = ["AM", "PM", "EV"]
+
+        # BUSINESS RULE: checkin_time is REQUIRED for enroll and update operations
+        if enrollment_status and enrollment_status.lower() in ["enroll", "update"]:
+            if not checkin_time:
+                row_errors.append(
+                    f"checkin_time is required for enrollment_status '{enrollment_status}' (must be: AM, PM, or EV)"
+                )
+
         if checkin_time:
             if checkin_time.upper() not in valid_checkin_times:
                 row_errors.append(
