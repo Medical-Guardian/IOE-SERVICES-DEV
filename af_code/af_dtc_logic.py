@@ -1339,11 +1339,11 @@ def validate_and_cleanse_data_before_insert(
         checkin_time = clean_empty_values(row.get("checkin_time"))
         valid_checkin_times = ["AM", "PM", "EV"]
 
-        # BUSINESS RULE: checkin_time is REQUIRED for enroll and update operations
-        if enrollment_status and enrollment_status.lower() in ["enroll", "update"]:
+        # BUSINESS RULE: checkin_time is REQUIRED for ALL enrollment statuses
+        if enrollment_status:
             if not checkin_time:
                 row_errors.append(
-                    f"checkin_time is required for enrollment_status '{enrollment_status}' (must be: AM, PM, or EV)"
+                    f"checkin_time is required for all records (must be: AM, PM, or EV)"
                 )
 
         if checkin_time:
