@@ -2,6 +2,9 @@ import azure.functions as func
 import logging
 import os
 
+# Force module reload version: 2025-10-16-v1
+logging.info("🔄 [FUNCTION-APP] Loading function_app.py - FORCING MODULE RELOAD")
+
 # Verify critical environment variables at startup
 KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL")
 DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")

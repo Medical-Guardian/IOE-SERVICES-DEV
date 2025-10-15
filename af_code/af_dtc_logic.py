@@ -1006,6 +1006,7 @@ def validate_and_cleanse_data_before_insert(
     df_clean["enrollment_started_ts"] = None  # Will be set during enrollment
     logger.info(f"Initialized clean columns. DataFrame now has {len(df_clean.columns)} columns")
 
+    logger.info("🔥🔥🔥 [VALIDATION-START] CODE VERSION: 2025-10-16-DEBUG-v3 - CHECKIN_TIME VALIDATION ACTIVE")
     logger.info("Starting comprehensive data validation and cleansing...")
 
     # Step 1: Handle Empty Values and NULL Conversion
