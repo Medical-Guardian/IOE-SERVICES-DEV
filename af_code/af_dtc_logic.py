@@ -40,6 +40,11 @@ except ImportError:
 from io import BytesIO
 import re  # For special character cleaning
 
+# MODULE LOAD VERIFICATION - This will execute when the module is first imported
+logger = logging.getLogger(__name__)
+logger.info("🔄 [MODULE-LOAD] af_dtc_logic.py loading - VERSION: 2025-10-16-DEBUG-v2")
+logger.info("🔄 [MODULE-LOAD] This version includes checkin_time validation with debug logging")
+
 
 def get_blob_service_client():
 
