@@ -1336,24 +1336,40 @@ def validate_and_cleanse_data_before_insert(
         # CHECK-IN TIME VALIDATION
         # =======================
 
+        # Debug logging for checkin_time validation
+        raw_checkin_time = row.get("checkin_time")
+        logger.info(f"🔍 [VALIDATION-DEBUG] {row_id} - Raw checkin_time value: |{raw_checkin_time}| (type: {type(raw_checkin_time).__name__})")
+
         checkin_time = clean_empty_values(row.get("checkin_time"))
+        logger.info(f"🔍 [VALIDATION-DEBUG] {row_id} - After clean_empty_values: |{checkin_time}| (is None: {checkin_time is None})")
+        logger.info(f"🔍 [VALIDATION-DEBUG] {row_id} - enrollment_status: |{enrollment_status}|")
+
         valid_checkin_times = ["AM", "PM", "EV"]
 
         # BUSINESS RULE: checkin_time is REQUIRED for ALL enrollment statuses
         if enrollment_status:
+            logger.info(f"🔍 [VALIDATION-DEBUG] {row_id} - Checking if checkin_time is required (enrollment_status exists)")
             if not checkin_time:
+                logger.warning(f"❌ [VALIDATION-DEBUG] {row_id} - checkin_time is MISSING! Adding error to row_errors")
                 row_errors.append(
                     f"checkin_time is required for all records (must be: AM, PM, or EV)"
                 )
+            else:
+                logger.info(f"✅ [VALIDATION-DEBUG] {row_id} - checkin_time is present: {checkin_time}")
+        else:
+            logger.warning(f"⚠️ [VALIDATION-DEBUG] {row_id} - No enrollment_status, skipping checkin_time validation")
 
         if checkin_time:
             if checkin_time.upper() not in valid_checkin_times:
+                logger.warning(f"❌ [VALIDATION-DEBUG] {row_id} - Invalid checkin_time value: {checkin_time}")
                 row_errors.append(
                     f"Invalid checkin_time: '{checkin_time}' (must be: {valid_checkin_times})"
                 )
             df_clean.loc[idx, "checkin_time"] = checkin_time.upper()
+            logger.info(f"✅ [VALIDATION-DEBUG] {row_id} - Set checkin_time to: {checkin_time.upper()}")
         else:
             df_clean.loc[idx, "checkin_time"] = None
+            logger.info(f"ℹ️ [VALIDATION-DEBUG] {row_id} - Set checkin_time to None")
 
         # UNENROLLMENT REASON VALIDATION
         # =============================
