@@ -69,23 +69,8 @@ def batch_completion_reconciler_timer(timer: func.TimerRequest) -> None:
         logging.error(f"📋 [BATCH-RECONCILER] Request ID: {request_id}")
         logging.error(f"🔧 [BATCH-RECONCILER] Error Type: {type(e).__name__}")
         logging.error("=" * 80)
-        
+
         # Don't re-raise - let timer continue on next cycle
-        
-    finally:
-        # Step 4: Cleanup resources
-        logging.info("🧹 [BATCH-RECONCILER] Step 4: Starting cleanup process...")
-        if db_service:
-            try:
-                logging.info("🧹 [BATCH-RECONCILER] Step 4.1: DatabaseService cleanup...")
-                # DatabaseService cleanup (if needed) - currently no explicit cleanup required
-                logging.info("✅ [BATCH-RECONCILER] Step 4.1: DatabaseService cleanup completed")
-                logging.info("✅ [BATCH-RECONCILER] Step 4: All cleanup completed successfully")
-            except Exception as cleanup_error:
-                logging.error(f"⚠️ [BATCH-RECONCILER] Step 4: Error during cleanup: {str(cleanup_error)}")
-                logging.error(f"⚠️ [BATCH-RECONCILER] Step 4: Cleanup error type: {type(cleanup_error).__name__}")
-        else:
-            logging.info("ℹ️ [BATCH-RECONCILER] Step 4: No services to cleanup")
 
 @batch_completion_bp.route(route="batch_completion_reconciler", methods=["GET", "POST"])
 def batch_completion_reconciler_http(req: func.HttpRequest) -> func.HttpResponse:
