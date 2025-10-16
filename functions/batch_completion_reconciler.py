@@ -241,7 +241,7 @@ def _execute_batch_reconciliation(request_id: str, start_time: datetime, trigger
                         # Call Bland AI API to get batch logs
                         import requests
 
-                        bland_api_key = config_manager.get_secret('BLAND_AI_API_KEY')
+                        bland_api_key = config_manager.get_config('BlandAIkey')
                         api_url = f"https://api.bland.ai/v2/batches/{vendor_batch_id}/logs"
                         headers = {"authorization": bland_api_key}
 
