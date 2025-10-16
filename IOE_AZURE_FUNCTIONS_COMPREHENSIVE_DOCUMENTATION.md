@@ -765,23 +765,236 @@ flowchart TD
 - **Integration**: Azure Service Bus for asynchronous processing
 - **Messages**: Post-call analysis, reporting, external system notifications
 
+### **Call Disposition Rules & Status Mapping**
+
+#### **Complete Disposition Mapping System**
+
+**Implementation Files**:
+- `af_code/bland_ai_webhook/services/status_mapper.py:30-146` - Status translation engine
+- `af_code/bland_ai_webhook/services/business_rules_engine.py:53-264` - Business rules
+
+#### **1. Bland AI Disposition Tags (Source Data)**
+
+| **Disposition Tag** | **Category** | **Meaning** | **Contact Made** |
+|-------------------|-------------|-------------|------------------|
+| `CONTACT_MADE` | ✅ Success | Direct conversation with member | Yes |
+| `NO_CONTACT_MADE` | ⚠️ No Contact | Call connected but no person | No |
+| `NO_ANSWER` | ⚠️ No Contact | Phone rang, no answer | No |
+| `VOICEMAIL` | ⚠️ No Contact | Went to voicemail | No |
+| `BUSY` | ⚠️ No Contact | Line was busy | No |
+| `COMPLETED_ACTION` | ✅ Success | Member completed intended action | Yes |
+| `OPT_OUT` | 🚫 Opt-Out | Member requested to opt out | Yes |
+| `INTERESTED` | ✅ Success | Member expressed interest | Yes |
+| `NOT_INTERESTED` | ✅ Success | Member not interested but talked | Yes |
+| `FOLLOW_UP_REQUIRED` | 📞 Follow-up | Needs follow-up call | Yes |
+| `CALL_BACK_SCHEDULED` | 📅 Scheduled | Callback scheduled with member | Yes |
+| `TRANSFERRED` | 🔀 Transfer | Call transferred to another agent | Yes |
+| `OBJECTION_RAISED` | ⚠️ Concern | Member raised objections | Yes |
+| `NEEDS_MORE_INFO` | ℹ️ Info | Member needs more information | Yes |
+| `NOT_QUALIFIED` | ❌ Disqualified | Member doesn't qualify | Yes |
+| `DO_NOT_CONTACT` | 🚫 DNC | Do not contact request | Yes |
+| `AGENT_ENDED_CALL` | ⚠️ No Contact | Agent/AI ended early | No |
+| `INVALID_NUMBER` | ❌ Error | Phone number invalid | No |
+| `CANCELED` | ❌ Failed | Call was canceled | No |
+| `FAILED` | ❌ Failed | Call failed technically | No |
+
+#### **2. Internal Disposition Mapping**
+
+**Completed Dispositions** ✅
+```python
+("completed", "CONTACT_MADE")        → disposition: "Completed", next_action: "Close"
+("completed", "COMPLETED_ACTION")    → disposition: "Completed", next_action: "Close"
+("completed", "INTERESTED")          → disposition: "Completed", next_action: "Follow_Up"
+("completed", "NOT_INTERESTED")      → disposition: "Completed", next_action: "Close"
+("completed", "FOLLOW_UP_REQUIRED")  → disposition: "Completed", next_action: "Follow_Up"
+("completed", "CALL_BACK_SCHEDULED") → disposition: "Completed", next_action: "Scheduled"
+("completed", "TRANSFERRED")         → disposition: "Completed", next_action: "Transferred"
+("completed", "OBJECTION_RAISED")    → disposition: "Completed", next_action: "Follow_Up"
+("completed", "NEEDS_MORE_INFO")     → disposition: "Completed", next_action: "Follow_Up"
+("completed", "NOT_QUALIFIED")       → disposition: "Completed", next_action: "Close"
+```
+
+**No Answer Dispositions** ⚠️
+```python
+("completed", "NO_CONTACT_MADE")     → disposition: "NoAnswer", next_action: "Retry"
+("completed", "NO_ANSWER")           → disposition: "NoAnswer", next_action: "Retry"
+("completed", "VOICEMAIL")           → disposition: "NoAnswer", next_action: "Retry"
+("completed", "BUSY")                → disposition: "NoAnswer", next_action: "Retry"
+("completed", "AGENT_ENDED_CALL")    → disposition: "NoAnswer", next_action: "Retry"
+```
+
+**Opt-Out Dispositions** 🚫
+```python
+("completed", "OPT_OUT")             → disposition: "OptOut", next_action: "Close"
+("completed", "DO_NOT_CONTACT")      → disposition: "OptOut", next_action: "Close"
+```
+
+**Failed Dispositions** ❌
+```python
+("failed", None)                     → disposition: "Failed", next_action: "Retry"
+("failed", "INVALID_NUMBER")         → disposition: "Failed", next_action: "Escalate"
+("failed", "CANCELED")               → disposition: "Failed", next_action: "Retry"
+("failed", "FAILED")                 → disposition: "Failed", next_action: "Retry"
+("cancelled", None)                  → disposition: "Failed", next_action: "Retry"
+```
+
+**Pending Dispositions** ⏳
+```python
+("in-progress", None)                → disposition: "Pending", next_action: "Retry"
+```
+
+#### **3. Next Action Mapping**
+
+| **Next Action** | **Meaning** | **Follow-up Required** |
+|----------------|-------------|----------------------|
+| `Close` | Call complete, no further action | None |
+| `Retry` | Should retry later | Schedule another attempt |
+| `Follow_Up` | Needs follow-up call | Manual or automated follow-up |
+| `Scheduled` | Callback scheduled | Wait for scheduled time |
+| `Transferred` | Transferred to another agent | Track transfer outcome |
+| `Escalate` | Needs manual intervention | Review by support team |
+
+#### **4. Enrollment Status Update Rules (DTC Intro Campaign)**
+
+**Campaign ID**: `34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC`
+
+| **Condition** | **Enrollment Status** | **Confidence** | **Reason** |
+|--------------|---------------------|---------------|-----------|
+| `disposition = "Completed"` AND `contact_made = true` AND `opt_out_requested = false` | **ENROLLED** | High | Member successfully contacted |
+| `disposition_tag = "COMPLETED_ACTION"` | **ENROLLED** | High | Member completed action |
+| `disposition_tag = "INTERESTED"` | **ENROLLED** | High | Member expressed interest |
+| `disposition = "OptOut"` AND `opt_out_requested = true` | **OPTED_OUT** | High | Member explicitly opted out |
+| `disposition = "NoAnswer"` | **No Change** | Medium | Keep ENROLLED for retry |
+| `disposition = "Failed"` | **No Change** | Low | Keep ENROLLED for retry |
+
+#### **5. Database Storage Locations**
+
+```sql
+-- Original Bland AI data
+engage360.bland_call_logs.disposition_tag        -- Bland AI disposition tag
+engage360.bland_call_logs.status                -- Bland AI call status
+
+-- Mapped internal disposition
+engage360.outreach_attempts.disposition          -- Internal mapped disposition
+engage360.outreach_attempts.next_action          -- Recommended next action
+engage360.outreach_attempts.response_summary     -- Call summary
+
+-- Enrollment status (business rules result)
+engage360.member_campaign_enrollments_enhanced.current_status
+-- Values: ENROLLED, UNENROLLED, OPTED_OUT, PENDING
+```
+
+#### **6. Disposition Decision Flow**
+
+```mermaid
+flowchart TD
+    A[Bland AI Webhook] --> B[Extract Status & Disposition Tag]
+    B --> C[StatusMapper]
+    C --> D{Map to Internal Disposition}
+
+    D --> E[Completed]
+    D --> F[NoAnswer]
+    D --> G[OptOut]
+    D --> H[Failed]
+    D --> I[Pending]
+
+    E --> J[BusinessRulesEngine]
+    F --> J
+    G --> J
+    H --> J
+    I --> J
+
+    J --> K{Campaign-Specific Rules}
+    K -->|DTC Intro| L{Check Contact Made}
+    K -->|Other| M[Default Rules]
+
+    L -->|Yes + No OptOut| N[ENROLLED]
+    L -->|OptOut Requested| O[OPTED_OUT]
+    L -->|No Contact| P[Keep Current - Retry]
+
+    N --> Q[Update Database]
+    O --> Q
+    P --> Q
+    M --> Q
+
+    subgraph "Data Extraction"
+        B --> B1[call_id]
+        B --> B2[status]
+        B --> B3[disposition_tag]
+        B --> B4[metadata]
+        B --> B5[duration]
+    end
+
+    subgraph "Status Mapping"
+        C --> C1[Disposition]
+        C --> C2[Next Action]
+        C --> C3[Contact Made Flag]
+        C --> C4[Response Summary]
+    end
+
+    subgraph "Database Updates"
+        Q --> Q1[bland_call_logs]
+        Q --> Q2[outreach_attempts]
+        Q --> Q3[member_campaign_enrollments_enhanced]
+        Q --> Q4[member_enrollment_status_history]
+    end
+```
+
+#### **7. Query Examples**
+
+**Find All Calls for a Member**:
+```sql
+SELECT
+    bcl.call_id,
+    bcl.member_id,
+    bcl.campaign_id,
+    bcl.status,
+    bcl.disposition_tag,
+    bcl.created_at,
+    bcl.corrected_duration,
+    bcl.summary,
+    oa.disposition AS internal_disposition,
+    oa.next_action,
+    mce.current_status AS enrollment_status
+FROM engage360.bland_call_logs bcl
+LEFT JOIN engage360.outreach_attempts oa ON bcl.call_id = oa.vendor_session_id
+LEFT JOIN engage360.member_campaign_enrollments_enhanced mce ON oa.enrollment_id = mce.enrollment_id
+WHERE bcl.member_id = '<MEMBER_UUID>'
+ORDER BY bcl.created_at DESC;
+```
+
+**Check Member Enrollment Status Changes**:
+```sql
+SELECT
+    mesh.change_timestamp,
+    mesh.campaign_id,
+    mesh.previous_status,
+    mesh.new_status,
+    mesh.change_source,
+    mesh.change_details,
+    mesh.duration_since_last_change_hours
+FROM engage360.member_enrollment_status_history mesh
+WHERE mesh.member_id = '<MEMBER_UUID>'
+ORDER BY mesh.change_timestamp DESC;
+```
+
 ### **Auto-Transition Logic**
 ```mermaid
 flowchart TD
     A[Successful Intro Call] --> B{Campaign Type Check}
     B -->|DTC Intro| C[Check Auto-Transition Eligibility]
     B -->|Other| D[Standard Processing]
-    
+
     C --> E{Member Qualified?}
     E -->|Yes| F[Create Wellness Enrollment]
     E -->|No| G[Mark Intro Complete Only]
-    
+
     F --> H[Update Intro Status: UNENROLLED]
     H --> I[Create Wellness Enrollment: ENROLLED]
     I --> J[Copy Preferred Window]
     J --> K[Set Auto-Transition Flags]
     K --> L[Commit Transaction]
-    
+
     subgraph "Auto-Transition Validation"
         E --> V1[Member Active Status]
         V1 --> V2[Campaign Rules Check]

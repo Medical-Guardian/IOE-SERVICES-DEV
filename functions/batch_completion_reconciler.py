@@ -199,24 +199,121 @@ def _execute_batch_reconciliation(request_id: str, start_time: datetime, trigger
         
         logging.info(f"✅ [BATCH-RECONCILER] Step 2: API health check passed (Trigger: {trigger_type.upper()})")
         
-        # Step 3: Execute batch reconciliation (simplified for now)
+        # Step 3: Execute batch reconciliation using Bland AI API
         logging.info(f"🔒 [BATCH-RECONCILER] Step 3: Starting batch reconciliation process (Trigger: {trigger_type.upper()})...")
-        logging.info("🔒 [BATCH-RECONCILER] Step 3.1: Checking for stale batches requiring reconciliation...")
+        logging.info("🔒 [BATCH-RECONCILER] Step 3.1: Querying for stale batches requiring reconciliation...")
         reconciliation_start = datetime.utcnow()
-        
+
         try:
-            # Note: This is a simplified version for initial deployment
-            # Future versions will implement:
-            # - Distributed locking to prevent concurrent execution
-            # - Query for batches that haven't been updated by webhooks recently
-            # - Call Bland AI API to get current batch status
-            # - Update database with current completion status
-            
-            logging.info("📊 [BATCH-RECONCILER] Step 3.1: Stale batch check completed (simplified version)")
-            logging.info("📊 [BATCH-RECONCILER] Step 3.2: No batches requiring reconciliation found")
-            reconciliation_duration = (datetime.utcnow() - reconciliation_start).total_seconds()
-            logging.info(f"📊 [BATCH-RECONCILER] Step 3: Batch reconciliation completed (simplified version) - Duration: {reconciliation_duration:.3f}s")
-            
+            # Query for batches that need reconciliation (submitted but not completed/failed)
+            stale_batches_query = """
+                SELECT batch_id, vendor_batch_id, campaign_id, total_calls_intended,
+                       batch_status, submitted_ts, last_status_check_ts
+                FROM engage360.outreach_batches
+                WHERE batch_status IN ('Submitted', 'Pending')
+                  AND vendor_batch_id IS NOT NULL
+                  AND (last_status_check_ts IS NULL
+                       OR DATEDIFF(MINUTE, last_status_check_ts, SYSDATETIMEOFFSET()) >= 15)
+                ORDER BY submitted_ts ASC
+            """
+
+            stale_batches = db_service.execute_query(stale_batches_query, (), fetch_results=True)
+
+            if not stale_batches:
+                logging.info("📊 [BATCH-RECONCILER] Step 3.1: No stale batches requiring reconciliation found")
+                reconciliation_duration = (datetime.utcnow() - reconciliation_start).total_seconds()
+                logging.info(f"📊 [BATCH-RECONCILER] Step 3: Batch reconciliation completed - Duration: {reconciliation_duration:.3f}s")
+            else:
+                logging.info(f"📊 [BATCH-RECONCILER] Step 3.1: Found {len(stale_batches)} stale batches to reconcile")
+
+                # Step 3.2: Process each stale batch
+                batches_updated = 0
+                batches_failed = 0
+
+                for batch in stale_batches:
+                    batch_id = batch['batch_id']
+                    vendor_batch_id = batch['vendor_batch_id']
+                    total_calls_intended = batch['total_calls_intended']
+
+                    logging.info(f"🔍 [BATCH-RECONCILER] Step 3.2: Processing batch {vendor_batch_id}")
+
+                    try:
+                        # Call Bland AI API to get batch logs
+                        import requests
+
+                        bland_api_key = config_manager.get_secret('BLAND_AI_API_KEY')
+                        api_url = f"https://api.bland.ai/v2/batches/{vendor_batch_id}/logs"
+                        headers = {"authorization": bland_api_key}
+
+                        logging.info(f"🌐 [BATCH-RECONCILER] Calling Bland AI API for batch logs...")
+                        response = requests.get(api_url, headers=headers, timeout=30)
+                        response.raise_for_status()
+
+                        batch_logs = response.json()
+                        logging.info(f"✅ [BATCH-RECONCILER] Retrieved batch logs from Bland AI")
+
+                        # Parse batch completion status from logs
+                        batch_status = _parse_batch_status_from_logs(batch_logs)
+
+                        if batch_status:
+                            # Update outreach_batches table
+                            update_query = """
+                                UPDATE engage360.outreach_batches
+                                SET batch_status = %s,
+                                    total_calls_completed = %s,
+                                    total_calls_failed = %s,
+                                    last_status_check_ts = SYSDATETIMEOFFSET(),
+                                    api_reconciled = 1,
+                                    updated_ts = SYSDATETIMEOFFSET()
+                                WHERE batch_id = %s
+                            """
+
+                            params = (
+                                batch_status['status'],
+                                batch_status.get('completed_count', 0),
+                                batch_status.get('failed_count', 0),
+                                batch_id
+                            )
+
+                            db_service.execute_query(update_query, params, fetch_results=False)
+                            batches_updated += 1
+
+                            logging.info(f"✅ [BATCH-RECONCILER] Updated batch {vendor_batch_id}")
+                            logging.info(f"   - Status: {batch_status['status']}")
+                            logging.info(f"   - Completed: {batch_status.get('completed_count', 0)}")
+                            logging.info(f"   - Failed: {batch_status.get('failed_count', 0)}")
+                        else:
+                            # Just update last check timestamp
+                            update_ts_query = """
+                                UPDATE engage360.outreach_batches
+                                SET last_status_check_ts = SYSDATETIMEOFFSET()
+                                WHERE batch_id = %s
+                            """
+                            db_service.execute_query(update_ts_query, (batch_id,), fetch_results=False)
+                            logging.info(f"ℹ️ [BATCH-RECONCILER] No status change for batch {vendor_batch_id}")
+
+                    except requests.exceptions.RequestException as api_error:
+                        batches_failed += 1
+                        logging.error(f"❌ [BATCH-RECONCILER] API error for batch {vendor_batch_id}: {str(api_error)}")
+
+                        # Update last check timestamp even on error
+                        update_ts_query = """
+                            UPDATE engage360.outreach_batches
+                            SET last_status_check_ts = SYSDATETIMEOFFSET(),
+                                status_reason = %s
+                            WHERE batch_id = %s
+                        """
+                        db_service.execute_query(update_ts_query, (f"API error: {str(api_error)[:200]}", batch_id), fetch_results=False)
+
+                    except Exception as batch_error:
+                        batches_failed += 1
+                        logging.error(f"❌ [BATCH-RECONCILER] Error processing batch {vendor_batch_id}: {str(batch_error)}")
+                        logging.error(f"❌ [BATCH-RECONCILER] Traceback: {traceback.format_exc()}")
+
+                reconciliation_duration = (datetime.utcnow() - reconciliation_start).total_seconds()
+                logging.info(f"📊 [BATCH-RECONCILER] Step 3: Batch reconciliation completed - Duration: {reconciliation_duration:.3f}s")
+                logging.info(f"📊 [BATCH-RECONCILER] Summary: {batches_updated} updated, {batches_failed} failed, {len(stale_batches)} total")
+
         except Exception as reconcile_error:
             logging.error(f"🚨 [BATCH-RECONCILER] Step 3: Reconciliation error: {str(reconcile_error)}")
             logging.error(f"🚨 [BATCH-RECONCILER] Step 3: Error type: {type(reconcile_error).__name__}")
@@ -246,6 +343,64 @@ def _execute_batch_reconciliation(request_id: str, start_time: datetime, trigger
                 logging.error(f"⚠️ [BATCH-RECONCILER] Step 4: Cleanup error traceback: {traceback.format_exc()}")
         else:
             logging.info("ℹ️ [BATCH-RECONCILER] Step 4: No services to cleanup")
+
+def _parse_batch_status_from_logs(batch_logs: dict) -> dict:
+    """
+    Parse Bland AI batch logs to extract completion status and statistics.
+
+    Args:
+        batch_logs: Response from Bland AI /v2/batches/{batch_id}/logs endpoint
+
+    Returns:
+        dict with keys: status, completed_count, failed_count
+        or None if status cannot be determined
+    """
+    try:
+        # Look for "complete" event type in logs
+        if not batch_logs or not isinstance(batch_logs, dict):
+            return None
+
+        # Bland AI batch logs structure: list of events
+        events = batch_logs.get('events', []) or batch_logs.get('logs', [])
+
+        if not events:
+            return None
+
+        # Find the most recent completion event
+        completion_event = None
+        for event in reversed(events):
+            if event.get('event_type') == 'complete':
+                completion_event = event
+                break
+
+        if completion_event:
+            # Extract statistics from completion event
+            data = completion_event.get('data', {}) or {}
+
+            completed_count = data.get('completed_count', 0) or data.get('successful_calls', 0)
+            failed_count = data.get('failed_count', 0) or data.get('failed_calls', 0)
+            total_count = data.get('total_count', 0)
+
+            return {
+                'status': 'Completed',
+                'completed_count': completed_count,
+                'failed_count': failed_count,
+                'total_count': total_count
+            }
+
+        # Check for in-progress status
+        for event in reversed(events):
+            event_type = event.get('event_type', '').lower()
+            if event_type in ['in progress', 'dispatching', 'validating']:
+                # Still in progress, update timestamp but don't change status
+                return None
+
+        # If no clear status found, return None
+        return None
+
+    except Exception as e:
+        logging.error(f"❌ [BATCH-RECONCILER] Error parsing batch logs: {str(e)}")
+        return None
 
 def _log_execution_summary(request_id: str, start_time: datetime, skipped: bool = False, reason: str = None, trigger_type: str = "timer"):
     """

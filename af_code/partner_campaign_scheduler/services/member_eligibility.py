@@ -233,10 +233,10 @@ class MemberEligibilityService:
         
         return (
             campaign.campaign_id,                    # @campaign_id
-            campaign.frequency_unit,                 # @frequency_unit  
+            campaign.frequency_unit,                 # @frequency_unit
             campaign.frequency_value,                # @frequency_value
             campaign.timezone_flag or 'operating_tz', # @timezone_flag (default to operating_tz)
-            campaign.operating_tz or 'EST',          # @operating_tz (default to EST)
+            campaign.operating_tz or 'Eastern Standard Time',  # @operating_tz (SQL Server timezone name)
             contact_pref,                            # @contact_pref (with auto conversion)
             campaign.audience_file_batch,            # @audience_batch
             campaign.operating_start_time,           # @start_time
