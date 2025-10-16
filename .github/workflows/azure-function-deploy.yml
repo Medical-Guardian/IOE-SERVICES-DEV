@@ -642,7 +642,7 @@ jobs:
 
           MAX_RETRIES=5
           RETRY_COUNT=0
-          HEALTH_URL="https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net"
+          HEALTH_URL="https://ioe-function-e2g7e6d4e6hme4ge.eastus2-01.azurewebsites.net"
 
           echo "🌐 Checking: $HEALTH_URL"
 
