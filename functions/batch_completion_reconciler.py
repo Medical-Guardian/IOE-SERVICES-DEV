@@ -255,14 +255,20 @@ def _execute_batch_reconciliation(request_id: str, start_time: datetime, trigger
 
                         # Log first few events for debugging
                         if isinstance(batch_logs, dict):
-                            events = batch_logs.get('events', []) or batch_logs.get('logs', [])
+                            events = batch_logs.get('data', [])
                             if events:
-                                logging.info(f"🔍 [BATCH-RECONCILER] Found {len(events)} events in logs")
+                                logging.info(f"🔍 [BATCH-RECONCILER] Found {len(events)} events in 'data' array")
                                 for i, event in enumerate(events[:3]):  # Show first 3 events
                                     event_type = event.get('event_type', 'unknown')
-                                    logging.info(f"🔍 [BATCH-RECONCILER] Event {i+1}: type='{event_type}'")
+                                    timestamp = event.get('timestamp', 'N/A')
+                                    logging.info(f"🔍 [BATCH-RECONCILER] Event {i+1}: type='{event_type}', timestamp='{timestamp}'")
+
+                                    # Show payload for complete events
+                                    if event_type == 'complete':
+                                        payload = event.get('payload', {})
+                                        logging.info(f"🔍 [BATCH-RECONCILER] Complete event payload: {payload}")
                             else:
-                                logging.warning(f"⚠️ [BATCH-RECONCILER] No events found in batch logs")
+                                logging.warning(f"⚠️ [BATCH-RECONCILER] No events found in 'data' array")
 
                         # Parse batch completion status from logs
                         batch_status = _parse_batch_status_from_logs(batch_logs)
@@ -363,6 +369,20 @@ def _parse_batch_status_from_logs(batch_logs: dict) -> dict:
     Args:
         batch_logs: Response from Bland AI /v2/batches/{batch_id}/logs endpoint
 
+    Example response structure:
+    {
+        "data": [
+            {
+                "event_type": "complete",
+                "payload": {
+                    "calls_total": 2,
+                    "calls_failed": 0,
+                    "calls_successful": 2
+                }
+            }
+        ]
+    }
+
     Returns:
         dict with keys: status, completed_count, failed_count
         or None if status cannot be determined
@@ -372,46 +392,54 @@ def _parse_batch_status_from_logs(batch_logs: dict) -> dict:
         if not batch_logs or not isinstance(batch_logs, dict):
             return None
 
-        # Bland AI batch logs structure: list of events
-        events = batch_logs.get('events', []) or batch_logs.get('logs', [])
+        # Bland AI batch logs structure: {"data": [...]}
+        events = batch_logs.get('data', [])
 
         if not events:
+            logging.warning(f"⚠️ [BATCH-RECONCILER] No events found in batch logs (expected 'data' key)")
             return None
 
         # Find the most recent completion event
         completion_event = None
-        for event in reversed(events):
+        for event in events:
             if event.get('event_type') == 'complete':
                 completion_event = event
-                break
+                break  # First in list is most recent
 
         if completion_event:
-            # Extract statistics from completion event
-            data = completion_event.get('data', {}) or {}
+            # Extract statistics from completion event payload
+            payload = completion_event.get('payload', {})
 
-            completed_count = data.get('completed_count', 0) or data.get('successful_calls', 0)
-            failed_count = data.get('failed_count', 0) or data.get('failed_calls', 0)
-            total_count = data.get('total_count', 0)
+            calls_successful = payload.get('calls_successful', 0)
+            calls_failed = payload.get('calls_failed', 0)
+            calls_total = payload.get('calls_total', 0)
+
+            logging.info(f"✅ [BATCH-RECONCILER] Found completion event: total={calls_total}, successful={calls_successful}, failed={calls_failed}")
 
             return {
                 'status': 'Completed',
-                'completed_count': completed_count,
-                'failed_count': failed_count,
-                'total_count': total_count
+                'completed_count': calls_successful,
+                'failed_count': calls_failed,
+                'total_count': calls_total
             }
 
-        # Check for in-progress status
-        for event in reversed(events):
-            event_type = event.get('event_type', '').lower()
-            if event_type in ['in progress', 'dispatching', 'validating']:
-                # Still in progress, update timestamp but don't change status
-                return None
+        # Check for in-progress status (lifecycle events)
+        for event in events:
+            event_type = event.get('event_type', '')
+            if event_type == 'lifecycle':
+                payload = event.get('payload', {})
+                state_change = payload.get('state_change', '').lower()
+                if state_change in ['in_progress', 'dispatching', 'validating', 'initializing']:
+                    logging.info(f"ℹ️ [BATCH-RECONCILER] Batch still in progress: state={state_change}")
+                    return None
 
         # If no clear status found, return None
+        logging.warning(f"⚠️ [BATCH-RECONCILER] No completion or lifecycle events found")
         return None
 
     except Exception as e:
         logging.error(f"❌ [BATCH-RECONCILER] Error parsing batch logs: {str(e)}")
+        logging.error(f"❌ [BATCH-RECONCILER] Traceback: {traceback.format_exc()}")
         return None
 
 def _log_execution_summary(request_id: str, start_time: datetime, skipped: bool = False, reason: str = None, trigger_type: str = "timer"):
