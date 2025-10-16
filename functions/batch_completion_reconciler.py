@@ -251,6 +251,18 @@ def _execute_batch_reconciliation(request_id: str, start_time: datetime, trigger
 
                         batch_logs = response.json()
                         logging.info(f"✅ [BATCH-RECONCILER] Retrieved batch logs from Bland AI")
+                        logging.info(f"🔍 [BATCH-RECONCILER] Batch logs structure: {list(batch_logs.keys()) if isinstance(batch_logs, dict) else type(batch_logs)}")
+
+                        # Log first few events for debugging
+                        if isinstance(batch_logs, dict):
+                            events = batch_logs.get('events', []) or batch_logs.get('logs', [])
+                            if events:
+                                logging.info(f"🔍 [BATCH-RECONCILER] Found {len(events)} events in logs")
+                                for i, event in enumerate(events[:3]):  # Show first 3 events
+                                    event_type = event.get('event_type', 'unknown')
+                                    logging.info(f"🔍 [BATCH-RECONCILER] Event {i+1}: type='{event_type}'")
+                            else:
+                                logging.warning(f"⚠️ [BATCH-RECONCILER] No events found in batch logs")
 
                         # Parse batch completion status from logs
                         batch_status = _parse_batch_status_from_logs(batch_logs)
