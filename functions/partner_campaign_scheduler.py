@@ -221,14 +221,29 @@ def _execute_partner_campaign_scheduler(request_id: str, start_time: datetime, t
             for batch_num, batch in enumerate(batches, 1):
                 logging.info(f"📋 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Processing batch {batch_num}/{len(batches)}")
                 logging.info(f"📋 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Batch contains {len(batch)} members")
-                
-                # Note: Batch submission to Bland AI requires async operations
-                # which are not supported in sync timer functions.
-                # For now, we identify eligible members but skip actual submission.
-                logging.info(f"⚠️ [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Skipping batch submission (async not supported in sync timer)")
-                logging.info(f"📊 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Members ready for submission: {len(batch)}")
-                
-                total_batches_submitted += 1  # Count batches processed
+
+                # Submit batch to Bland AI (SYNCHRONOUS - waits for confirmation)
+                try:
+                    logging.info(f"🚀 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Submitting batch to Bland AI...")
+
+                    result = batch_orchestrator.submit_batch(campaign, batch)
+
+                    if result.success:
+                        logging.info(f"✅ [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Batch submitted successfully!")
+                        logging.info(f"📦 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Bland AI Batch ID: {result.batch_id}")
+                        logging.info(f"📊 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Calls queued: {result.members_count}")
+                        logging.info(f"🔔 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Webhooks will be received as calls complete")
+                        total_batches_submitted += 1
+                    else:
+                        logging.error(f"❌ [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Batch submission failed")
+                        logging.error(f"❌ [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Error: {result.error}")
+                        logging.warning(f"⚠️ [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: {len(batch)} members will not be called")
+
+                except Exception as e:
+                    logging.error(f"🚨 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Exception during batch submission")
+                    logging.error(f"🚨 [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Error: {str(e)}")
+                    logging.warning(f"⚠️ [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: {len(batch)} members will not be called")
+
                 logging.info(f"✅ [PARTNER-SCHEDULER] Step 3.{campaign_num}.3.{batch_num}: Batch processing completed")
             
             total_campaigns_processed += 1

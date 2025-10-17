@@ -27,19 +27,22 @@ class BatchOrchestrator:
             logger.info("🔧 [BATCH-ORCHESTRATOR] Service initialized in disabled mode")
             self.bland_client = None
     
-    async def submit_batch(self, campaign: QualifiedCampaign, members: List[EligibleMember]) -> BatchResult:
+    def submit_batch(self, campaign: QualifiedCampaign, members: List[EligibleMember]) -> BatchResult:
         """
-        Submit a batch of members to Bland AI for calling
-        
+        Submit a batch of members to Bland AI for calling (SYNCHRONOUS)
+
+        Uses synchronous HTTP requests to submit batch and wait for confirmation.
+        This blocks until Bland AI returns a batch_id (typically 5-10 seconds).
+
         Args:
             campaign: The campaign configuration
             members: List of eligible members to call
-            
+
         Returns:
             BatchResult with success status and details
         """
         logger.info(f"🚀 [BATCH-ORCHESTRATOR] Submitting batch of {len(members)} members for campaign: {campaign.name}")
-        
+
         if not self.enabled:
             logger.warning("⚠️ [BATCH-ORCHESTRATOR] Batch orchestrator disabled - skipping submission")
             return BatchResult(
@@ -48,26 +51,26 @@ class BatchOrchestrator:
                 members_count=len(members),
                 campaign_id=campaign.campaign_id
             )
-        
+
         try:
             # Build Bland AI batch request
             batch_request = self._build_batch_request(campaign, members)
-            
+
             logger.info(f"📞 [BATCH-ORCHESTRATOR] Built batch request with {len(batch_request.calls)} calls")
             logger.info(f"🎭 [BATCH-ORCHESTRATOR] Using pathway: {batch_request.pathway_id}")
             logger.info(f"🎤 [BATCH-ORCHESTRATOR] Using voice: {batch_request.voice_id}")
-            
-            # Submit to Bland AI
-            response = await self.bland_client.submit_batch_calls(batch_request)
-            
+
+            # Submit to Bland AI (SYNCHRONOUS - waits for response)
+            response = self.bland_client.submit_batch_calls(batch_request)
+
             if response.get('success'):
                 batch_id = response.get('batch_id')
                 calls_submitted = response.get('calls_submitted', len(members))
-                
+
                 logger.info(f"✅ [BATCH-ORCHESTRATOR] Batch submitted successfully")
                 logger.info(f"📦 [BATCH-ORCHESTRATOR] Bland Batch ID: {batch_id}")
                 logger.info(f"📊 [BATCH-ORCHESTRATOR] Calls submitted: {calls_submitted}")
-                
+
                 return BatchResult(
                     success=True,
                     batch_id=batch_id,
@@ -78,18 +81,18 @@ class BatchOrchestrator:
             else:
                 error_msg = response.get('error', 'Unknown error')
                 status_code = response.get('status_code', 'Unknown')
-                
+
                 logger.error(f"❌ [BATCH-ORCHESTRATOR] Batch submission failed")
                 logger.error(f"❌ [BATCH-ORCHESTRATOR] Error: {error_msg}")
                 logger.error(f"❌ [BATCH-ORCHESTRATOR] Status code: {status_code}")
-                
+
                 return BatchResult(
                     success=False,
                     error=f"Status {status_code}: {error_msg}",
                     members_count=len(members),
                     campaign_id=campaign.campaign_id
                 )
-                
+
         except Exception as e:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Exception during batch submission: {str(e)}")
             return BatchResult(
