@@ -308,8 +308,8 @@ CASE m.timezone
               AND te.member_current_time BETWEEN @start_time AND @end_time
               -- Timezone-aware day of week check
               AND te.member_current_day IN (SELECT value FROM STRING_SPLIT(@call_days, ','))
-            ORDER BY 
-                CASE WHEN fc.member_id IS NULL THEN 0 ELSE 1 END,  -- Never attempted first
+            ORDER BY
+                CASE WHEN fc.last_attempt_ts IS NULL THEN 0 ELSE 1 END,  -- Never attempted first
                 fc.last_attempt_ts ASC  -- Oldest attempts first
         """
     
