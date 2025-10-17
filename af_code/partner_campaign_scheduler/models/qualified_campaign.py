@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Dict, Any
 
 @dataclass
 class QualifiedCampaign:
@@ -24,3 +24,10 @@ class QualifiedCampaign:
     audience_file_batch: str
     partner_contact_name: Optional[str]  # Partner contact from orgs table
     org_name: Optional[str]  # Organization name from orgs table
+
+    # Bland AI parameters from campaign_call_configs_enhanced.bland_parameters_global
+    bland_parameters_global: Optional[Dict[str, Any]] = None  # Full JSON object
+    pathway_id: Optional[str] = None  # Extracted from bland_parameters_global
+    voice_id: Optional[str] = None  # Extracted from bland_parameters_global
+    webhook_url: Optional[str] = None  # Extracted from bland_parameters_global
+    max_duration: Optional[str] = None  # Extracted from bland_parameters_global

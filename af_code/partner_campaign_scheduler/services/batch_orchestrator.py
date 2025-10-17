@@ -177,11 +177,19 @@ class BatchOrchestrator:
 
         logger.info(f"📞 [BATCH-ORCHESTRATOR] Successfully built {len(calls)} calls with complete request_data")
 
+        # Get Bland AI parameters (campaign-specific or fallback to environment)
+        pathway_id = self._get_pathway_id(campaign)
+        voice_id = self._get_voice_id(campaign)
+        webhook_url = self._get_webhook_url(campaign)
+        max_duration = self._get_max_duration(campaign)
+
         return BatchRequest(
             campaign_id=campaign.campaign_id,
             calls=calls,
-            pathway_id=self._get_pathway_id(campaign),
-            voice_id=self._get_voice_id(campaign)
+            pathway_id=pathway_id,
+            voice_id=voice_id,
+            webhook_url=webhook_url,
+            max_duration=max_duration
         )
 
     def _build_request_data(self, member: EligibleMember, campaign: QualifiedCampaign) -> Dict[str, Any]:
@@ -342,23 +350,82 @@ class BatchOrchestrator:
         return None
     
     def _get_pathway_id(self, campaign: QualifiedCampaign) -> str:
-        """Get the appropriate pathway ID for the campaign"""
-        # Check if campaign has specific pathway configuration
-        if campaign.config_id:
-            # Could fetch pathway from campaign_call_configs_enhanced table
-            # For now, use a default Partner campaign pathway
-            pathway_id = self.config_manager.get_config("PARTNER_CAMPAIGN_PATHWAY_ID", "default-partner-pathway")
-        else:
-            # Fallback to default pathway
-            pathway_id = self.config_manager.get_config("DEFAULT_PARTNER_PATHWAY_ID", "default-partner-pathway")
-        
-        logger.info(f"🎭 [BATCH-ORCHESTRATOR] Selected pathway ID: {pathway_id}")
+        """
+        Get pathway ID from campaign bland_parameters_global or fallback to environment
+
+        Priority:
+        1. campaign.pathway_id (from bland_parameters_global)
+        2. Environment variable PARTNER_CAMPAIGN_PATHWAY_ID
+        3. Default: "default-partner-pathway"
+        """
+        if campaign.pathway_id:
+            logger.info(f"🎭 [BATCH-ORCHESTRATOR] Using campaign-specific pathway ID: {campaign.pathway_id}")
+            return campaign.pathway_id
+
+        # Fallback to environment variable
+        pathway_id = self.config_manager.get_config("PARTNER_CAMPAIGN_PATHWAY_ID", "default-partner-pathway")
+        logger.info(f"🎭 [BATCH-ORCHESTRATOR] Using fallback pathway ID from environment: {pathway_id}")
         return pathway_id
-    
+
     def _get_voice_id(self, campaign: QualifiedCampaign) -> str:
-        """Get the appropriate voice ID for the campaign"""
-        # Check campaign configuration for specific voice
+        """
+        Get voice ID from campaign bland_parameters_global or fallback to environment
+
+        Priority:
+        1. campaign.voice_id (from bland_parameters_global)
+        2. Environment variable PARTNER_CAMPAIGN_VOICE_ID
+        3. Default: "default-voice"
+        """
+        if campaign.voice_id:
+            logger.info(f"🎤 [BATCH-ORCHESTRATOR] Using campaign-specific voice ID: {campaign.voice_id}")
+            return campaign.voice_id
+
+        # Fallback to environment variable
         voice_id = self.config_manager.get_config("PARTNER_CAMPAIGN_VOICE_ID", "default-voice")
-        
-        logger.info(f"🎤 [BATCH-ORCHESTRATOR] Selected voice ID: {voice_id}")
+        logger.info(f"🎤 [BATCH-ORCHESTRATOR] Using fallback voice ID from environment: {voice_id}")
         return voice_id
+
+    def _get_webhook_url(self, campaign: QualifiedCampaign) -> str:
+        """
+        Get webhook URL from campaign bland_parameters_global or fallback to environment
+
+        Priority:
+        1. campaign.webhook_url (from bland_parameters_global)
+        2. Environment variable BLAND_WEBHOOK_URL
+        3. No default - will raise error if not found
+
+        This is the key improvement: webhook URL now comes from database configuration
+        """
+        if campaign.webhook_url:
+            logger.info(f"🔗 [BATCH-ORCHESTRATOR] Using campaign-specific webhook URL: {campaign.webhook_url}")
+            return campaign.webhook_url
+
+        # Fallback to environment variable
+        webhook_url = self.config_manager.get_config("BLAND_WEBHOOK_URL")
+        if webhook_url:
+            logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] Using fallback webhook URL from environment: {webhook_url}")
+            logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] Consider configuring webhook_url in bland_parameters_global for campaign: {campaign.name}")
+            return webhook_url
+
+        # No webhook URL configured
+        logger.error(f"🚨 [BATCH-ORCHESTRATOR] No webhook URL configured for campaign: {campaign.name}")
+        logger.error(f"🚨 [BATCH-ORCHESTRATOR] Please configure webhook_url in bland_parameters_global or BLAND_WEBHOOK_URL environment variable")
+        raise ValueError(f"No webhook URL configured for campaign: {campaign.name}")
+
+    def _get_max_duration(self, campaign: QualifiedCampaign) -> str:
+        """
+        Get max duration from campaign bland_parameters_global or fallback to environment
+
+        Priority:
+        1. campaign.max_duration (from bland_parameters_global)
+        2. Environment variable BLAND_MAX_DURATION
+        3. Default: "300" (5 minutes)
+        """
+        if campaign.max_duration:
+            logger.info(f"⏱️ [BATCH-ORCHESTRATOR] Using campaign-specific max duration: {campaign.max_duration}s")
+            return campaign.max_duration
+
+        # Fallback to environment variable
+        max_duration = self.config_manager.get_config("BLAND_MAX_DURATION", "300")
+        logger.info(f"⏱️ [BATCH-ORCHESTRATOR] Using fallback max duration from environment: {max_duration}s")
+        return max_duration

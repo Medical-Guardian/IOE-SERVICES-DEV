@@ -1,4 +1,5 @@
 import logging
+import json
 from typing import List, Optional
 from datetime import datetime, time
 import pytz
@@ -30,7 +31,7 @@ class CampaignQualifier:
 
             logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Current UTC time: {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             
-            # Query for active Partner campaigns with enhanced fields
+            # Query for active Partner campaigns with enhanced fields including Bland AI parameters
             query = """
                 SELECT
                     c.campaign_id,
@@ -50,6 +51,7 @@ class CampaignQualifier:
                     c.audience_file_batch,
                     cc.config_id,
                     cc.call_type_id,
+                    cc.bland_parameters_global,
                     o.org_type,
                     o.partner_contact_name,
                     o.org_name
@@ -84,7 +86,10 @@ class CampaignQualifier:
                     if contact_pref == 'auto':
                         logger.info(f"🔄 [CAMPAIGN-QUALIFIER] Converting contact_pref 'auto' to 'member_preference' for campaign: {campaign_name}")
                         contact_pref = 'member_preference'
-                    
+
+                    # Parse Bland AI parameters from bland_parameters_global JSON
+                    bland_params = self._parse_bland_parameters(campaign_data.get('bland_parameters_global'), campaign_name)
+
                     qualified_campaign = QualifiedCampaign(
                         campaign_id=campaign_data['campaign_id'],
                         org_id=campaign_data['org_id'],
@@ -105,7 +110,13 @@ class CampaignQualifier:
                         org_type=campaign_data['org_type'],
                         audience_file_batch=campaign_data['audience_file_batch'],
                         partner_contact_name=campaign_data.get('partner_contact_name'),
-                        org_name=campaign_data.get('org_name')
+                        org_name=campaign_data.get('org_name'),
+                        # Bland AI parameters from bland_parameters_global
+                        bland_parameters_global=bland_params,
+                        pathway_id=bland_params.get('pathway_id') if bland_params else None,
+                        voice_id=bland_params.get('voice_id') if bland_params else None,
+                        webhook_url=bland_params.get('webhook_url') if bland_params else None,
+                        max_duration=bland_params.get('max_duration') if bland_params else None
                     )
                     qualified_campaigns.append(qualified_campaign)
                     
@@ -250,5 +261,55 @@ class CampaignQualifier:
                 return False
             
             logger.info(f"✅ [CAMPAIGN-QUALIFIER] Flexible scheduling validation passed: {frequency_value} per {frequency_unit}")
-        
+
         return True
+
+    def _parse_bland_parameters(self, bland_parameters_json: str, campaign_name: str) -> dict:
+        """
+        Parse bland_parameters_global JSON field from campaign_call_configs_enhanced
+
+        Args:
+            bland_parameters_json: JSON string containing Bland AI configuration
+            campaign_name: Campaign name for logging
+
+        Returns:
+            Dictionary with pathway_id, voice_id, webhook_url, max_duration, etc.
+
+        Example JSON:
+        {
+            "pathway_id": "partner-wellness-pathway-123",
+            "voice_id": "partner-voice-456",
+            "webhook_url": "https://ioe-functions.azurewebsites.net/api/bland_ai_webhook",
+            "max_duration": "300",
+            "analysis_schema": {
+                "disposition_analysis": true,
+                "sentiment_analysis": true
+            }
+        }
+        """
+        if not bland_parameters_json:
+            logger.warning(f"⚠️ [CAMPAIGN-QUALIFIER] No bland_parameters_global configured for campaign: {campaign_name}")
+            logger.warning(f"⚠️ [CAMPAIGN-QUALIFIER] Will use fallback environment variables for Bland AI configuration")
+            return {}
+
+        try:
+            bland_params = json.loads(bland_parameters_json)
+            logger.info(f"📋 [CAMPAIGN-QUALIFIER] Parsed Bland AI parameters for campaign: {campaign_name}")
+            logger.info(f"   🎭 Pathway ID: {bland_params.get('pathway_id', 'Not configured')}")
+            logger.info(f"   🎤 Voice ID: {bland_params.get('voice_id', 'Not configured')}")
+            logger.info(f"   🔗 Webhook URL: {bland_params.get('webhook_url', 'Not configured')}")
+            logger.info(f"   ⏱️ Max Duration: {bland_params.get('max_duration', 'Not configured')}")
+
+            return bland_params
+
+        except json.JSONDecodeError as e:
+            logger.error(f"🚨 [CAMPAIGN-QUALIFIER] Failed to parse bland_parameters_global JSON for campaign: {campaign_name}")
+            logger.error(f"🚨 [CAMPAIGN-QUALIFIER] JSON parse error: {str(e)}")
+            logger.error(f"🚨 [CAMPAIGN-QUALIFIER] Raw value: {bland_parameters_json}")
+            logger.warning(f"⚠️ [CAMPAIGN-QUALIFIER] Will use fallback environment variables for Bland AI configuration")
+            return {}
+        except Exception as e:
+            logger.error(f"🚨 [CAMPAIGN-QUALIFIER] Unexpected error parsing bland_parameters_global: {str(e)}")
+            import traceback
+            logger.error(f"🚨 [CAMPAIGN-QUALIFIER] Traceback: {traceback.format_exc()}")
+            return {}

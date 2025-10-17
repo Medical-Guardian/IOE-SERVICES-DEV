@@ -8,6 +8,8 @@ class BatchRequest:
     calls: List[Dict[str, Any]]
     pathway_id: str
     voice_id: str
+    webhook_url: Optional[str] = None  # From bland_parameters_global
+    max_duration: Optional[str] = None  # From bland_parameters_global
 
 @dataclass  
 class BatchResult:
