@@ -1,5 +1,6 @@
 import logging
 import json
+import uuid
 from typing import List, Dict, Any
 from ..models.qualified_campaign import QualifiedCampaign
 from ..models.eligible_member import EligibleMember
@@ -38,8 +39,10 @@ class BatchOrchestrator:
         """
         Submit a batch of members to Bland AI for calling (SYNCHRONOUS)
 
-        Uses synchronous HTTP requests to submit batch and wait for confirmation.
-        This blocks until Bland AI returns a batch_id (typically 5-10 seconds).
+        Implements 3-phase database tracking (following DTC pattern):
+        Phase 1: Create batch record (status='Pending') BEFORE Bland AI call
+        Phase 2: Create attempt records (disposition='Pending') BEFORE Bland AI call
+        Phase 3: Update batch with vendor_batch_id (status='Submitted') AFTER Bland AI response
 
         Args:
             campaign: The campaign configuration
@@ -60,8 +63,20 @@ class BatchOrchestrator:
             )
 
         try:
+            # ============================================================
+            # PHASE 1: Create batch record BEFORE Bland AI call
+            # ============================================================
+            batch_id = self._create_outreach_batch(campaign.campaign_id, len(members))
+            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 1 Complete: Batch record created with ID: {batch_id}")
+
+            # ============================================================
+            # PHASE 2: Create attempt records BEFORE Bland AI call
+            # ============================================================
+            self._create_outreach_attempts(members, batch_id)
+            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 2 Complete: {len(members)} attempt records created")
+
             # Build Bland AI batch request
-            batch_request = self._build_batch_request(campaign, members)
+            batch_request = self._build_batch_request(campaign, members, batch_id)
 
             logger.info(f"📞 [BATCH-ORCHESTRATOR] Built batch request with {len(batch_request.calls)} calls")
             logger.info(f"🎭 [BATCH-ORCHESTRATOR] Using pathway: {batch_request.pathway_id}")
@@ -71,16 +86,22 @@ class BatchOrchestrator:
             response = self.bland_client.submit_batch_calls(batch_request)
 
             if response.get('success'):
-                batch_id = response.get('batch_id')
+                vendor_batch_id = response.get('batch_id')
                 calls_submitted = response.get('calls_submitted', len(members))
 
-                logger.info(f"✅ [BATCH-ORCHESTRATOR] Batch submitted successfully")
-                logger.info(f"📦 [BATCH-ORCHESTRATOR] Bland Batch ID: {batch_id}")
+                logger.info(f"✅ [BATCH-ORCHESTRATOR] Bland AI accepted batch")
+                logger.info(f"📦 [BATCH-ORCHESTRATOR] Vendor Batch ID: {vendor_batch_id}")
                 logger.info(f"📊 [BATCH-ORCHESTRATOR] Calls submitted: {calls_submitted}")
+
+                # ============================================================
+                # PHASE 3: Update batch with vendor_batch_id AFTER Bland AI response
+                # ============================================================
+                self._update_batch_with_vendor_id(batch_id, vendor_batch_id)
+                logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 3 Complete: Batch updated with vendor ID")
 
                 return BatchResult(
                     success=True,
-                    batch_id=batch_id,
+                    batch_id=vendor_batch_id,  # Return Bland AI batch ID
                     members_count=len(members),
                     campaign_id=campaign.campaign_id,
                     submitted_members=[m.member_id for m in members]
@@ -93,6 +114,9 @@ class BatchOrchestrator:
                 logger.error(f"❌ [BATCH-ORCHESTRATOR] Error: {error_msg}")
                 logger.error(f"❌ [BATCH-ORCHESTRATOR] Status code: {status_code}")
 
+                # Mark batch as Failed in database
+                self._mark_batch_failed(batch_id, error_msg)
+
                 return BatchResult(
                     success=False,
                     error=f"Status {status_code}: {error_msg}",
@@ -102,6 +126,11 @@ class BatchOrchestrator:
 
         except Exception as e:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Exception during batch submission: {str(e)}")
+
+            # Mark batch as Failed if it was created
+            if 'batch_id' in locals():
+                self._mark_batch_failed(batch_id, str(e))
+
             return BatchResult(
                 success=False,
                 error=f"Exception: {str(e)}",
@@ -109,7 +138,7 @@ class BatchOrchestrator:
                 campaign_id=campaign.campaign_id
             )
     
-    def _build_batch_request(self, campaign: QualifiedCampaign, members: List[EligibleMember]) -> BatchRequest:
+    def _build_batch_request(self, campaign: QualifiedCampaign, members: List[EligibleMember], batch_id: str) -> BatchRequest:
         """
         Build the Bland AI batch request payload with DTC-style request_data
         """
@@ -289,6 +318,133 @@ class BatchOrchestrator:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Traceback: {traceback.format_exc()}")
 
         return care_gaps_data
+
+    def _create_outreach_batch(self, campaign_id: str, member_count: int) -> str:
+        """
+        PHASE 1: Create outreach batch record in database BEFORE Bland AI call
+
+        Following DTC pattern - creates batch with status='Pending'
+
+        Args:
+            campaign_id: UUID of the campaign
+            member_count: Number of members in this batch
+
+        Returns:
+            batch_id: UUID of the created batch record
+        """
+        # Generate UUID for batch (Python-side generation, not database)
+        batch_id = str(uuid.uuid4())
+        logger.info(f"📦 [BATCH-ORCHESTRATOR] Phase 1: Creating batch record with ID: {batch_id}")
+
+        query = """
+            INSERT INTO engage360.outreach_batches
+            (batch_id, campaign_id, batch_status, total_calls_intended, submitted_ts)
+            VALUES (%s, %s, 'Pending', %s, SYSDATETIMEOFFSET())
+        """
+
+        params = (batch_id, campaign_id, member_count)
+
+        try:
+            self.db_service.execute_query(query, params, fetch_results=False)
+            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 1: Batch record created successfully")
+            return batch_id
+        except Exception as e:
+            logger.error(f"🚨 [BATCH-ORCHESTRATOR] Phase 1 FAILED: Error creating batch record: {str(e)}")
+            raise
+
+    def _create_outreach_attempts(self, members: List[EligibleMember], batch_id: str) -> None:
+        """
+        PHASE 2: Create outreach attempt records in database BEFORE Bland AI call
+
+        Following DTC pattern - creates N attempt records with disposition='Pending'
+
+        Args:
+            members: List of eligible members
+            batch_id: UUID of the batch (from Phase 1)
+        """
+        logger.info(f"📝 [BATCH-ORCHESTRATOR] Phase 2: Creating {len(members)} attempt records")
+
+        # Build bulk insert for better performance
+        values_list = []
+        params = []
+
+        for member in members:
+            attempt_id = str(uuid.uuid4())
+            values_list.append("(%s, %s, 'Voice', SYSDATETIMEOFFSET(), 'Pending', 0, %s)")
+            params.extend([
+                attempt_id,
+                member.enrollment_id,  # FK to member_campaign_enrollments_enhanced
+                batch_id               # FK to outreach_batches
+            ])
+
+        query = f"""
+            INSERT INTO engage360.outreach_attempts
+            (attempt_id, enrollment_id, channel, attempt_ts, disposition, retry_seq, batch_id)
+            VALUES {', '.join(values_list)}
+        """
+
+        try:
+            self.db_service.execute_query(query, params, fetch_results=False)
+            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 2: {len(members)} attempt records created successfully")
+        except Exception as e:
+            logger.error(f"🚨 [BATCH-ORCHESTRATOR] Phase 2 FAILED: Error creating attempt records: {str(e)}")
+            raise
+
+    def _update_batch_with_vendor_id(self, batch_id: str, vendor_batch_id: str) -> None:
+        """
+        PHASE 3: Update batch with vendor_batch_id AFTER Bland AI response
+
+        Following DTC pattern - updates batch_status from 'Pending' to 'Submitted'
+
+        Args:
+            batch_id: UUID of our batch record (from Phase 1)
+            vendor_batch_id: Batch ID returned by Bland AI
+        """
+        logger.info(f"🔄 [BATCH-ORCHESTRATOR] Phase 3: Updating batch {batch_id} with vendor ID: {vendor_batch_id}")
+
+        query = """
+            UPDATE engage360.outreach_batches
+            SET vendor_batch_id = %s,
+                batch_status = 'Submitted',
+                updated_ts = SYSDATETIMEOFFSET()
+            WHERE batch_id = %s
+        """
+
+        params = (vendor_batch_id, batch_id)
+
+        try:
+            self.db_service.execute_query(query, params, fetch_results=False)
+            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 3: Batch updated successfully")
+        except Exception as e:
+            logger.error(f"🚨 [BATCH-ORCHESTRATOR] Phase 3 FAILED: Error updating batch: {str(e)}")
+            raise
+
+    def _mark_batch_failed(self, batch_id: str, error_message: str) -> None:
+        """
+        Mark batch as Failed in database when Bland AI submission fails
+
+        Args:
+            batch_id: UUID of our batch record
+            error_message: Error message to store
+        """
+        logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] Marking batch {batch_id} as Failed")
+
+        query = """
+            UPDATE engage360.outreach_batches
+            SET batch_status = 'Failed',
+                status_reason = %s,
+                updated_ts = SYSDATETIMEOFFSET()
+            WHERE batch_id = %s
+        """
+
+        params = (error_message[:500], batch_id)  # Limit error message length
+
+        try:
+            self.db_service.execute_query(query, params, fetch_results=False)
+            logger.info(f"✅ [BATCH-ORCHESTRATOR] Batch marked as Failed")
+        except Exception as e:
+            logger.error(f"🚨 [BATCH-ORCHESTRATOR] Error marking batch as Failed: {str(e)}")
+            # Don't raise - this is cleanup code
 
     def _get_target_phone(self, member: EligibleMember, contact_pref: str) -> str:
         """

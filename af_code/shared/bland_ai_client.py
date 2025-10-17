@@ -1,6 +1,7 @@
 import logging
 import requests
 import json
+import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
 from ..bland_ai_webhook.services.config_manager import ConfigManager
@@ -61,9 +62,8 @@ class BlandAIClient:
                 "Content-Type": "application/json"
             }
 
-            # Generate unique batch ID
-            timestamp = int(datetime.now().timestamp())
-            batch_id = f"partner-{batch_request.campaign_id[-8:]}-{timestamp}"
+            # Generate unique batch ID using UUID
+            batch_id = str(uuid.uuid4())
 
             payload = {
                 "batch_id": batch_id,
