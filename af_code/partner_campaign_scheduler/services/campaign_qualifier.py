@@ -4,6 +4,7 @@ from datetime import datetime, time
 import pytz
 from ..models.qualified_campaign import QualifiedCampaign
 from ...bland_ai_webhook.services.database_service import DatabaseService
+from ...shared.timezone_utils import TimezoneConverter
 
 logger = logging.getLogger(__name__)
 
@@ -151,25 +152,8 @@ class CampaignQualifier:
 
             call_days = [day.strip() for day in call_days_str.split(',')]
 
-            # Define US timezones
-            us_timezones = {
-                'Eastern': pytz.timezone('US/Eastern'),
-                'Central': pytz.timezone('US/Central'),
-                'Mountain': pytz.timezone('US/Mountain'),
-                'Pacific': pytz.timezone('US/Pacific')
-            }
-
-            # Map SQL Server timezone names to pytz
-            timezone_map = {
-                'EST': 'US/Eastern',
-                'Eastern Standard Time': 'US/Eastern',
-                'CST': 'US/Central',
-                'Central Standard Time': 'US/Central',
-                'MST': 'US/Mountain',
-                'Mountain Standard Time': 'US/Mountain',
-                'PST': 'US/Pacific',
-                'Pacific Standard Time': 'US/Pacific'
-            }
+            # Get US timezones using TimezoneConverter
+            us_timezones = TimezoneConverter.get_us_timezones_pytz()
 
             if timezone_flag == 'member_tz':
                 # Check if ANY US timezone is currently within operating hours AND day
@@ -203,8 +187,8 @@ class CampaignQualifier:
             else:
                 # operating_tz mode: Check the campaign's specific operating timezone
                 operating_tz_name = campaign_data.get('operating_tz', 'EST')
-                pytz_tz_name = timezone_map.get(operating_tz_name, 'US/Eastern')
-                campaign_tz = pytz.timezone(pytz_tz_name)
+                # Convert to pytz using TimezoneConverter (handles EST → America/New_York)
+                campaign_tz = TimezoneConverter.to_pytz(operating_tz_name)
 
                 # Convert current UTC to campaign's operating timezone
                 now_in_campaign_tz = now_utc.astimezone(campaign_tz)

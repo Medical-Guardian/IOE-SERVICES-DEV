@@ -3,6 +3,7 @@ from typing import List, Dict, Any
 from ..models.qualified_campaign import QualifiedCampaign
 from ..models.eligible_member import EligibleMember
 from ...bland_ai_webhook.services.database_service import DatabaseService
+from ...shared.timezone_utils import TimezoneConverter
 
 logger = logging.getLogger(__name__)
 
@@ -230,13 +231,20 @@ class MemberEligibilityService:
         contact_pref = campaign.contact_pref
         if contact_pref == 'auto':
             contact_pref = 'member_preference'
-        
+
+        # Convert operating_tz to Windows timezone name for SQL Server AT TIME ZONE clause
+        # This handles: EST → Eastern Standard Time, America/New_York → Eastern Standard Time
+        operating_tz = campaign.operating_tz or 'EST'
+        operating_tz_windows = TimezoneConverter.to_windows(operating_tz)
+
+        logger.debug(f"🔄 [MEMBER-ELIGIBILITY] Timezone conversion: '{operating_tz}' → '{operating_tz_windows}' (for SQL)")
+
         return (
             campaign.campaign_id,                    # @campaign_id
             campaign.frequency_unit,                 # @frequency_unit
             campaign.frequency_value,                # @frequency_value
             campaign.timezone_flag or 'operating_tz', # @timezone_flag (default to operating_tz)
-            campaign.operating_tz or 'Eastern Standard Time',  # @operating_tz (SQL Server timezone name)
+            operating_tz_windows,                    # @operating_tz (SQL Server Windows timezone name)
             contact_pref,                            # @contact_pref (with auto conversion)
             campaign.audience_file_batch,            # @audience_batch
             campaign.operating_start_time,           # @start_time
