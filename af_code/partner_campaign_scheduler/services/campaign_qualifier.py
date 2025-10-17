@@ -1,6 +1,7 @@
 import logging
 from typing import List, Optional
 from datetime import datetime, time
+import pytz
 from ..models.qualified_campaign import QualifiedCampaign
 from ...bland_ai_webhook.services.database_service import DatabaseService
 
@@ -162,14 +163,47 @@ class CampaignQualifier:
             timezone_flag = campaign_data.get('timezone_flag', 'operating_tz')
             
             if timezone_flag == 'member_tz':
-                # For member timezone mode, qualify during extended hours to account for all US timezones
-                # This is a broad qualification - precise timezone filtering happens in member eligibility
-                extended_start = datetime.strptime('06:00:00', '%H:%M:%S').time()  # 6 AM
-                extended_end = datetime.strptime('20:00:00', '%H:%M:%S').time()    # 8 PM
-                
-                if not (extended_start <= current_time <= extended_end):
-                    logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Extended time check FAILED: {campaign_name} (current: {current_time}, extended window: {extended_start}-{extended_end})")
+                # For member timezone mode, check if ANY US timezone member could be in their calling window
+                # US timezones: Eastern, Central, Mountain, Pacific (3 hour span)
+                # Example: Campaign 8pm-10pm → Check if any US member is in 8-10pm in their timezone
+
+                # Define US timezones
+                us_timezones = {
+                    'Eastern': pytz.timezone('US/Eastern'),
+                    'Central': pytz.timezone('US/Central'),
+                    'Mountain': pytz.timezone('US/Mountain'),
+                    'Pacific': pytz.timezone('US/Pacific')
+                }
+
+                # Get current datetime with timezone awareness (assume Azure runs in UTC)
+                now_utc = datetime.now(pytz.UTC)
+
+                # Check if current time in ANY US timezone falls within campaign operating hours
+                any_timezone_qualified = False
+                qualified_timezones = []
+
+                for tz_name, tz in us_timezones.items():
+                    # Convert current UTC time to this timezone
+                    now_in_tz = now_utc.astimezone(tz)
+                    current_time_in_tz = now_in_tz.time()
+
+                    # Check if this timezone's current time is within operating hours
+                    if start_time <= current_time_in_tz <= end_time:
+                        any_timezone_qualified = True
+                        qualified_timezones.append(f"{tz_name} ({current_time_in_tz.strftime('%H:%M')})")
+
+                if not any_timezone_qualified:
+                    logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Extended time check FAILED: {campaign_name}")
+                    logger.info(f"   No US timezone currently in operating window {start_time}-{end_time}")
+                    logger.info(f"   Current times: ET={now_utc.astimezone(us_timezones['Eastern']).strftime('%H:%M')}, "
+                              f"CT={now_utc.astimezone(us_timezones['Central']).strftime('%H:%M')}, "
+                              f"MT={now_utc.astimezone(us_timezones['Mountain']).strftime('%H:%M')}, "
+                              f"PT={now_utc.astimezone(us_timezones['Pacific']).strftime('%H:%M')}")
                     return False
+
+                logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Extended time check PASSED: {campaign_name}")
+                logger.info(f"   Qualified timezones: {', '.join(qualified_timezones)}")
+                logger.info(f"   Operating window: {start_time}-{end_time}")
             else:
                 # For operating timezone mode, use the campaign's specific hours
                 if not (start_time <= current_time <= end_time):
