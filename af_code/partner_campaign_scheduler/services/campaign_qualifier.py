@@ -294,6 +294,16 @@ class CampaignQualifier:
 
         try:
             bland_params = json.loads(bland_parameters_json)
+
+            # Normalize field names for backward compatibility
+            # Handle both "webhook" and "webhook_url"
+            if 'webhook' in bland_params and 'webhook_url' not in bland_params:
+                bland_params['webhook_url'] = bland_params['webhook']
+
+            # Handle both "voice" and "voice_id"
+            if 'voice' in bland_params and 'voice_id' not in bland_params:
+                bland_params['voice_id'] = bland_params['voice']
+
             logger.info(f"📋 [CAMPAIGN-QUALIFIER] Parsed Bland AI parameters for campaign: {campaign_name}")
             logger.info(f"   🎭 Pathway ID: {bland_params.get('pathway_id', 'Not configured')}")
             logger.info(f"   🎤 Voice ID: {bland_params.get('voice_id', 'Not configured')}")
