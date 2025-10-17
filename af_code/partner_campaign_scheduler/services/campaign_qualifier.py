@@ -32,7 +32,7 @@ class CampaignQualifier:
             
             # Query for active Partner campaigns with enhanced fields
             query = """
-                SELECT 
+                SELECT
                     c.campaign_id,
                     c.org_id,
                     c.name,
@@ -50,10 +50,12 @@ class CampaignQualifier:
                     c.audience_file_batch,
                     cc.config_id,
                     cc.call_type_id,
-                    o.org_type
+                    o.org_type,
+                    o.partner_contact_name,
+                    o.org_name
                 FROM engage360.campaigns_enhanced c
-                LEFT JOIN engage360.campaign_call_configs_enhanced cc 
-                    ON c.campaign_id = cc.campaign_id 
+                LEFT JOIN engage360.campaign_call_configs_enhanced cc
+                    ON c.campaign_id = cc.campaign_id
                     AND cc.config_status = 'active'
                 LEFT JOIN engage360.orgs o ON c.org_id = o.org_id
                 WHERE c.campaign_type = 'Partner'
@@ -101,7 +103,9 @@ class CampaignQualifier:
                         config_id=campaign_data['config_id'],
                         call_type_id=campaign_data['call_type_id'],
                         org_type=campaign_data['org_type'],
-                        audience_file_batch=campaign_data['audience_file_batch']
+                        audience_file_batch=campaign_data['audience_file_batch'],
+                        partner_contact_name=campaign_data.get('partner_contact_name'),
+                        org_name=campaign_data.get('org_name')
                     )
                     qualified_campaigns.append(qualified_campaign)
                     

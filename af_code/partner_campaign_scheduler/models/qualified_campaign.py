@@ -22,3 +22,5 @@ class QualifiedCampaign:
     call_type_id: Optional[str]
     org_type: str
     audience_file_batch: str
+    partner_contact_name: Optional[str]  # Partner contact from orgs table
+    org_name: Optional[str]  # Organization name from orgs table

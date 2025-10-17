@@ -66,7 +66,15 @@ class MemberEligibilityService:
                 last_attempt_ts=member_data.get('last_attempt_ts'),
                 total_attempts=member_data.get('total_attempts', 0),
                 member_current_time=member_data.get('member_current_time'),
-                member_current_day=member_data.get('member_current_day')
+                member_current_day=member_data.get('member_current_day'),
+                # DTC-style demographic fields for request_data
+                member_care_gap_parameters=member_data.get('member_care_gap_parameters'),
+                language_pref=member_data.get('language_pref'),
+                address_street=member_data.get('address_street'),
+                address_city=member_data.get('address_city'),
+                address_state=member_data.get('address_state'),
+                address_zip=member_data.get('address_zip'),
+                dob=member_data.get('dob')
             )
             eligible_members.append(eligible_member)
         
@@ -147,13 +155,19 @@ class MemberEligibilityService:
                   AND ob.batch_status IN ('Submitted', 'Pending')
             ),
             TimezoneEligible AS (
-                SELECT 
+                SELECT
                     m.member_id,
                     m.timezone,
                     m.first_name,
                     m.last_name,
                     m.primary_phone,
                     m.contact_pref,  -- Use existing contact_pref field
+                    m.language_pref,  -- Language preference for request_data
+                    m.address_street,  -- Address fields for request_data
+                    m.address_city,
+                    m.address_state,
+                    m.address_zip,
+                    m.dob,  -- Date of birth for request_data
                     md.device_phone_number,  -- From member_devices table
                     md.is_device_callable,
                     -- Calculate member's current time based on timezone_flag
@@ -243,6 +257,7 @@ CASE m.timezone
                 mce.enrollment_id,  -- Need this for outreach_attempts FK
                 mce.current_status,
                 mce.preferred_window,
+                mce.member_care_gap_parameters,  -- JSON string with care gap flags
                 te.first_name,
                 te.last_name,
                 te.primary_phone,
@@ -250,6 +265,12 @@ CASE m.timezone
                 te.device_phone_number,  -- From member_devices
                 te.is_device_callable,
                 te.timezone,
+                te.language_pref,  -- DTC-style demographic fields
+                te.address_street,
+                te.address_city,
+                te.address_state,
+                te.address_zip,
+                te.dob,
                 te.member_current_time,
                 te.member_current_day,
                 fc.last_attempt_ts,

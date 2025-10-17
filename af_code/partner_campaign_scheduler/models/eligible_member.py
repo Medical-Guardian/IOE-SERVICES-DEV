@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import Optional
-from datetime import datetime, time
+from datetime import datetime, time, date
 
 @dataclass
 class EligibleMember:
@@ -21,3 +21,12 @@ class EligibleMember:
     total_attempts: int
     member_current_time: Optional[time]
     member_current_day: Optional[str]
+
+    # Additional fields for Bland AI request_data (DTC-style)
+    member_care_gap_parameters: Optional[str]  # JSON string with care gap flags
+    language_pref: Optional[str]  # Language preference (en, es, etc.)
+    address_street: Optional[str]  # Street address
+    address_city: Optional[str]  # City
+    address_state: Optional[str]  # State
+    address_zip: Optional[str]  # ZIP code
+    dob: Optional[date]  # Date of birth

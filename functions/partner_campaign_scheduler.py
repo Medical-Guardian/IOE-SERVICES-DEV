@@ -155,7 +155,7 @@ def _execute_partner_campaign_scheduler(request_id: str, start_time: datetime, t
         logging.info("✅ [PARTNER-SCHEDULER] Step 1.3b: MemberEligibilityService created")
         
         logging.info("🔧 [PARTNER-SCHEDULER] Step 1.3c: Creating BatchOrchestrator...")
-        batch_orchestrator = BatchOrchestrator(config_manager)
+        batch_orchestrator = BatchOrchestrator(config_manager, db_service)
         logging.info("✅ [PARTNER-SCHEDULER] Step 1.3c: BatchOrchestrator created")
         
         logging.info("🔧 [PARTNER-SCHEDULER] Step 1.3d: Creating StatusTracker...")
