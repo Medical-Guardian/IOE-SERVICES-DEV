@@ -280,7 +280,7 @@ CASE m.timezone
             LEFT JOIN FrequencyCheck fc ON mce.member_id = fc.member_id
             LEFT JOIN TodaySubmissions ts ON mce.member_id = ts.member_id
             WHERE mce.campaign_id = @campaign_id
-              AND mce.current_status = 'ENROLLED'
+              AND mce.current_status = 'Active'
               AND ts.member_id IS NULL  -- Not submitted today
               AND (
                   fc.member_id IS NULL  -- Never attempted

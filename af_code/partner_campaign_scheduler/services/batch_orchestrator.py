@@ -59,7 +59,7 @@ class BatchOrchestrator:
                 success=False,
                 error="Batch orchestrator disabled (Bland AI API key not configured)",
                 members_count=len(members),
-                campaign_id=campaign.campaign_id
+                campaign_id=str(campaign.campaign_id)  # Convert UUID to string
             )
 
         try:
@@ -103,8 +103,8 @@ class BatchOrchestrator:
                     success=True,
                     batch_id=vendor_batch_id,  # Return Bland AI batch ID
                     members_count=len(members),
-                    campaign_id=campaign.campaign_id,
-                    submitted_members=[m.member_id for m in members]
+                    campaign_id=str(campaign.campaign_id),  # Convert UUID to string
+                    submitted_members=[str(m.member_id) for m in members]  # Convert UUIDs to strings
                 )
             else:
                 error_msg = response.get('error', 'Unknown error')
@@ -121,7 +121,7 @@ class BatchOrchestrator:
                     success=False,
                     error=f"Status {status_code}: {error_msg}",
                     members_count=len(members),
-                    campaign_id=campaign.campaign_id
+                    campaign_id=str(campaign.campaign_id)  # Convert UUID to string
                 )
 
         except Exception as e:
@@ -135,7 +135,7 @@ class BatchOrchestrator:
                 success=False,
                 error=f"Exception: {str(e)}",
                 members_count=len(members),
-                campaign_id=campaign.campaign_id
+                campaign_id=str(campaign.campaign_id)  # Convert UUID to string
             )
     
     def _build_batch_request(self, campaign: QualifiedCampaign, members: List[EligibleMember], batch_id: str) -> BatchRequest:
@@ -181,14 +181,14 @@ class BatchOrchestrator:
                 "to": phone_number,
                 "request_data": request_data,  # DTC-style request_data
                 "metadata": {
-                    "member_id": member.member_id,
-                    "campaign_id": campaign.campaign_id,
-                    "enrollment_id": member.enrollment_id,  # For outreach_attempts FK
+                    "member_id": str(member.member_id),  # Convert UUID to string
+                    "campaign_id": str(campaign.campaign_id),  # Convert UUID to string
+                    "enrollment_id": str(member.enrollment_id),  # Convert UUID to string
                     "first_name": member.first_name,
                     "last_name": member.last_name,
                     "campaign_type": "Partner",
-                    "org_id": campaign.org_id,
-                    "call_type_id": campaign.call_type_id,
+                    "org_id": str(campaign.org_id),  # Convert UUID to string
+                    "call_type_id": str(campaign.call_type_id) if campaign.call_type_id else None,  # Convert UUID to string
                     "preferred_window": member.preferred_window,
                     "member_timezone": member.timezone,
                     "audience_file_batch": campaign.audience_file_batch,  # From campaign
@@ -213,7 +213,7 @@ class BatchOrchestrator:
         max_duration = self._get_max_duration(campaign)
 
         return BatchRequest(
-            campaign_id=campaign.campaign_id,
+            campaign_id=str(campaign.campaign_id),  # Convert UUID to string for JSON serialization
             calls=calls,
             pathway_id=pathway_id,
             voice_id=voice_id,
