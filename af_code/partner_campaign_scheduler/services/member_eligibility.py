@@ -255,62 +255,98 @@ CASE m.timezone
                 LEFT JOIN engage360.member_devices md ON m.member_id = md.member_id 
                     AND md.is_device_callable = 1
                 WHERE m.timezone IS NOT NULL
-            )
-            SELECT DISTINCT TOP 1000
-                mce.member_id,
-                mce.campaign_id,
-                mce.enrollment_id,  -- Need this for outreach_attempts FK
-                mce.current_status,
-                mce.preferred_window,
-                mce.member_care_gap_parameters,  -- JSON string with care gap flags
-                te.first_name,
-                te.last_name,
-                te.primary_phone,
-                te.contact_pref,  -- Use existing field
-                te.device_phone_number,  -- From member_devices
-                te.is_device_callable,
-                te.timezone,
-                te.language_pref,  -- DTC-style demographic fields
-                te.address_street,
-                te.address_city,
-                te.address_state,
-                te.address_zip,
-                te.dob,
-                te.member_current_time,
-                te.member_current_day,
-                fc.last_attempt_ts,
-                fc.total_attempts
-            FROM engage360.member_campaign_enrollments_enhanced mce
-            INNER JOIN TimezoneEligible te ON mce.member_id = te.member_id
-            LEFT JOIN FrequencyCheck fc ON mce.member_id = fc.member_id
-            LEFT JOIN TodayActiveAttempts taa ON mce.member_id = taa.member_id
-            WHERE mce.campaign_id = @campaign_id
-              AND mce.current_status = 'Active'
-              AND taa.member_id IS NULL  -- No completed or pending attempt today (Failed/NoAnswer can retry)
-              AND (
-                  fc.member_id IS NULL  -- Never attempted
-                  OR (
-                      fc.time_since_last_attempt >= @frequency_value  -- Frequency check
-                      AND fc.attempted_today = 0  -- Same-day protection
+            ),
+            RankedMembers AS (
+                -- Use ROW_NUMBER to deduplicate instead of DISTINCT (avoids ORDER BY conflicts)
+                SELECT
+                    mce.member_id,
+                    mce.campaign_id,
+                    mce.enrollment_id,  -- Need this for outreach_attempts FK
+                    mce.current_status,
+                    mce.preferred_window,
+                    mce.member_care_gap_parameters,  -- JSON string with care gap flags
+                    te.first_name,
+                    te.last_name,
+                    te.primary_phone,
+                    te.contact_pref,  -- Use existing field
+                    te.device_phone_number,  -- From member_devices
+                    te.is_device_callable,
+                    te.timezone,
+                    te.language_pref,  -- DTC-style demographic fields
+                    te.address_street,
+                    te.address_city,
+                    te.address_state,
+                    te.address_zip,
+                    te.dob,
+                    te.member_current_time,
+                    te.member_current_day,
+                    fc.last_attempt_ts,
+                    fc.total_attempts,
+                    -- Deduplicate by member_id, keep first row per member
+                    ROW_NUMBER() OVER (
+                        PARTITION BY mce.member_id
+                        ORDER BY
+                            CASE WHEN fc.last_attempt_ts IS NULL THEN 0 ELSE 1 END,
+                            fc.last_attempt_ts ASC
+                    ) as rn
+                FROM engage360.member_campaign_enrollments_enhanced mce
+                INNER JOIN TimezoneEligible te ON mce.member_id = te.member_id
+                LEFT JOIN FrequencyCheck fc ON mce.member_id = fc.member_id
+                LEFT JOIN TodayActiveAttempts taa ON mce.member_id = taa.member_id
+                WHERE mce.campaign_id = @campaign_id
+                  AND mce.current_status = 'Active'
+                  AND taa.member_id IS NULL  -- No completed or pending attempt today (Failed/NoAnswer can retry)
+                  AND (
+                      fc.member_id IS NULL  -- Never attempted
+                      OR (
+                          fc.time_since_last_attempt >= @frequency_value  -- Frequency check
+                          AND fc.attempted_today = 0  -- Same-day protection
+                      )
                   )
-              )
-              AND (
-                  -- Enhanced contact preference logic using existing contact_pref
-                  (@contact_pref = 'phone' AND te.primary_phone IS NOT NULL)
-                  OR (@contact_pref = 'device' AND te.device_phone_number IS NOT NULL AND te.is_device_callable = 1)
-                  OR (@contact_pref = 'member_preference' AND (
-                      (te.contact_pref = 'phone' AND te.primary_phone IS NOT NULL)
-                      OR (te.contact_pref = 'device' AND te.device_phone_number IS NOT NULL AND te.is_device_callable = 1)
-                      OR (te.contact_pref IS NULL AND (te.primary_phone IS NOT NULL OR (te.device_phone_number IS NOT NULL AND te.is_device_callable = 1)))
-                  ))
-              )
-              -- Timezone-aware operating hours check
-              AND te.member_current_time BETWEEN @start_time AND @end_time
-              -- Timezone-aware day of week check
-              AND te.member_current_day IN (SELECT value FROM STRING_SPLIT(@call_days, ','))
+                  AND (
+                      -- Enhanced contact preference logic using existing contact_pref
+                      (@contact_pref = 'phone' AND te.primary_phone IS NOT NULL)
+                      OR (@contact_pref = 'device' AND te.device_phone_number IS NOT NULL AND te.is_device_callable = 1)
+                      OR (@contact_pref = 'member_preference' AND (
+                          (te.contact_pref = 'phone' AND te.primary_phone IS NOT NULL)
+                          OR (te.contact_pref = 'device' AND te.device_phone_number IS NOT NULL AND te.is_device_callable = 1)
+                          OR (te.contact_pref IS NULL AND (te.primary_phone IS NOT NULL OR (te.device_phone_number IS NOT NULL AND te.is_device_callable = 1)))
+                      ))
+                  )
+                  -- Timezone-aware operating hours check
+                  AND te.member_current_time BETWEEN @start_time AND @end_time
+                  -- Timezone-aware day of week check
+                  AND te.member_current_day IN (SELECT value FROM STRING_SPLIT(@call_days, ','))
+            )
+            SELECT TOP 1000
+                member_id,
+                campaign_id,
+                enrollment_id,
+                current_status,
+                preferred_window,
+                member_care_gap_parameters,
+                first_name,
+                last_name,
+                primary_phone,
+                contact_pref,
+                device_phone_number,
+                is_device_callable,
+                timezone,
+                language_pref,
+                address_street,
+                address_city,
+                address_state,
+                address_zip,
+                dob,
+                member_current_time,
+                member_current_day,
+                last_attempt_ts,
+                total_attempts
+            FROM RankedMembers
+            WHERE rn = 1  -- Only first row per member (deduplication)
             ORDER BY
-                CASE WHEN fc.last_attempt_ts IS NULL THEN 0 ELSE 1 END,  -- Never attempted first
-                fc.last_attempt_ts ASC  -- Oldest attempts first
+                CASE WHEN last_attempt_ts IS NULL THEN 0 ELSE 1 END,  -- Never attempted first
+                last_attempt_ts ASC  -- Oldest attempts first
         """
     
     def _build_query_parameters(self, campaign: QualifiedCampaign) -> tuple:
