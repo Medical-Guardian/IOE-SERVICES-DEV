@@ -22,13 +22,12 @@ class CampaignQualifier:
         Find all Partner campaigns that are qualified to run right now
         """
         logger.info("🔍 [CAMPAIGN-QUALIFIER] Starting campaign qualification check...")
-        
+
         try:
-            # Get current time info for qualification logic
-            current_time = datetime.now().time()
-            current_day = datetime.now().strftime('%A')  # Monday, Tuesday, etc.
-            
-            logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Current time: {current_time}, Day: {current_day}")
+            # Get current UTC time (timezone-aware)
+            now_utc = datetime.now(pytz.UTC)
+
+            logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Current UTC time: {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             
             # Query for active Partner campaigns with enhanced fields
             query = """
@@ -75,7 +74,7 @@ class CampaignQualifier:
                 logger.info(f"🔍 [CAMPAIGN-QUALIFIER] Evaluating campaign: {campaign_name}")
                 
                 # Check if campaign is qualified for current time and has valid configuration
-                if (self._is_campaign_qualified_now(campaign_data, current_time, current_day) and 
+                if (self._is_campaign_qualified_now(campaign_data, now_utc) and
                     self._validate_flexible_scheduling(campaign_data)):
                     # Handle auto contact preference conversion
                     contact_pref = campaign_data['contact_pref']
@@ -123,98 +122,119 @@ class CampaignQualifier:
             logger.error(f"🚨 [CAMPAIGN-QUALIFIER] Error during qualification: {str(e)}")
             raise
     
-    def _is_campaign_qualified_now(self, campaign_data: dict, current_time: time, current_day: str) -> bool:
+    def _is_campaign_qualified_now(self, campaign_data: dict, now_utc: datetime) -> bool:
         """
-        Check if a campaign is qualified to run at the current time
-        Enhanced logging for debugging
+        Check if a campaign is qualified to run at the current time using proper timezone handling
         """
         campaign_name = campaign_data.get('name', 'Unknown')
-        
+
         try:
-            # Check day of week
-            call_days_str = campaign_data.get('call_days_of_week', '')
-            if not call_days_str:
-                logger.warning(f"⚠️ [CAMPAIGN-QUALIFIER] No call days defined for campaign: {campaign_name}")
-                return False
-                
-            call_days = [day.strip() for day in call_days_str.split(',')]
-            if current_day not in call_days:
-                logger.info(f"📅 [CAMPAIGN-QUALIFIER] Day check FAILED: {campaign_name} (current: {current_day}, allowed: {call_days})")
-                return False
-            
-            logger.info(f"📅 [CAMPAIGN-QUALIFIER] Day check PASSED: {campaign_name}")
-            
-            # Check operating hours - Note: This is a basic check, timezone-aware filtering happens in member eligibility
+            # Get campaign configuration
             start_time = campaign_data.get('operating_start_time')
             end_time = campaign_data.get('operating_end_time')
-            
+            timezone_flag = campaign_data.get('timezone_flag', 'operating_tz')
+            call_days_str = campaign_data.get('call_days_of_week', '')
+
             if not start_time or not end_time:
                 logger.warning(f"⚠️ [CAMPAIGN-QUALIFIER] Missing operating hours for campaign: {campaign_name}")
                 return False
-            
+
+            if not call_days_str:
+                logger.warning(f"⚠️ [CAMPAIGN-QUALIFIER] No call days defined for campaign: {campaign_name}")
+                return False
+
             # Convert string times to time objects if needed
             if isinstance(start_time, str):
                 start_time = datetime.strptime(start_time, '%H:%M:%S').time()
             if isinstance(end_time, str):
                 end_time = datetime.strptime(end_time, '%H:%M:%S').time()
-            
-            # For campaigns with timezone_flag = 'member_tz', we allow qualification 
-            # during a wider time window since members could be in different timezones
-            timezone_flag = campaign_data.get('timezone_flag', 'operating_tz')
-            
+
+            call_days = [day.strip() for day in call_days_str.split(',')]
+
+            # Define US timezones
+            us_timezones = {
+                'Eastern': pytz.timezone('US/Eastern'),
+                'Central': pytz.timezone('US/Central'),
+                'Mountain': pytz.timezone('US/Mountain'),
+                'Pacific': pytz.timezone('US/Pacific')
+            }
+
+            # Map SQL Server timezone names to pytz
+            timezone_map = {
+                'EST': 'US/Eastern',
+                'Eastern Standard Time': 'US/Eastern',
+                'CST': 'US/Central',
+                'Central Standard Time': 'US/Central',
+                'MST': 'US/Mountain',
+                'Mountain Standard Time': 'US/Mountain',
+                'PST': 'US/Pacific',
+                'Pacific Standard Time': 'US/Pacific'
+            }
+
             if timezone_flag == 'member_tz':
-                # For member timezone mode, check if ANY US timezone member could be in their calling window
-                # US timezones: Eastern, Central, Mountain, Pacific (3 hour span)
-                # Example: Campaign 8pm-10pm → Check if any US member is in 8-10pm in their timezone
-
-                # Define US timezones
-                us_timezones = {
-                    'Eastern': pytz.timezone('US/Eastern'),
-                    'Central': pytz.timezone('US/Central'),
-                    'Mountain': pytz.timezone('US/Mountain'),
-                    'Pacific': pytz.timezone('US/Pacific')
-                }
-
-                # Get current datetime with timezone awareness (assume Azure runs in UTC)
-                now_utc = datetime.now(pytz.UTC)
-
-                # Check if current time in ANY US timezone falls within campaign operating hours
+                # Check if ANY US timezone is currently within operating hours AND day
                 any_timezone_qualified = False
                 qualified_timezones = []
 
                 for tz_name, tz in us_timezones.items():
-                    # Convert current UTC time to this timezone
                     now_in_tz = now_utc.astimezone(tz)
+                    current_day_in_tz = now_in_tz.strftime('%A')
                     current_time_in_tz = now_in_tz.time()
 
-                    # Check if this timezone's current time is within operating hours
-                    if start_time <= current_time_in_tz <= end_time:
+                    # Check both day AND time for this timezone
+                    if current_day_in_tz in call_days and start_time <= current_time_in_tz <= end_time:
                         any_timezone_qualified = True
-                        qualified_timezones.append(f"{tz_name} ({current_time_in_tz.strftime('%H:%M')})")
+                        qualified_timezones.append(f"{tz_name} ({now_in_tz.strftime('%A %H:%M')})")
 
                 if not any_timezone_qualified:
-                    logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Extended time check FAILED: {campaign_name}")
-                    logger.info(f"   No US timezone currently in operating window {start_time}-{end_time}")
-                    logger.info(f"   Current times: ET={now_utc.astimezone(us_timezones['Eastern']).strftime('%H:%M')}, "
-                              f"CT={now_utc.astimezone(us_timezones['Central']).strftime('%H:%M')}, "
-                              f"MT={now_utc.astimezone(us_timezones['Mountain']).strftime('%H:%M')}, "
-                              f"PT={now_utc.astimezone(us_timezones['Pacific']).strftime('%H:%M')}")
+                    logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Member timezone check FAILED: {campaign_name}")
+                    logger.info(f"   No US timezone currently qualifies")
+                    logger.info(f"   Required: Days={call_days}, Hours={start_time}-{end_time}")
+                    logger.info(f"   Current: ET={now_utc.astimezone(us_timezones['Eastern']).strftime('%A %H:%M')}, "
+                              f"CT={now_utc.astimezone(us_timezones['Central']).strftime('%A %H:%M')}, "
+                              f"MT={now_utc.astimezone(us_timezones['Mountain']).strftime('%A %H:%M')}, "
+                              f"PT={now_utc.astimezone(us_timezones['Pacific']).strftime('%A %H:%M')}")
                     return False
 
-                logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Extended time check PASSED: {campaign_name}")
+                logger.info(f"✅ [CAMPAIGN-QUALIFIER] Member timezone check PASSED: {campaign_name}")
                 logger.info(f"   Qualified timezones: {', '.join(qualified_timezones)}")
-                logger.info(f"   Operating window: {start_time}-{end_time}")
+                return True
+
             else:
-                # For operating timezone mode, use the campaign's specific hours
-                if not (start_time <= current_time <= end_time):
-                    logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Time check FAILED: {campaign_name} (current: {current_time}, window: {start_time}-{end_time})")
+                # operating_tz mode: Check the campaign's specific operating timezone
+                operating_tz_name = campaign_data.get('operating_tz', 'EST')
+                pytz_tz_name = timezone_map.get(operating_tz_name, 'US/Eastern')
+                campaign_tz = pytz.timezone(pytz_tz_name)
+
+                # Convert current UTC to campaign's operating timezone
+                now_in_campaign_tz = now_utc.astimezone(campaign_tz)
+                current_day_in_tz = now_in_campaign_tz.strftime('%A')
+                current_time_in_tz = now_in_campaign_tz.time()
+
+                logger.info(f"🕐 [CAMPAIGN-QUALIFIER] Checking in {operating_tz_name} timezone: {now_in_campaign_tz.strftime('%A %H:%M:%S')}")
+
+                # Check day of week
+                if current_day_in_tz not in call_days:
+                    logger.info(f"📅 [CAMPAIGN-QUALIFIER] Day check FAILED: {campaign_name}")
+                    logger.info(f"   Current day in {operating_tz_name}: {current_day_in_tz}, Allowed: {call_days}")
                     return False
-            
-            logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Time check PASSED: {campaign_name}")
-            return True
-            
+
+                logger.info(f"📅 [CAMPAIGN-QUALIFIER] Day check PASSED: {campaign_name} ({current_day_in_tz})")
+
+                # Check time window
+                if not (start_time <= current_time_in_tz <= end_time):
+                    logger.info(f"⏰ [CAMPAIGN-QUALIFIER] Time check FAILED: {campaign_name}")
+                    logger.info(f"   Current time in {operating_tz_name}: {current_time_in_tz}, Window: {start_time}-{end_time}")
+                    return False
+
+                logger.info(f"✅ [CAMPAIGN-QUALIFIER] Operating timezone check PASSED: {campaign_name}")
+                logger.info(f"   {operating_tz_name}: {now_in_campaign_tz.strftime('%A %H:%M')}, Window: {start_time}-{end_time}")
+                return True
+
         except Exception as e:
             logger.error(f"🚨 [CAMPAIGN-QUALIFIER] Error checking qualification for {campaign_name}: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return False
     
     def _validate_flexible_scheduling(self, campaign_data: dict) -> bool:
