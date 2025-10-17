@@ -156,35 +156,108 @@ LEFT JOIN engage360.orgs o ON c.org_id = o.org_id
 
 ## Timezone Logic Explained
 
-### Timezone Mapping
+### Timezone Formats Used in IOE System
 
-**SQL Server Timezone → pytz Timezone:**
+The IOE system supports **3 different timezone formats** and uses the `TimezoneConverter` utility to convert between them:
+
+#### 1. IANA Format (America/New_York, America/Chicago)
+- **Used in**: `members.timezone` database field
+- **Used by**: pytz library in Python
+- **Example**: `America/New_York`, `America/Chicago`, `America/Denver`, `America/Los_Angeles`
+- **Purpose**: Standard timezone names recognized by most modern systems
+
+#### 2. Abbreviation Format (EST, CST, MST, PST)
+- **Used in**: `campaigns_enhanced.operating_tz` database field (legacy)
+- **Example**: `EST`, `CST`, `MST`, `PST`, `EDT`, `CDT`, `MDT`, `PDT`
+- **Purpose**: Short form for user-friendly display
+- **Note**: Automatically converted to IANA or Windows format as needed
+
+#### 3. Windows Format (Eastern Standard Time)
+- **Used in**: SQL Server `AT TIME ZONE` clause
+- **Example**: `Eastern Standard Time`, `Central Standard Time`, `Mountain Standard Time`, `Pacific Standard Time`
+- **Purpose**: Required by SQL Server for timezone conversions
+
+### TimezoneConverter Utility
+
+Located at: `af_code/shared/timezone_utils.py`
+
+**Key Methods:**
 
 ```python
-timezone_map = {
-    'EST': 'US/Eastern',
-    'Eastern Standard Time': 'US/Eastern',
-    'CST': 'US/Central',
-    'Central Standard Time': 'US/Central',
-    'MST': 'US/Mountain',
-    'Mountain Standard Time': 'US/Mountain',
-    'PST': 'US/Pacific',
-    'Pacific Standard Time': 'US/Pacific'
-}
+from af_code.shared.timezone_utils import TimezoneConverter
+
+# Convert any format to IANA (for pytz)
+iana_tz = TimezoneConverter.to_iana('EST')  # Returns 'America/New_York'
+
+# Convert any format to Windows (for SQL Server)
+windows_tz = TimezoneConverter.to_windows('EST')  # Returns 'Eastern Standard Time'
+
+# Convert any format to pytz object
+pytz_tz = TimezoneConverter.to_pytz('EST')  # Returns pytz.timezone('America/New_York')
+```
+
+**Conversion Examples:**
+
+| Input | to_iana() | to_windows() | to_pytz() |
+|-------|-----------|--------------|-----------|
+| `EST` | `America/New_York` | `Eastern Standard Time` | `<America/New_York>` |
+| `America/Chicago` | `America/Chicago` | `Central Standard Time` | `<America/Chicago>` |
+| `Central Standard Time` | `America/Chicago` | `Central Standard Time` | `<America/Chicago>` |
+| `PST` | `America/Los_Angeles` | `Pacific Standard Time` | `<America/Los_Angeles>` |
+| `America/Denver` | `America/Denver` | `Mountain Standard Time` | `<America/Denver>` |
+
+### Supported Timezone Mappings
+
+```python
+# Abbreviations → IANA
+'EST' → 'America/New_York'
+'CST' → 'America/Chicago'
+'MST' → 'America/Denver'
+'PST' → 'America/Los_Angeles'
+
+# IANA → Windows (for SQL Server)
+'America/New_York' → 'Eastern Standard Time'
+'America/Chicago' → 'Central Standard Time'
+'America/Denver' → 'Mountain Standard Time'
+'America/Los_Angeles' → 'Pacific Standard Time'
 ```
 
 ### US Timezones Used
 
 ```python
 us_timezones = {
-    'Eastern': pytz.timezone('US/Eastern'),   # UTC-5 (EST) / UTC-4 (EDT)
-    'Central': pytz.timezone('US/Central'),   # UTC-6 (CST) / UTC-5 (CDT)
-    'Mountain': pytz.timezone('US/Mountain'), # UTC-7 (MST) / UTC-6 (MDT)
-    'Pacific': pytz.timezone('US/Pacific')    # UTC-8 (PST) / UTC-7 (PDT)
+    'Eastern': pytz.timezone('America/New_York'),      # UTC-5 (EST) / UTC-4 (EDT)
+    'Central': pytz.timezone('America/Chicago'),       # UTC-6 (CST) / UTC-5 (CDT)
+    'Mountain': pytz.timezone('America/Denver'),       # UTC-7 (MST) / UTC-6 (MDT)
+    'Pacific': pytz.timezone('America/Los_Angeles')    # UTC-8 (PST) / UTC-7 (PDT)
 }
 ```
 
 **Note:** pytz automatically handles Daylight Saving Time (DST) transitions.
+
+### Timezone Conversion in Practice
+
+#### Campaign Qualifier (Python - uses IANA):
+```python
+# Campaign has operating_tz = 'EST'
+campaign_tz = TimezoneConverter.to_pytz('EST')  # Returns America/New_York pytz object
+now_in_campaign_tz = now_utc.astimezone(campaign_tz)
+```
+
+#### Member Eligibility (SQL - uses Windows):
+```python
+# Campaign has operating_tz = 'EST' or 'America/New_York'
+operating_tz_windows = TimezoneConverter.to_windows(campaign.operating_tz)
+# Returns 'Eastern Standard Time' for SQL AT TIME ZONE clause
+```
+
+#### Member Timezone (SQL - already IANA):
+```sql
+-- Member has timezone = 'America/New_York'
+-- SQL Server requires Windows format, so we need conversion
+-- This is handled by TimezoneConverter.to_windows()
+SYSDATETIMEOFFSET() AT TIME ZONE 'Eastern Standard Time'
+```
 
 ---
 
@@ -1014,15 +1087,173 @@ else:
 
 | Component | File Path | Lines |
 |-----------|-----------|-------|
+| **Timezone Utilities** | | |
+| Timezone Converter | `af_code/shared/timezone_utils.py` | 1-250+ |
+| IANA Conversion | `timezone_utils.py` | `to_iana()` method |
+| Windows Conversion | `timezone_utils.py` | `to_windows()` method |
+| pytz Conversion | `timezone_utils.py` | `to_pytz()` method |
+| **Campaign Qualification** | | |
 | Campaign Qualifier | `af_code/partner_campaign_scheduler/services/campaign_qualifier.py` | 1-255 |
 | Qualification Logic | `campaign_qualifier.py` | 125-238 |
-| Timezone Mapping | `campaign_qualifier.py` | 163-172 |
-| operating_tz Check | `campaign_qualifier.py` | 203-232 |
-| member_tz Check | `campaign_qualifier.py` | 174-201 |
+| operating_tz Check | `campaign_qualifier.py` | 187-216 |
+| member_tz Check | `campaign_qualifier.py` | 158-185 |
 | Flexible Validation | `campaign_qualifier.py` | 240-255 |
-| Main Scheduler | `functions/partner_campaign_scheduler.py` | 1-285 |
+| **Member Eligibility** | | |
+| Member Eligibility Service | `af_code/partner_campaign_scheduler/services/member_eligibility.py` | 1-253 |
+| SQL Query Builder | `member_eligibility.py` | 96-226 |
+| Query Parameters | `member_eligibility.py` | 228-253 |
+| **Main Scheduler** | | |
+| Partner Campaign Scheduler | `functions/partner_campaign_scheduler.py` | 1-285 |
 | Timer Trigger | `partner_campaign_scheduler.py` | 24-54 |
 | HTTP Trigger | `partner_campaign_scheduler.py` | 56-123 |
+| Shared Execution Logic | `partner_campaign_scheduler.py` | 125-267 |
+
+---
+
+## TimezoneConverter API Reference
+
+### Class: `TimezoneConverter`
+
+Located at: `af_code/shared/timezone_utils.py`
+
+#### Methods
+
+##### `to_iana(tz_input: str) -> str`
+Convert any timezone format to IANA format for use with pytz.
+
+**Parameters:**
+- `tz_input`: Timezone string (EST, America/New_York, Eastern Standard Time, etc.)
+
+**Returns:**
+- IANA timezone name (e.g., `America/New_York`)
+
+**Examples:**
+```python
+TimezoneConverter.to_iana('EST')                      # → 'America/New_York'
+TimezoneConverter.to_iana('America/Chicago')          # → 'America/Chicago'
+TimezoneConverter.to_iana('Eastern Standard Time')    # → 'America/New_York'
+```
+
+##### `to_windows(tz_input: str) -> str`
+Convert any timezone format to Windows timezone name for SQL Server AT TIME ZONE.
+
+**Parameters:**
+- `tz_input`: Timezone string (EST, America/New_York, etc.)
+
+**Returns:**
+- Windows timezone name (e.g., `Eastern Standard Time`)
+
+**Examples:**
+```python
+TimezoneConverter.to_windows('EST')                   # → 'Eastern Standard Time'
+TimezoneConverter.to_windows('America/Chicago')       # → 'Central Standard Time'
+TimezoneConverter.to_windows('PST')                   # → 'Pacific Standard Time'
+```
+
+##### `to_pytz(tz_input: str) -> pytz.tzinfo.BaseTzInfo`
+Convert any timezone format to pytz timezone object.
+
+**Parameters:**
+- `tz_input`: Timezone string
+
+**Returns:**
+- pytz timezone object
+
+**Examples:**
+```python
+TimezoneConverter.to_pytz('EST')                      # → <DstTzInfo 'America/New_York' ...>
+TimezoneConverter.to_pytz('America/Chicago')          # → <DstTzInfo 'America/Chicago' ...>
+```
+
+##### `get_us_timezones_pytz() -> dict`
+Get pytz timezone objects for all US timezones.
+
+**Returns:**
+- Dictionary: `{'Eastern': <pytz timezone>, 'Central': <pytz timezone>, ...}`
+
+**Example:**
+```python
+us_timezones = TimezoneConverter.get_us_timezones_pytz()
+# Returns:
+# {
+#     'Eastern': pytz.timezone('America/New_York'),
+#     'Central': pytz.timezone('America/Chicago'),
+#     'Mountain': pytz.timezone('America/Denver'),
+#     'Pacific': pytz.timezone('America/Los_Angeles')
+# }
+```
+
+##### `validate_timezone(tz_input: str) -> bool`
+Check if timezone string is valid in any format.
+
+**Parameters:**
+- `tz_input`: Timezone string
+
+**Returns:**
+- `True` if valid, `False` otherwise
+
+**Examples:**
+```python
+TimezoneConverter.validate_timezone('EST')            # → True
+TimezoneConverter.validate_timezone('America/Chicago')# → True
+TimezoneConverter.validate_timezone('XYZ')            # → False
+```
+
+### Convenience Functions
+
+```python
+from af_code.shared.timezone_utils import convert_to_iana, convert_to_windows, convert_to_pytz
+
+# Quick conversions without class name
+iana_tz = convert_to_iana('EST')          # → 'America/New_York'
+windows_tz = convert_to_windows('EST')    # → 'Eastern Standard Time'
+pytz_tz = convert_to_pytz('EST')          # → pytz timezone object
+```
+
+### Supported Timezones
+
+#### US Mainland Timezones
+- **Eastern**: EST/EDT → America/New_York → Eastern Standard Time
+- **Central**: CST/CDT → America/Chicago → Central Standard Time
+- **Mountain**: MST/MDT → America/Denver → Mountain Standard Time
+- **Pacific**: PST/PDT → America/Los_Angeles → Pacific Standard Time
+
+#### Additional US Timezones
+- **Alaska**: AKST/AKDT → America/Anchorage → Alaskan Standard Time
+- **Hawaii**: HST → Pacific/Honolulu → Hawaiian Standard Time
+
+#### Major Cities Supported
+- America/New_York (New York, Philadelphia, Atlanta, Miami)
+- America/Chicago (Chicago, Dallas, Houston, New Orleans)
+- America/Denver (Denver, Salt Lake City, Boise)
+- America/Los_Angeles (Los Angeles, San Francisco, Seattle)
+- America/Phoenix (Phoenix - no DST)
+- America/Detroit (Detroit)
+- America/Indianapolis (Indianapolis)
+
+### Error Handling
+
+All methods include graceful fallback behavior:
+
+```python
+# Unknown timezone → defaults to America/New_York (Eastern)
+TimezoneConverter.to_iana('XYZ')          # → 'America/New_York' (with warning)
+TimezoneConverter.to_windows('INVALID')   # → 'Eastern Standard Time' (with warning)
+
+# Empty/NULL timezone → defaults to America/New_York
+TimezoneConverter.to_iana(None)           # → 'America/New_York' (with warning)
+TimezoneConverter.to_iana('')             # → 'America/New_York' (with warning)
+```
+
+### Logging
+
+The TimezoneConverter logs all conversions for debugging:
+
+```
+🔄 [TIMEZONE] Converted abbreviation 'EST' → 'America/New_York'
+🔄 [TIMEZONE] Converted IANA 'America/Chicago' → 'Central Standard Time'
+⚠️ [TIMEZONE] Unknown timezone format 'XYZ', defaulting to America/New_York
+```
 
 ---
 
@@ -1031,11 +1262,29 @@ else:
 - [Azure Functions Documentation](../../IOE_AZURE_FUNCTIONS_COMPREHENSIVE_DOCUMENTATION.md)
 - [Bland AI API Documentation](https://docs.bland.ai/)
 - [pytz Documentation](https://pythonhosted.org/pytz/)
+- [IANA Timezone Database](https://www.iana.org/time-zones)
 - [SQL Server Timezone Reference](https://docs.microsoft.com/en-us/sql/t-sql/queries/at-time-zone-transact-sql)
 
 ---
 
-**Document Version**: 1.0
+## Changelog
+
+### Version 1.1 (2025-10-17)
+- Added TimezoneConverter utility for IANA/Windows/Abbreviation conversions
+- Updated timezone logic to support all 3 formats
+- Added comprehensive timezone API reference
+- Updated examples to use TimezoneConverter
+
+### Version 1.0 (2025-10-17)
+- Initial documentation
+- Core database table mappings
+- Campaign qualification logic
+- 40+ test cases
+- Edge case handling
+
+---
+
+**Document Version**: 1.1
 **Last Updated**: 2025-10-17
 **Author**: Claude Code Assistant
 **Maintained By**: IOE Development Team
