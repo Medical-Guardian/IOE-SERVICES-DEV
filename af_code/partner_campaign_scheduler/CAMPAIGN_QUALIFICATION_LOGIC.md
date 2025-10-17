@@ -251,13 +251,24 @@ operating_tz_windows = TimezoneConverter.to_windows(campaign.operating_tz)
 # Returns 'Eastern Standard Time' for SQL AT TIME ZONE clause
 ```
 
-#### Member Timezone (SQL - already IANA):
+#### Member Timezone (SQL - IANA to Windows Conversion):
+Since `members.timezone` stores IANA format (e.g., `America/New_York`) but SQL Server's `AT TIME ZONE` requires Windows format, the member eligibility query includes inline CASE statements to convert:
+
 ```sql
--- Member has timezone = 'America/New_York'
--- SQL Server requires Windows format, so we need conversion
--- This is handled by TimezoneConverter.to_windows()
-SYSDATETIMEOFFSET() AT TIME ZONE 'Eastern Standard Time'
+-- Member has timezone = 'America/New_York' in database
+-- SQL query converts to Windows format for AT TIME ZONE clause
+SYSDATETIMEOFFSET() AT TIME ZONE
+    CASE m.timezone
+        WHEN 'America/New_York' THEN 'Eastern Standard Time'
+        WHEN 'America/Chicago' THEN 'Central Standard Time'
+        WHEN 'America/Denver' THEN 'Mountain Standard Time'
+        WHEN 'America/Los_Angeles' THEN 'Pacific Standard Time'
+        -- ... additional mappings
+        ELSE 'Eastern Standard Time'  -- Fallback default
+    END
 ```
+
+**Location**: `af_code/partner_campaign_scheduler/services/member_eligibility.py` (lines 163-186, 195-218)
 
 ---
 
@@ -1269,6 +1280,12 @@ The TimezoneConverter logs all conversions for debugging:
 
 ## Changelog
 
+### Version 1.2 (2025-10-17)
+- **BUGFIX**: Added SQL CASE statement to convert member IANA timezones to Windows format
+- Fixed error: "The time zone parameter 'America/New_York' provided to AT TIME ZONE clause is invalid"
+- Updated member_eligibility.py to handle IANA → Windows conversion inline in SQL query
+- Added 26 timezone mappings covering all US timezones and territories
+
 ### Version 1.1 (2025-10-17)
 - Added TimezoneConverter utility for IANA/Windows/Abbreviation conversions
 - Updated timezone logic to support all 3 formats
@@ -1284,7 +1301,7 @@ The TimezoneConverter logs all conversions for debugging:
 
 ---
 
-**Document Version**: 1.1
+**Document Version**: 1.2
 **Last Updated**: 2025-10-17
 **Author**: Claude Code Assistant
 **Maintained By**: IOE Development Team

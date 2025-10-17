@@ -157,16 +157,78 @@ class MemberEligibilityService:
                     md.device_phone_number,  -- From member_devices table
                     md.is_device_callable,
                     -- Calculate member's current time based on timezone_flag
-                    CASE 
+                    CASE
                         WHEN @timezone_flag = 'member_tz' THEN
-                            CAST(SYSDATETIMEOFFSET() AT TIME ZONE m.timezone AS TIME)
+                            CAST(SYSDATETIMEOFFSET() AT TIME ZONE
+CASE m.timezone
+                                    -- Primary US time zones
+                                    WHEN 'America/New_York' THEN 'Eastern Standard Time'
+                                    WHEN 'America/Chicago' THEN 'Central Standard Time'
+                                    WHEN 'America/Denver' THEN 'Mountain Standard Time'
+                                    WHEN 'America/Los_Angeles' THEN 'Pacific Standard Time'
+                                    WHEN 'America/Phoenix' THEN 'US Mountain Standard Time'
+                                    WHEN 'America/Anchorage' THEN 'Alaskan Standard Time'
+                                    WHEN 'Pacific/Honolulu' THEN 'Hawaiian Standard Time'
+                                    -- Additional major city mappings
+                                    WHEN 'America/Detroit' THEN 'Eastern Standard Time'
+                                    WHEN 'America/Indiana/Indianapolis' THEN 'US Eastern Standard Time'
+                                    WHEN 'America/Kentucky/Louisville' THEN 'Eastern Standard Time'
+                                    WHEN 'America/New_Orleans' THEN 'Central Standard Time'
+                                    WHEN 'America/Dallas' THEN 'Central Standard Time'
+                                    WHEN 'America/Houston' THEN 'Central Standard Time'
+                                    WHEN 'America/Boise' THEN 'Mountain Standard Time'
+                                    WHEN 'America/Salt_Lake_City' THEN 'Mountain Standard Time'
+                                    WHEN 'America/Seattle' THEN 'Pacific Standard Time'
+                                    WHEN 'America/San_Francisco' THEN 'Pacific Standard Time'
+                                    -- US territories
+                                    WHEN 'America/Puerto_Rico' THEN 'SA Western Standard Time'
+                                    WHEN 'Pacific/Guam' THEN 'West Pacific Standard Time'
+                                    WHEN 'Pacific/Samoa' THEN 'Samoa Standard Time'
+                                    WHEN 'Pacific/Pago_Pago' THEN 'Samoa Standard Time'
+                                    WHEN 'Pacific/Wake' THEN 'UTC+12'
+                                    WHEN 'America/Adak' THEN 'Aleutian Standard Time'
+                                    WHEN 'Etc/GMT+12' THEN 'Dateline Standard Time'
+                                    ELSE 'Eastern Standard Time'  -- Fallback default
+                                END
+                            AS TIME)
                         ELSE
                             CAST(SYSDATETIMEOFFSET() AT TIME ZONE @operating_tz AS TIME)
                     END as member_current_time,
                     -- Calculate member's current day based on timezone_flag
-                    CASE 
+                    CASE
                         WHEN @timezone_flag = 'member_tz' THEN
-                            DATENAME(WEEKDAY, SYSDATETIMEOFFSET() AT TIME ZONE m.timezone)
+                            DATENAME(WEEKDAY, SYSDATETIMEOFFSET() AT TIME ZONE
+CASE m.timezone
+                                    -- Primary US time zones
+                                    WHEN 'America/New_York' THEN 'Eastern Standard Time'
+                                    WHEN 'America/Chicago' THEN 'Central Standard Time'
+                                    WHEN 'America/Denver' THEN 'Mountain Standard Time'
+                                    WHEN 'America/Los_Angeles' THEN 'Pacific Standard Time'
+                                    WHEN 'America/Phoenix' THEN 'US Mountain Standard Time'
+                                    WHEN 'America/Anchorage' THEN 'Alaskan Standard Time'
+                                    WHEN 'Pacific/Honolulu' THEN 'Hawaiian Standard Time'
+                                    -- Additional major city mappings
+                                    WHEN 'America/Detroit' THEN 'Eastern Standard Time'
+                                    WHEN 'America/Indiana/Indianapolis' THEN 'US Eastern Standard Time'
+                                    WHEN 'America/Kentucky/Louisville' THEN 'Eastern Standard Time'
+                                    WHEN 'America/New_Orleans' THEN 'Central Standard Time'
+                                    WHEN 'America/Dallas' THEN 'Central Standard Time'
+                                    WHEN 'America/Houston' THEN 'Central Standard Time'
+                                    WHEN 'America/Boise' THEN 'Mountain Standard Time'
+                                    WHEN 'America/Salt_Lake_City' THEN 'Mountain Standard Time'
+                                    WHEN 'America/Seattle' THEN 'Pacific Standard Time'
+                                    WHEN 'America/San_Francisco' THEN 'Pacific Standard Time'
+                                    -- US territories
+                                    WHEN 'America/Puerto_Rico' THEN 'SA Western Standard Time'
+                                    WHEN 'Pacific/Guam' THEN 'West Pacific Standard Time'
+                                    WHEN 'Pacific/Samoa' THEN 'Samoa Standard Time'
+                                    WHEN 'Pacific/Pago_Pago' THEN 'Samoa Standard Time'
+                                    WHEN 'Pacific/Wake' THEN 'UTC+12'
+                                    WHEN 'America/Adak' THEN 'Aleutian Standard Time'
+                                    WHEN 'Etc/GMT+12' THEN 'Dateline Standard Time'
+                                    ELSE 'Eastern Standard Time'  -- Fallback default
+                                END
+                            )
                         ELSE
                             DATENAME(WEEKDAY, SYSDATETIMEOFFSET() AT TIME ZONE @operating_tz)
                     END as member_current_day
