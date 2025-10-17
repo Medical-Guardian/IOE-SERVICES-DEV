@@ -84,7 +84,43 @@ class BlandAIClient:
             logger.info(f"🎤 [BLAND-CLIENT] Voice ID: {batch_request.voice_id}")
             logger.info(f"🔗 [BLAND-CLIENT] Webhook URL: {batch_request.webhook_url}")
             logger.info(f"⏱️ [BLAND-CLIENT] Max Duration: {batch_request.max_duration or '300'}s")
+            logger.info(f"📞 [BLAND-CLIENT] Number of calls: {len(batch_request.calls)}")
             logger.info(f"⏱️ [BLAND-CLIENT] Submitting with 60 second timeout (SYNCHRONOUS)")
+
+            # Log complete payload for debugging (with first call sample)
+            logger.info("=" * 80)
+            logger.info("📋 [BLAND-CLIENT] COMPLETE BLAND AI BATCH PAYLOAD:")
+            logger.info("=" * 80)
+            logger.info(f"🌐 [BLAND-CLIENT] API Endpoint: {self.base_url}/v1/batches")
+            logger.info(f"🔑 [BLAND-CLIENT] API Key: {'*' * 20}{self.api_key[-8:] if len(self.api_key) > 8 else '***'}")
+            logger.info(f"📦 [BLAND-CLIENT] Payload Structure:")
+            logger.info(f"   - batch_id: {payload['batch_id']}")
+            logger.info(f"   - pathway_id: {payload['pathway_id']}")
+            logger.info(f"   - voice_id: {payload['voice_id']}")
+            logger.info(f"   - webhook_url: {payload['webhook_url']}")
+            logger.info(f"   - max_duration: {payload['max_duration']}")
+            logger.info(f"   - analysis_schema: {json.dumps(payload['analysis_schema'])}")
+            logger.info(f"   - calls: [{len(payload['calls'])} calls]")
+
+            # Log first call as sample
+            if payload['calls']:
+                logger.info(f"📞 [BLAND-CLIENT] Sample Call (first call):")
+                sample_call = payload['calls'][0]
+                logger.info(f"   - to: {sample_call.get('to')}")
+                logger.info(f"   - request_data keys: {list(sample_call.get('request_data', {}).keys())}")
+                logger.info(f"   - metadata keys: {list(sample_call.get('metadata', {}).keys())}")
+                logger.info(f"📋 [BLAND-CLIENT] Full sample call:")
+                logger.info(json.dumps(sample_call, indent=2, default=str))
+
+            # Log FULL payload as JSON for debugging
+            logger.info("📄 [BLAND-CLIENT] COMPLETE JSON PAYLOAD:")
+            try:
+                full_payload_json = json.dumps(payload, indent=2, default=str)
+                logger.info(full_payload_json)
+            except Exception as e:
+                logger.error(f"❌ [BLAND-CLIENT] Error serializing payload to JSON: {str(e)}")
+
+            logger.info("=" * 80)
 
             # SYNCHRONOUS HTTP POST - blocks until response or timeout
             response = requests.post(
@@ -95,15 +131,22 @@ class BlandAIClient:
             )
 
             logger.info(f"📡 [BLAND-CLIENT] Response status: {response.status_code}")
+            logger.info(f"📡 [BLAND-CLIENT] Response headers: {dict(response.headers)}")
+            logger.info(f"📡 [BLAND-CLIENT] Response content length: {len(response.content)} bytes")
 
             try:
                 response_data = response.json()
+                logger.info(f"📡 [BLAND-CLIENT] Response JSON: {json.dumps(response_data, indent=2)}")
             except json.JSONDecodeError:
                 response_text = response.text
-                logger.error(f"❌ [BLAND-CLIENT] Invalid JSON response: {response_text}")
+                logger.error(f"❌ [BLAND-CLIENT] Invalid JSON response (status {response.status_code})")
+                logger.error(f"❌ [BLAND-CLIENT] Response text: '{response_text}'")
+                logger.error(f"❌ [BLAND-CLIENT] Response content (raw bytes): {response.content}")
+                logger.error(f"❌ [BLAND-CLIENT] Request URL: {self.base_url}/v1/batches")
+                logger.error(f"❌ [BLAND-CLIENT] Request method: POST")
                 return {
                     "success": False,
-                    "error": f"Invalid JSON response: {response_text}",
+                    "error": f"Invalid JSON response (HTTP {response.status_code}): {response_text if response_text else 'Empty response'}",
                     "status_code": response.status_code
                 }
 
