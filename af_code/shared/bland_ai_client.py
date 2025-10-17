@@ -47,29 +47,55 @@ class BlandAIClient:
         logger.info(f"🚀 [BLAND-CLIENT] Submitting batch with {len(batch_request.calls)} calls")
         logger.info(f"📋 [BLAND-CLIENT] Campaign ID: {batch_request.campaign_id}")
 
-        # Validate webhook_url is provided
-        if not batch_request.webhook_url:
-            error_msg = "Webhook URL is required in batch_request (from campaign bland_parameters_global)"
-            logger.error(f"🚨 [BLAND-CLIENT] {error_msg}")
-            return {
-                "success": False,
-                "error": error_msg
-            }
-
         try:
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
             }
 
-            # Build DTC-style payload with global configuration and call_objects
-            # Following exact structure from af_dtc_intro_call/services/blandai_service.py
+            # Build DTC-style payload with ALL global configuration parameters
+            # Following EXACT structure from af_dtc_intro_call/services/blandai_service.py
+            # Extract all 18+ parameters from bland_parameters_global JSON
+            bland_params = batch_request.bland_parameters_global or {}
+
+            # Build global_config with ALL parameters (filter None values like DTC)
             global_config = {
-                "pathway_id": batch_request.pathway_id,
-                "voice": batch_request.voice_id,
-                "webhook": batch_request.webhook_url,
-                "max_duration": int(batch_request.max_duration) if batch_request.max_duration else 300,
+                k: v
+                for k, v in {
+                    "pathway_id": batch_request.pathway_id,
+                    "pathway_version": bland_params.get("pathway_version"),
+                    "voice": batch_request.voice_id,
+                    "wait_for_greeting": bland_params.get("wait_for_greeting"),
+                    "record": bland_params.get("record"),
+                    "answered_by_enabled": bland_params.get("answered_by_enabled"),
+                    "noise_cancellation": bland_params.get("noise_cancellation"),
+                    "interruption_threshold": bland_params.get("interruption_threshold"),
+                    "block_interruptions": bland_params.get("block_interruptions"),
+                    "max_duration": bland_params.get("max_duration"),
+                    "model": bland_params.get("model"),
+                    "temperature": bland_params.get("temperature"),
+                    "language": bland_params.get("language"),
+                    "background_track": bland_params.get("background_track"),
+                    "endpoint": bland_params.get("endpoint"),
+                    "from": bland_params.get("from"),  # "from" phone number
+                    "timezone": bland_params.get("timezone"),
+                    "webhook": bland_params.get("webhook") or bland_params.get("webhook_url"),  # Support both field names
+                }.items()
+                if v is not None  # Only include non-None values (DTC pattern)
             }
+
+            logger.info(f"🔧 [BLAND-CLIENT] Built global config with {len(global_config)} parameters")
+            logger.info(f"📋 [BLAND-CLIENT] Included parameters: {list(global_config.keys())}")
+
+            # Validate required webhook parameter
+            if "webhook" not in global_config or not global_config["webhook"]:
+                error_msg = "Webhook URL is required in bland_parameters_global JSON"
+                logger.error(f"🚨 [BLAND-CLIENT] {error_msg}")
+                logger.error(f"🚨 [BLAND-CLIENT] Available parameters: {list(global_config.keys())}")
+                return {
+                    "success": False,
+                    "error": error_msg
+                }
 
             # Convert "calls" to "call_objects" with "phone_number" field (DTC format)
             call_objects = []
@@ -86,10 +112,6 @@ class BlandAIClient:
                 "call_objects": call_objects
             }
 
-            logger.info(f"🎭 [BLAND-CLIENT] Pathway ID: {batch_request.pathway_id}")
-            logger.info(f"🎤 [BLAND-CLIENT] Voice ID: {batch_request.voice_id}")
-            logger.info(f"🔗 [BLAND-CLIENT] Webhook URL: {batch_request.webhook_url}")
-            logger.info(f"⏱️ [BLAND-CLIENT] Max Duration: {batch_request.max_duration or '300'}s")
             logger.info(f"📞 [BLAND-CLIENT] Number of calls: {len(call_objects)}")
             logger.info(f"⏱️ [BLAND-CLIENT] Submitting with 60 second timeout (SYNCHRONOUS)")
 
@@ -100,10 +122,10 @@ class BlandAIClient:
             logger.info(f"🌐 [BLAND-CLIENT] API Endpoint: {self.batch_url}")
             logger.info(f"🔑 [BLAND-CLIENT] API Key: {'*' * 20}{self.api_key[-8:] if len(self.api_key) > 8 else '***'}")
             logger.info(f"📦 [BLAND-CLIENT] Payload Structure:")
-            logger.info(f"   - global.pathway_id: {global_config['pathway_id']}")
-            logger.info(f"   - global.voice: {global_config['voice']}")
-            logger.info(f"   - global.webhook: {global_config['webhook']}")
-            logger.info(f"   - global.max_duration: {global_config['max_duration']}")
+            logger.info(f"   - global: {len(global_config)} parameters")
+            # Log ALL global parameters
+            for param_name, param_value in global_config.items():
+                logger.info(f"     • {param_name}: {param_value}")
             logger.info(f"   - call_objects: [{len(call_objects)} calls]")
 
             # Log first call as sample

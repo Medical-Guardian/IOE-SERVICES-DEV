@@ -147,17 +147,17 @@ class MemberEligibilityService:
                     END as time_since_last_attempt
                 FROM LastSuccessfulAttempts lsa
             ),
-            TodaySuccessfulAttempts AS (
-                -- Check if THIS MEMBER had a SUCCESSFUL attempt today (member-wise, not batch-wise)
-                -- Only 'Completed' disposition means successful call
-                -- 'Failed' and 'NoAnswer' can be retried per policy
+            TodayActiveAttempts AS (
+                -- Check if THIS MEMBER has an active attempt today (member-wise, not batch-wise)
+                -- Exclude: 'Completed' (successful) and 'Pending' (in progress)
+                -- Allow retry: 'Failed' and 'NoAnswer' per policy
                 SELECT DISTINCT mce.member_id
                 FROM engage360.member_campaign_enrollments_enhanced mce
                 INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
                 INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
                 WHERE ob.campaign_id = @campaign_id
                   AND CAST(oa.attempt_ts AS DATE) = CAST(SYSDATETIMEOFFSET() AS DATE)
-                  AND oa.disposition = 'Completed'  -- Only exclude members with successful calls today
+                  AND oa.disposition IN ('Completed', 'Pending')  -- Exclude successful OR in-progress calls
             ),
             TimezoneEligible AS (
                 SELECT
@@ -283,10 +283,10 @@ CASE m.timezone
             FROM engage360.member_campaign_enrollments_enhanced mce
             INNER JOIN TimezoneEligible te ON mce.member_id = te.member_id
             LEFT JOIN FrequencyCheck fc ON mce.member_id = fc.member_id
-            LEFT JOIN TodaySuccessfulAttempts tsa ON mce.member_id = tsa.member_id
+            LEFT JOIN TodayActiveAttempts taa ON mce.member_id = taa.member_id
             WHERE mce.campaign_id = @campaign_id
               AND mce.current_status = 'Active'
-              AND tsa.member_id IS NULL  -- No successful attempt today (Failed/NoAnswer can retry)
+              AND taa.member_id IS NULL  -- No completed or pending attempt today (Failed/NoAnswer can retry)
               AND (
                   fc.member_id IS NULL  -- Never attempted
                   OR (

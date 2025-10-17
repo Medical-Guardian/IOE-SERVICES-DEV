@@ -3,13 +3,17 @@ from typing import List, Dict, Any, Optional
 
 @dataclass
 class BatchRequest:
-    """Model for Bland AI batch call request"""
+    """Model for Bland AI batch call request with all global parameters (matching DTC implementation)"""
     campaign_id: str
     calls: List[Dict[str, Any]]
+
+    # Core required parameters
     pathway_id: str
     voice_id: str
-    webhook_url: Optional[str] = None  # From bland_parameters_global
-    max_duration: Optional[str] = None  # From bland_parameters_global
+
+    # All optional global parameters from bland_parameters_global (following DTC pattern)
+    # Store complete JSON for flexible parameter passing
+    bland_parameters_global: Optional[Dict[str, Any]] = None
 
 @dataclass  
 class BatchResult:

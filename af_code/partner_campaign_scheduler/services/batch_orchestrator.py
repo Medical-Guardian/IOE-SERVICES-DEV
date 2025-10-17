@@ -209,16 +209,21 @@ class BatchOrchestrator:
         # Get Bland AI parameters (campaign-specific or fallback to environment)
         pathway_id = self._get_pathway_id(campaign)
         voice_id = self._get_voice_id(campaign)
-        webhook_url = self._get_webhook_url(campaign)
-        max_duration = self._get_max_duration(campaign)
+
+        # Pass the complete bland_parameters_global JSON (like DTC implementation)
+        # This includes all 18+ parameters: pathway_version, wait_for_greeting, record, etc.
+        bland_params = campaign.bland_parameters_global if campaign.bland_parameters_global else {}
+
+        logger.info(f"📋 [BATCH-ORCHESTRATOR] Passing {len(bland_params)} Bland AI parameters from campaign configuration")
+        if bland_params:
+            logger.info(f"🔧 [BATCH-ORCHESTRATOR] Available parameters: {list(bland_params.keys())}")
 
         return BatchRequest(
             campaign_id=str(campaign.campaign_id),  # Convert UUID to string for JSON serialization
             calls=calls,
             pathway_id=pathway_id,
             voice_id=voice_id,
-            webhook_url=webhook_url,
-            max_duration=max_duration
+            bland_parameters_global=bland_params  # Pass complete JSON
         )
 
     def _build_request_data(self, member: EligibleMember, campaign: QualifiedCampaign) -> Dict[str, Any]:
