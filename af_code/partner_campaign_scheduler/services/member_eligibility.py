@@ -118,41 +118,46 @@ class MemberEligibilityService:
             DECLARE @end_time TIME = %s;
             DECLARE @call_days NVARCHAR(255) = %s;
             
-            WITH LastAttempts AS (
-                SELECT 
+            WITH LastSuccessfulAttempts AS (
+                -- Only count SUCCESSFUL attempts for frequency calculation
+                -- Failed and NoAnswer don't count toward frequency limits
+                SELECT
                     mce.member_id,
                     MAX(oa.attempt_ts) as last_attempt_ts,
                     COUNT(*) as total_attempts,
-                    -- Check if attempted today using existing attempt_ts field
-                    MAX(CASE 
-                        WHEN CAST(oa.attempt_ts AS DATE) = CAST(SYSDATETIMEOFFSET() AS DATE) 
-                        THEN 1 ELSE 0 
+                    -- Check if successfully attempted today
+                    MAX(CASE
+                        WHEN CAST(oa.attempt_ts AS DATE) = CAST(SYSDATETIMEOFFSET() AS DATE)
+                        THEN 1 ELSE 0
                     END) as attempted_today
                 FROM engage360.member_campaign_enrollments_enhanced mce
                 INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
                 INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
                 WHERE ob.campaign_id = @campaign_id
+                  AND oa.disposition = 'Completed'  -- Only count successful attempts
                 GROUP BY mce.member_id
             ),
             FrequencyCheck AS (
-                SELECT 
-                    la.*,
-                    CASE 
-                        WHEN @frequency_unit = 'day' THEN DATEDIFF(day, la.last_attempt_ts, SYSDATETIMEOFFSET())
-                        WHEN @frequency_unit = 'week' THEN DATEDIFF(week, la.last_attempt_ts, SYSDATETIMEOFFSET())
-                        WHEN @frequency_unit = 'month' THEN DATEDIFF(month, la.last_attempt_ts, SYSDATETIMEOFFSET())
+                SELECT
+                    lsa.*,
+                    CASE
+                        WHEN @frequency_unit = 'day' THEN DATEDIFF(day, lsa.last_attempt_ts, SYSDATETIMEOFFSET())
+                        WHEN @frequency_unit = 'week' THEN DATEDIFF(week, lsa.last_attempt_ts, SYSDATETIMEOFFSET())
+                        WHEN @frequency_unit = 'month' THEN DATEDIFF(month, lsa.last_attempt_ts, SYSDATETIMEOFFSET())
                     END as time_since_last_attempt
-                FROM LastAttempts la
+                FROM LastSuccessfulAttempts lsa
             ),
-            TodaySubmissions AS (
-                -- Check existing batches submitted today using outreach_batches
+            TodaySuccessfulAttempts AS (
+                -- Check if THIS MEMBER had a SUCCESSFUL attempt today (member-wise, not batch-wise)
+                -- Only 'Completed' disposition means successful call
+                -- 'Failed' and 'NoAnswer' can be retried per policy
                 SELECT DISTINCT mce.member_id
                 FROM engage360.member_campaign_enrollments_enhanced mce
-                INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id  
+                INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
                 INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
                 WHERE ob.campaign_id = @campaign_id
-                  AND CAST(ob.submitted_ts AS DATE) = CAST(SYSDATETIMEOFFSET() AS DATE)
-                  AND ob.batch_status IN ('Submitted', 'Pending')
+                  AND CAST(oa.attempt_ts AS DATE) = CAST(SYSDATETIMEOFFSET() AS DATE)
+                  AND oa.disposition = 'Completed'  -- Only exclude members with successful calls today
             ),
             TimezoneEligible AS (
                 SELECT
@@ -278,10 +283,10 @@ CASE m.timezone
             FROM engage360.member_campaign_enrollments_enhanced mce
             INNER JOIN TimezoneEligible te ON mce.member_id = te.member_id
             LEFT JOIN FrequencyCheck fc ON mce.member_id = fc.member_id
-            LEFT JOIN TodaySubmissions ts ON mce.member_id = ts.member_id
+            LEFT JOIN TodaySuccessfulAttempts tsa ON mce.member_id = tsa.member_id
             WHERE mce.campaign_id = @campaign_id
               AND mce.current_status = 'Active'
-              AND ts.member_id IS NULL  -- Not submitted today
+              AND tsa.member_id IS NULL  -- No successful attempt today (Failed/NoAnswer can retry)
               AND (
                   fc.member_id IS NULL  -- Never attempted
                   OR (
