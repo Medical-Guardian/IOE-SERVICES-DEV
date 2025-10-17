@@ -251,7 +251,7 @@ CASE m.timezone
                     AND md.is_device_callable = 1
                 WHERE m.timezone IS NOT NULL
             )
-            SELECT TOP 1000
+            SELECT DISTINCT TOP 1000
                 mce.member_id,
                 mce.campaign_id,
                 mce.enrollment_id,  -- Need this for outreach_attempts FK
