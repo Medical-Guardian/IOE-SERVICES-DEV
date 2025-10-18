@@ -18,16 +18,23 @@ class BlandAIClient:
 
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-        # Use the same Key Vault secret name as DTC functions
+        # Use the same Key Vault secret names as DTC functions
         self.api_key = config_manager.get_config("BlandAIkey")
+        self.encrypted_key = config_manager.get_config("Blandaitwilio")  # Twilio encryption key
         self.batch_url = config_manager.get_config("BLAND_AI_BATCH_URL", "https://api.bland.ai/v2/batches/create")
 
         if not self.api_key:
             logger.error("🚨 [BLAND-CLIENT] BlandAIkey not configured in Key Vault")
             raise ValueError("Bland AI API key is required")
 
+        if not self.encrypted_key:
+            logger.warning("⚠️ [BLAND-CLIENT] Blandaitwilio (encrypted_key) not configured in Key Vault")
+            logger.warning("⚠️ [BLAND-CLIENT] encrypted_key header will not be sent (DTC pattern requires this)")
+
         logger.info("🔧 [BLAND-CLIENT] Client initialized successfully")
         logger.info(f"🌐 [BLAND-CLIENT] Batch URL: {self.batch_url}")
+        logger.info(f"🔑 [BLAND-CLIENT] API Key (BlandAIkey): {'✅ Configured' if self.api_key else '❌ Missing'}")
+        logger.info(f"🔐 [BLAND-CLIENT] Encrypted Key (Blandaitwilio): {'✅ Configured' if self.encrypted_key else '❌ Missing'}")
         logger.info(f"ℹ️ [BLAND-CLIENT] Webhook URL will be provided per-batch from campaign configuration")
 
     def submit_batch_calls(self, batch_request) -> Dict[str, Any]:
@@ -48,10 +55,18 @@ class BlandAIClient:
         logger.info(f"📋 [BLAND-CLIENT] Campaign ID: {batch_request.campaign_id}")
 
         try:
+            # Build headers following DTC pattern (3 headers total)
             headers = {
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
+                "Authorization": f"Bearer {self.api_key}",  # 1. Bland AI API authentication
+                "Content-Type": "application/json",          # 2. JSON payload format
             }
+
+            # 3. Add encrypted_key header if available (DTC pattern - Twilio encryption key)
+            if self.encrypted_key:
+                headers["encrypted_key"] = self.encrypted_key
+                logger.info("🔐 [BLAND-CLIENT] Added encrypted_key header (Blandaitwilio)")
+            else:
+                logger.warning("⚠️ [BLAND-CLIENT] encrypted_key header NOT added (Blandaitwilio not configured)")
 
             # Build DTC-style payload with ALL global configuration parameters
             # Following EXACT structure from af_dtc_intro_call/services/blandai_service.py
@@ -120,7 +135,14 @@ class BlandAIClient:
             logger.info("📋 [BLAND-CLIENT] COMPLETE BLAND AI BATCH PAYLOAD:")
             logger.info("=" * 80)
             logger.info(f"🌐 [BLAND-CLIENT] API Endpoint: {self.batch_url}")
-            logger.info(f"🔑 [BLAND-CLIENT] API Key: {'*' * 20}{self.api_key[-8:] if len(self.api_key) > 8 else '***'}")
+            logger.info(f"📨 [BLAND-CLIENT] Headers ({len(headers)} total):")
+            for header_name, header_value in headers.items():
+                if header_name == "Authorization":
+                    logger.info(f"     • {header_name}: Bearer {'*' * 20}{self.api_key[-8:] if len(self.api_key) > 8 else '***'}")
+                elif header_name == "encrypted_key":
+                    logger.info(f"     • {header_name}: {'*' * 20}{self.encrypted_key[-8:] if len(self.encrypted_key) > 8 else '***'}")
+                else:
+                    logger.info(f"     • {header_name}: {header_value}")
             logger.info(f"📦 [BLAND-CLIENT] Payload Structure:")
             logger.info(f"   - global: {len(global_config)} parameters")
             # Log ALL global parameters
