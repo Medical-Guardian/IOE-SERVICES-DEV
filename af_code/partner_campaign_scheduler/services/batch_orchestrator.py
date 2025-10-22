@@ -72,11 +72,11 @@ class BatchOrchestrator:
             # ============================================================
             # PHASE 2: Create attempt records BEFORE Bland AI call
             # ============================================================
-            self._create_outreach_attempts(members, batch_id)
+            attempt_id_map = self._create_outreach_attempts(members, batch_id)
             logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 2 Complete: {len(members)} attempt records created")
 
-            # Build Bland AI batch request
-            batch_request = self._build_batch_request(campaign, members, batch_id)
+            # Build Bland AI batch request with attempt_id mapping
+            batch_request = self._build_batch_request(campaign, members, batch_id, attempt_id_map)
 
             logger.info(f"📞 [BATCH-ORCHESTRATOR] Built batch request with {len(batch_request.calls)} calls")
             logger.info(f"🎭 [BATCH-ORCHESTRATOR] Using pathway: {batch_request.pathway_id}")
@@ -138,9 +138,15 @@ class BatchOrchestrator:
                 campaign_id=str(campaign.campaign_id)  # Convert UUID to string
             )
     
-    def _build_batch_request(self, campaign: QualifiedCampaign, members: List[EligibleMember], batch_id: str) -> BatchRequest:
+    def _build_batch_request(self, campaign: QualifiedCampaign, members: List[EligibleMember], batch_id: str, attempt_id_map: Dict[str, str]) -> BatchRequest:
         """
-        Build the Bland AI batch request payload with DTC-style request_data
+        Build the Bland AI batch request payload with DTC-style request_data and complete metadata
+
+        Args:
+            campaign: Qualified campaign configuration
+            members: List of eligible members
+            batch_id: Batch UUID from Phase 1
+            attempt_id_map: Mapping of enrollment_id to attempt_id from Phase 2
         """
         logger.info(f"🔨 [BATCH-ORCHESTRATOR] Building batch request for {len(members)} members")
 
@@ -148,6 +154,15 @@ class BatchOrchestrator:
         skipped_members = 0
 
         for member in members:
+            # Get attempt_id for this member
+            enrollment_id = str(member.enrollment_id)
+            attempt_id = attempt_id_map.get(enrollment_id)
+
+            if not attempt_id:
+                logger.error(f"❌ [BATCH-ORCHESTRATOR] No attempt_id found for enrollment {enrollment_id}")
+                skipped_members += 1
+                continue
+
             # Determine phone number based on contact preference
             phone_number = self._get_target_phone(member, campaign.contact_pref)
 
@@ -177,26 +192,39 @@ class BatchOrchestrator:
             else:
                 logger.info(f"   🩺 Care gaps: None")
 
+            # Build complete metadata (DTC fields + Partner fields)
             call_data = {
                 "to": phone_number,
                 "request_data": request_data,  # DTC-style request_data
                 "metadata": {
-                    "member_id": str(member.member_id),  # Convert UUID to string
-                    "campaign_id": str(campaign.campaign_id),  # Convert UUID to string
-                    "enrollment_id": str(member.enrollment_id),  # Convert UUID to string
-                    "first_name": member.first_name,
-                    "last_name": member.last_name,
+                    # Core Tracking IDs (DTC + Partner)
+                    "attempt_id": attempt_id,                        # FROM DTC - CRITICAL for webhook
+                    "batch_id": batch_id,                            # FROM DTC - Batch tracking
+                    "campaign_id": str(campaign.campaign_id),        # Both have this
+                    "member_id": str(member.member_id),              # Both have this
+                    "enrollment_id": enrollment_id,                  # Partner-specific
+                    "org_id": str(campaign.org_id),                  # Partner-specific
+                    "call_type_id": str(campaign.call_type_id) if campaign.call_type_id else None,
+
+                    # Bland AI Configuration
+                    "pathway_id": campaign.pathway_id or (campaign.bland_parameters_global.get("pathway_id") if campaign.bland_parameters_global else None),
+
+                    # Member Identification (DTC + Partner)
+                    "first_name": member.first_name,                 # Both have this
+                    "last_name": member.last_name,                   # Both have this
+                    "called_number": phone_number,                   # FROM DTC - Phone actually called
+                    "salesforce_account_number": getattr(member, 'salesforce_account_number', None),  # FROM DTC - if available
+
+                    # Communication Preferences
+                    "language_pref": getattr(member, 'language_pref', None) or request_data.get('language_pref'),  # FROM DTC
+                    "contact_preference": campaign.contact_pref,     # Partner-specific
+
+                    # Partner-Specific Context
                     "campaign_type": "Partner",
-                    "org_id": str(campaign.org_id),  # Convert UUID to string
-                    "call_type_id": str(campaign.call_type_id) if campaign.call_type_id else None,  # Convert UUID to string
-                    "preferred_window": member.preferred_window,
+                    "audience_file_batch": campaign.audience_file_batch,
                     "member_timezone": member.timezone,
-                    "audience_file_batch": campaign.audience_file_batch,  # From campaign
-                    "contact_preference": campaign.contact_pref,
-                    "member_contact_pref": member.contact_pref,  # Member's preference
                     "is_device_callable": member.is_device_callable,
                     "total_previous_attempts": member.total_attempts,
-                    "last_attempt_ts": str(member.last_attempt_ts) if member.last_attempt_ts else None
                 }
             }
             calls.append(call_data)
@@ -357,7 +385,7 @@ class BatchOrchestrator:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Phase 1 FAILED: Error creating batch record: {str(e)}")
             raise
 
-    def _create_outreach_attempts(self, members: List[EligibleMember], batch_id: str) -> None:
+    def _create_outreach_attempts(self, members: List[EligibleMember], batch_id: str) -> Dict[str, str]:
         """
         PHASE 2: Create outreach attempt records in database BEFORE Bland AI call
 
@@ -366,19 +394,28 @@ class BatchOrchestrator:
         Args:
             members: List of eligible members
             batch_id: UUID of the batch (from Phase 1)
+
+        Returns:
+            Dict mapping enrollment_id (str) to attempt_id (str)
         """
         logger.info(f"📝 [BATCH-ORCHESTRATOR] Phase 2: Creating {len(members)} attempt records")
 
         # Build bulk insert for better performance
+        attempt_id_map = {}  # Store enrollment_id -> attempt_id mapping
         values_list = []
         params = []
 
         for member in members:
             attempt_id = str(uuid.uuid4())
+            enrollment_id = str(member.enrollment_id)
+
+            # Store mapping for metadata inclusion
+            attempt_id_map[enrollment_id] = attempt_id
+
             values_list.append("(%s, %s, 'Voice', SYSDATETIMEOFFSET(), 'Pending', 0, %s)")
             params.extend([
                 attempt_id,
-                member.enrollment_id,  # FK to member_campaign_enrollments_enhanced
+                enrollment_id,         # FK to member_campaign_enrollments_enhanced
                 batch_id               # FK to outreach_batches
             ])
 
@@ -391,6 +428,8 @@ class BatchOrchestrator:
         try:
             self.db_service.execute_query(query, params, fetch_results=False)
             logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 2: {len(members)} attempt records created successfully")
+            logger.info(f"🔑 [BATCH-ORCHESTRATOR] Generated {len(attempt_id_map)} attempt_id mappings for metadata")
+            return attempt_id_map
         except Exception as e:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Phase 2 FAILED: Error creating attempt records: {str(e)}")
             raise
