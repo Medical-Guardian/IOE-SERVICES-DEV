@@ -109,13 +109,14 @@ JOIN
 JOIN
     engage360.campaigns_enhanced AS c ON mce.campaign_id = c.campaign_id
 LEFT JOIN (
-    SELECT 
+    SELECT
         oa.enrollment_id,
         COUNT(*) as failed_count
     FROM engage360.outreach_attempts oa
-    WHERE oa.attempt_ts >= @TodayStartUtc 
+    WHERE oa.attempt_ts >= @TodayStartUtc
       AND oa.attempt_ts < @TodayEndUtc
       AND oa.disposition != 'Completed'
+      AND oa.channel = 'Voice'  -- Only count Voice failed attempts
     GROUP BY oa.enrollment_id
 ) failed_attempts ON mce.enrollment_id = failed_attempts.enrollment_id
 WHERE
@@ -125,7 +126,7 @@ WHERE
     AND mce.preferred_window IS NOT NULL
     AND c.campaign_id = %s
     AND NOT EXISTS (
-        -- Check for ANY DTC outreach attempts for this member today (intro OR wellness)
+        -- Check for ANY DTC Voice outreach attempts for this member today (intro OR wellness)
         SELECT 1
         FROM engage360.outreach_attempts oa
         JOIN engage360.member_campaign_enrollments_enhanced other_mce ON oa.enrollment_id = other_mce.enrollment_id
@@ -134,7 +135,8 @@ WHERE
               '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro Campaign
               'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness Campaign
           )
-          AND oa.attempt_ts >= @TodayStartUtc 
+          AND oa.channel = 'Voice'  -- Only check Voice attempts (allow SMS on same day)
+          AND oa.attempt_ts >= @TodayStartUtc
           AND oa.attempt_ts < @TodayEndUtc
     );
 """
@@ -161,13 +163,14 @@ JOIN
 JOIN
     engage360.campaigns_enhanced AS c ON mce.campaign_id = c.campaign_id
 LEFT JOIN (
-    SELECT 
+    SELECT
         oa.enrollment_id,
         COUNT(*) as failed_count
     FROM engage360.outreach_attempts oa
-    WHERE oa.attempt_ts >= @TodayStartUtc 
+    WHERE oa.attempt_ts >= @TodayStartUtc
       AND oa.attempt_ts < @TodayEndUtc
       AND oa.disposition != 'Completed'
+      AND oa.channel = 'Voice'  -- Only count Voice failed attempts
     GROUP BY oa.enrollment_id
 ) failed_attempts ON mce.enrollment_id = failed_attempts.enrollment_id
 WHERE
@@ -185,7 +188,7 @@ WHERE
           AND intro_mce.current_status = 'UNENROLLED'
     )
     AND NOT EXISTS (
-        -- Check for ANY DTC outreach attempts for this member today (intro OR wellness)
+        -- Check for ANY DTC Voice outreach attempts for this member today (intro OR wellness)
         SELECT 1
         FROM engage360.outreach_attempts oa
         JOIN engage360.member_campaign_enrollments_enhanced other_mce ON oa.enrollment_id = other_mce.enrollment_id
@@ -194,7 +197,8 @@ WHERE
               '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro Campaign
               'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness Campaign
           )
-          AND oa.attempt_ts >= @TodayStartUtc 
+          AND oa.channel = 'Voice'  -- Only check Voice attempts (allow SMS on same day)
+          AND oa.attempt_ts >= @TodayStartUtc
           AND oa.attempt_ts < @TodayEndUtc
     );
 """
