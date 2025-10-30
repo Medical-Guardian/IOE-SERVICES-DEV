@@ -311,19 +311,28 @@ class DataCleanerAndValidator:
                     )
                 )
 
-            lang = str(row.get("language_pref", "")).upper()
-            if lang and lang not in ["EN", "ES"]:
-                all_errors.append(
-                    ValidationError(
-                        category="Format",
-                        error_type="InvalidLanguage",
-                        message=f"Row {row_number}: language_pref must be EN or ES.",
-                        severity=ValidationSeverity.ERROR,
-                        field="language_pref",
-                        error_value=str(row.get("language_pref")),
-                        row_number=row_number,
+            # Language preference validation and defaulting (align with DTC pattern)
+            lang = str(row.get("language_pref", "")).strip()
+            if lang:
+                lang_upper = lang.upper()
+                if lang_upper not in ["EN", "ES"]:
+                    all_errors.append(
+                        ValidationError(
+                            category="Format",
+                            error_type="InvalidLanguage",
+                            message=f"Row {row_number}: language_pref must be EN or ES.",
+                            severity=ValidationSeverity.ERROR,
+                            field="language_pref",
+                            error_value=lang,
+                            row_number=row_number,
+                        )
                     )
-                )
+                else:
+                    # Valid value - uppercase and assign
+                    cleaned_df.at[idx, "language_pref"] = lang_upper
+            else:
+                # Empty/null value - default to EN
+                cleaned_df.at[idx, "language_pref"] = "EN"
 
             email_fields = ["member_email", "caregiver_email", "healthcare_email"]
             for email_field in email_fields:
