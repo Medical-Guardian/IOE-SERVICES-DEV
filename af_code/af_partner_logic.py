@@ -12,7 +12,7 @@ from azure.identity import DefaultAzureCredential
 import logging
 import time
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass, field
 import pymssql
@@ -1245,11 +1245,20 @@ class PartnerCampaignProcessor:
 
     def process_file(self, file_name: str, container_name: str) -> ProcessingResult:
         start_time = time.time()
-        logging.info(f"--- Starting Partner Campaign File Processing Workflow for: {file_name} ---")
+        logging.info("=" * 70)
+        logging.info("🚀 PARTNER CAMPAIGN FILE PROCESSING STARTED")
+        logging.info("=" * 70)
+        logging.info(f"File: {file_name}")
+        logging.info(f"Container: {container_name}")
+        logging.info(f"Processing started at: {datetime.now(timezone.utc).isoformat()}")
+        logging.info("=" * 70)
+
         try:
             # STEP 1: Validate filename
+            logging.info("STEP 1: FILENAME VALIDATION - Checking partner campaign naming pattern")
             name_valid, name_error, name_components = FileNameValidator.validate(file_name)
             if not name_valid:
+                logging.error(f"❌ Filename validation failed: {name_error.message}")
                 return ProcessingResult(
                     success=False,
                     message=f"Filename validation failed: {name_error.message}",
@@ -1262,12 +1271,41 @@ class PartnerCampaignProcessor:
             )
             original_path, validated_path = f"landing/{file_name}", f"validated/{file_name}"
 
-            # STEP 2: Move file
+            logging.info(f"✅ Filename validation passed")
+            logging.info(f"   Partner: {partner_name}")
+            logging.info(f"   Campaign: {campaign_name}")
+            logging.info(f"   Date: {name_components['date']}")
+            logging.info(f"   Suffix: {name_components.get('suffix', 'N/A')}")
+
+            # STEP 2: Move file from landing to validated
+            logging.info("STEP 2: FILE MOVEMENT - Moving from landing to validated folder")
+            logging.info(f"   Source: {original_path}")
+            logging.info(f"   Target: {validated_path}")
+            move_start = time.time()
+
             move_blob(file_name, "landing", "validated", container_name)
 
+            move_duration = time.time() - move_start
+            logging.info(f"✅ File moved successfully in {move_duration:.2f}s")
+
             # STEP 3: Download and parse file
+            logging.info("STEP 3: FILE DOWNLOAD & PARSE - Reading CSV from blob storage")
+            parse_start = time.time()
+
             df = download_blob_as_dataframe(validated_path, container_name)
             df.columns = [col.lower().strip() for col in df.columns]
+
+            parse_duration = time.time() - parse_start
+            file_size_mb = len(df.to_csv(index=False).encode("utf-8")) / (1024 * 1024)
+
+            logging.info(f"✅ File parsed successfully in {parse_duration:.2f}s")
+            logging.info(f"   Rows: {len(df)}")
+            logging.info(f"   Columns: {len(df.columns)}")
+            logging.info(f"   Size: {file_size_mb:.2f} MB")
+            sample_cols = ', '.join(df.columns[:5])
+            if len(df.columns) > 5:
+                sample_cols += '...'
+            logging.info(f"   Sample columns: {sample_cols}")
 
             file_processing_id = self.db_logger.log_file_processing_start(
                 file_name,
@@ -1277,10 +1315,24 @@ class PartnerCampaignProcessor:
                 partner_name,
                 campaign_name,
             )
+            logging.info(f"✅ File processing record created (ID: {file_processing_id})")
 
             # STEP 4: Validate column schema
+            logging.info("STEP 4: COLUMN SCHEMA VALIDATION - Checking mandatory and optional columns")
+            column_start = time.time()
+
             column_errors, missing_mandatory = ColumnValidator.validate(list(df.columns))
+
+            column_duration = time.time() - column_start
+            logging.info(f"Column validation completed in {column_duration:.2f}s")
+            logging.info(f"   Total columns in file: {len(df.columns)}")
+            logging.info(f"   Expected columns: {len(PartnerCampaignRules.EXPECTED_COLUMNS)}")
+            logging.info(f"   Mandatory columns: {len(PartnerCampaignRules.MANDATORY_COLUMNS)}")
+            logging.info(f"   Missing mandatory: {len(missing_mandatory)}")
+            logging.info(f"   Column issues found: {len(column_errors)}")
+
             if missing_mandatory:
+                logging.error(f"❌ Missing mandatory columns: {', '.join(missing_mandatory)}")
                 self.db_logger.log_file_level_errors(file_processing_id, column_errors)
                 self._update_file_processing_completion(
                     file_processing_id, ProcessingStatus.REJECTED, len(df), 0, len(df), 0
@@ -1291,49 +1343,112 @@ class PartnerCampaignProcessor:
                     validation_errors=column_errors,
                 )
 
+            logging.info(f"✅ Column validation passed")
+
             # Add missing optional columns with null values
             for col in PartnerCampaignRules.EXPECTED_COLUMNS:
                 if col not in df.columns:
                     df[col] = None
 
             # STEP 5: Clean data and perform row-level validation
+            logging.info("STEP 5: DATA CLEANSING & ROW VALIDATION - Applying transformations")
+            logging.info(f"   Starting with {len(df)} rows")
+            cleaner_start = time.time()
+
             cleaner = DataCleanerAndValidator()
             cleaned_df, row_level_validation_errors = cleaner.clean_and_validate_dataframe(df)
 
-            # STEP 6: Calculate final results
+            cleaner_duration = time.time() - cleaner_start
+            logging.info(f"✅ Data cleansing completed in {cleaner_duration:.2f}s")
+            logging.info(f"   Rows processed: {len(cleaned_df)}")
+            logging.info(f"   Validation issues found: {len(row_level_validation_errors)}")
+
+            # Count by severity
+            error_count = len([e for e in row_level_validation_errors if e.severity == ValidationSeverity.ERROR])
+            warning_count = len([e for e in row_level_validation_errors if e.severity == ValidationSeverity.WARNING])
+            logging.info(f"   Error severity breakdown:")
+            logging.info(f"      Errors: {error_count}")
+            logging.info(f"      Warnings: {warning_count}")
+
+            # STEP 6: Calculate final results and display validation summary
+            logging.info("STEP 6: VALIDATION SUMMARY - Calculating final row statuses")
             total_rows = len(cleaned_df)
             error_rows_set = set(
                 e.row_number
                 for e in row_level_validation_errors
                 if e.severity == ValidationSeverity.ERROR
             )
+            warning_rows_set = set(
+                e.row_number
+                for e in row_level_validation_errors
+                if e.severity == ValidationSeverity.WARNING
+            )
             invalid_rows = len(error_rows_set)
             valid_rows = total_rows - invalid_rows
+            warning_rows_count = len(warning_rows_set)
+
+            # Display comprehensive validation summary
+            logging.info("=" * 70)
+            logging.info("VALIDATION SUMMARY")
+            logging.info("=" * 70)
+            logging.info(f"   Total rows: {total_rows}")
+            logging.info(f"   ✅ Valid rows: {valid_rows} ({valid_rows/total_rows*100:.1f}%)")
+            logging.info(f"   ❌ Invalid rows: {invalid_rows} ({invalid_rows/total_rows*100:.1f}%)")
+            logging.info(f"   ⚠️  Warning rows: {warning_rows_count} ({warning_rows_count/total_rows*100:.1f}%)")
+            logging.info(f"   Error rate: {invalid_rows/total_rows*100:.1f}%")
+            if error_rows_set:
+                sample_errors = list(error_rows_set)[:5]
+                sample_str = ', '.join(str(r) for r in sample_errors)
+                if len(error_rows_set) > 5:
+                    sample_str += '...'
+                logging.info(f"   Sample error rows: {sample_str}")
+            logging.info("=" * 70)
+
             final_status = ProcessingStatus.COMPLETED
             final_message = (
                 f"Processing completed with {invalid_rows} invalid rows out of {total_rows} total."
             )
 
-            # STEP 7: Log all results
+            # STEP 7: Log all results to database
+            logging.info("STEP 7: DATABASE LOGGING - Writing validation results")
+            db_start = time.time()
+
             self.db_logger.log_file_level_errors(file_processing_id, column_errors)
+            logging.info(f"   ✅ Logged {len(column_errors)} file-level errors")
+
             self.db_logger.log_row_level_errors(file_processing_id, row_level_validation_errors)
+            logging.info(f"   ✅ Logged {len(row_level_validation_errors)} row-level errors")
 
             # FIX: Call the corrected helper function with the full dataframe
             row_results = self._create_row_results(cleaned_df, row_level_validation_errors)
             self.db_logger.log_row_validation_results(file_processing_id, row_results)
+            logging.info(f"   ✅ Logged {len(row_results)} row validation summaries")
 
-            # STEP 8: Log care gap stats
+            db_duration = time.time() - db_start
+            logging.info(f"✅ Database logging completed in {db_duration:.2f}s")
+
+            # STEP 8: Log care gap statistics
+            logging.info("STEP 8: CARE GAP STATISTICS - Aggregating care gap data")
+            care_gap_start = time.time()
+
             care_gap_summary = self._calculate_care_gap_summary(cleaned_df)
+            logging.info(f"   Unique care gaps found: {len(care_gap_summary)}")
+
+            # Log sample care gaps
+            for gap_name, stats in list(care_gap_summary.items())[:5]:
+                logging.info(f"      {gap_name}: {stats['active_count']}/{stats['total_count']} active")
+            if len(care_gap_summary) > 5:
+                logging.info(f"      ... and {len(care_gap_summary) - 5} more care gaps")
+
             self.db_logger.log_care_gap_stats(file_processing_id, care_gap_summary)
 
+            care_gap_duration = time.time() - care_gap_start
+            logging.info(f"✅ Care gap statistics logged in {care_gap_duration:.2f}s")
+
             # STEP 9: Update final status
-            warning_rows_count = len(
-                set(
-                    e.row_number
-                    for e in row_level_validation_errors
-                    if e.severity == ValidationSeverity.WARNING
-                )
-            )
+            logging.info("STEP 9: FINAL STATUS UPDATE - Marking file processing as complete")
+
+            # Note: warning_rows_count already calculated above in Step 6
             self._update_file_processing_completion(
                 file_processing_id,
                 final_status,
@@ -1342,12 +1457,41 @@ class PartnerCampaignProcessor:
                 invalid_rows,
                 warning_rows_count,
             )
+            logging.info(f"✅ Final status updated: {final_status}")
+            logging.info(f"   Warning rows: {warning_rows_count}")
 
-            # STEP 10: Refresh views
+            # STEP 10: Refresh summary views
+            logging.info("STEP 10: VIEW REFRESH - Updating summary materialized views")
             self.db_logger.refresh_summary_views()
+            logging.info(f"✅ Summary views refreshed")
 
             duration = time.time() - start_time
-            logging.info(f"--- Partner campaign processing finished in {duration:.2f} seconds ---")
+
+            # Final success summary
+            logging.info("=" * 70)
+            logging.info("🎉 PARTNER CAMPAIGN FILE PROCESSING COMPLETED SUCCESSFULLY")
+            logging.info("=" * 70)
+            logging.info(f"File: {file_name}")
+            logging.info(f"Partner: {partner_name}")
+            logging.info(f"Campaign: {campaign_name}")
+            logging.info(f"File processing ID: {file_processing_id}")
+            logging.info(f"Total duration: {duration:.2f}s")
+            logging.info("")
+            logging.info(f"Processing Results:")
+            logging.info(f"   Rows processed: {total_rows}")
+            logging.info(f"   ✅ Valid rows: {valid_rows} ({valid_rows/total_rows*100:.1f}%)")
+            logging.info(f"   ❌ Invalid rows: {invalid_rows} ({invalid_rows/total_rows*100:.1f}%)")
+            logging.info(f"   ⚠️  Warning rows: {warning_rows_count} ({warning_rows_count/total_rows*100:.1f}%)")
+            logging.info("")
+            logging.info(f"Performance Breakdown:")
+            logging.info(f"   File movement: {move_duration:.2f}s")
+            logging.info(f"   Parse & load: {parse_duration:.2f}s")
+            logging.info(f"   Column validation: {column_duration:.2f}s")
+            logging.info(f"   Data cleansing: {cleaner_duration:.2f}s")
+            logging.info(f"   Database logging: {db_duration:.2f}s")
+            logging.info(f"   Care gap stats: {care_gap_duration:.2f}s")
+            logging.info("=" * 70)
+
             return ProcessingResult(
                 success=True,
                 message=final_message,
@@ -1358,11 +1502,25 @@ class PartnerCampaignProcessor:
             )
 
         except Exception as e:
-            logging.exception("A critical, unhandled exception occurred.")
+            duration = time.time() - start_time
+            logging.error("=" * 70)
+            logging.error("❌ PARTNER CAMPAIGN FILE PROCESSING FAILED")
+            logging.error("=" * 70)
+            logging.error(f"File: {file_name}")
+            logging.error(f"Container: {container_name}")
+            logging.error(f"Error type: {type(e).__name__}")
+            logging.error(f"Error message: {str(e)}")
+            logging.error(f"Duration before failure: {duration:.2f}s")
+            logging.error("")
+            logging.exception("Full exception traceback:")
+            logging.error("=" * 70)
+
             if "file_processing_id" in locals() and file_processing_id:
+                logging.info(f"Updating file_processing_id {file_processing_id} to FAILED status")
                 self._update_file_processing_completion(
                     file_processing_id, ProcessingStatus.FAILED, 0, 0, 0, 0
                 )
+
             return ProcessingResult(
                 success=False, message=f"Critical error in processing: {e}", error_details=str(e)
             )
