@@ -30,7 +30,7 @@ The Partner Campaign Scheduler uses timezone-aware qualification logic to determ
 | `org_id` | UNIQUEIDENTIFIER | Organization FK | `071F957A-B275-4BA2-999C-2A82824165EB` | Links to `engage360.orgs` |
 | `name` | NVARCHAR(255) | Campaign display name | `HC_PA_Q4-2025_BCS-GSD v33` | User-defined |
 | `campaign_type` | NVARCHAR(50) | Type of campaign | `Partner`, `Internal` | **Must be 'Partner' to qualify** |
-| `status` | NVARCHAR(50) | Campaign status | `Active`, `Inactive`, `Draft` | **Must be 'Active' to qualify** |
+| `status` | NVARCHAR(50) | Campaign status | `Active`, `Testing`, `Inactive`, `Draft` | **Must be 'Active' or 'Testing' (case-insensitive)** |
 | `primary_channel` | NVARCHAR(50) | Communication channel | `Voice`, `Email`, `SMS` | **Must be 'voice' to qualify** |
 | `start_ts` | DATETIMEOFFSET | Campaign start date/time | `2025-10-16 23:06:00.0000000 +00:00` | Campaign won't run before this |
 | `end_ts` | DATETIMEOFFSET | Campaign end date/time | `2025-11-16 17:00:00.0000000 +00:00` | Campaign won't run after this |
@@ -50,7 +50,7 @@ The Partner Campaign Scheduler uses timezone-aware qualification logic to determ
 **Qualification Filters in SQL Query:**
 ```sql
 WHERE c.campaign_type = 'Partner'
-  AND c.status = 'Active'
+  AND LOWER(c.status) IN ('active', 'testing')
   AND c.primary_channel = 'voice'
   AND (c.start_ts IS NULL OR c.start_ts <= SYSDATETIMEOFFSET())
   AND (c.end_ts IS NULL OR c.end_ts >= SYSDATETIMEOFFSET())
@@ -797,7 +797,7 @@ Campaign:
 
 Expected: NOT QUALIFIED ❌
 
-Reason: Campaign status must be 'Active' (filtered in SQL query)
+Reason: Campaign status must be 'Active' or 'Testing' (filtered in SQL query)
 ```
 
 #### Test Case 4.7: Wrong Campaign Type
@@ -1037,7 +1037,7 @@ else:
 | Criterion | Source | Check Type | Failure Result |
 |-----------|--------|------------|----------------|
 | `campaign_type = 'Partner'` | SQL WHERE | Pre-filter | Not returned from query |
-| `status = 'Active'` | SQL WHERE | Pre-filter | Not returned from query |
+| `LOWER(status) IN ('active', 'testing')` | SQL WHERE | Pre-filter | Not returned from query |
 | `primary_channel = 'voice'` | SQL WHERE | Pre-filter | Not returned from query |
 | `start_ts` in past | SQL WHERE | Pre-filter | Not returned from query |
 | `end_ts` in future | SQL WHERE | Pre-filter | Not returned from query |
