@@ -146,7 +146,7 @@ error_message: NULL  (unchanged)
 ### When: Asynchronously, when each call completes (30 min - 2 hours later)
 ### File: `af_code/bland_ai_webhook/services/database_orchestrator.py`
 
-Webhooks trigger **ATOMIC TRANSACTION** with up to 4 table operations:
+Webhooks trigger **ATOMIC TRANSACTION** with up to 5 table operations (updated 2025-01-03):
 
 ---
 
@@ -210,24 +210,71 @@ analysis_schema: {"version": "1.0"}
 disposition_tag: appointment_scheduled
 corrected_duration: 245
 concatenated_transcript: Full conversation text...
-raw_bland_response: {full webhook JSON payload}
+raw_bland_response: NULL  ← CHANGED: Now NULL (moved to bland_raw_response table)
 ```
 
 **Notes:**
 - `batch_id` links to `outreach_batches` (from metadata)
 - `attempt_id` links to `outreach_attempts` (from metadata)
-- `raw_bland_response` stores complete webhook JSON for audit
+- `raw_bland_response` is now NULL for all new records (as of 2025-01-03)
+- **IMPORTANT:** Raw webhook JSON now stored in separate `bland_raw_response` table (see section 4.2)
 - Always inserted (even if call failed)
 
 ---
 
-### 4.2. Update Outreach Attempt
+### 4.2. Insert Raw Webhook Response
+
+**Table:** `engage360.bland_raw_response`
+
+**Operation:** `INSERT` (one record per completed call, atomic with 4.1)
+
+**File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 265-286)
+
+**Purpose:** Stores complete raw Bland AI webhook JSON payload separately from bland_call_logs to optimize main table size and query performance. Implemented 2025-01-03 to address performance issues with large JSON blobs.
+
+```sql
+INSERT INTO engage360.bland_raw_response (
+    call_id, raw_response, created_at
+)
+VALUES (
+    %s, %s, SYSDATETIMEOFFSET()
+)
+```
+
+**Parameters:**
+- `call_id`: Bland AI's call ID (matches bland_call_logs.call_id)
+- `raw_response`: Complete webhook JSON payload (NVARCHAR(MAX), 5-50KB)
+- `created_at`: Current UTC timestamp with offset (auto-generated)
+
+**Example Record:**
+```
+raw_response_id: 5a7f8d9c-1234-5678-90ab-cdef12345678  (auto-generated UUID)
+call_id: bland_call_987654321  (FK to bland_call_logs)
+raw_response: {"call_id":"bland_call_987654321","status":"completed","from":"+18005551234",...}  (Full JSON)
+created_at: 2025-01-03 03:45:23.7890123 +00:00
+```
+
+**Relationship:**
+- 1:1 with `bland_call_logs` via `call_id` (foreign key)
+- CASCADE DELETE: If call log deleted, raw response deleted automatically
+- Always inserted in same atomic transaction as bland_call_logs
+
+**Notes:**
+- This table was added to optimize `bland_call_logs` table size
+- Raw webhook JSON (5-50KB) was causing performance issues in main table
+- Atomic transaction ensures both records created together (no orphans)
+- Foreign key constraint prevents orphaned raw response records
+- Enables separate retention policies for audit data
+
+---
+
+### 4.3. Update Outreach Attempt
 
 **Table:** `engage360.outreach_attempts`
 
 **Operation:** `UPDATE` (if attempt_id exists in webhook metadata)
 
-**File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 265-293)
+**File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 288-316)
 
 ```sql
 UPDATE engage360.outreach_attempts
@@ -266,13 +313,13 @@ status_updated_ts: 2025-10-17 03:45:25 +00:00  ← CHANGED from NULL
 
 ---
 
-### 4.3. Update Enrollment Status
+### 4.4. Update Enrollment Status
 
 **Table:** `engage360.member_campaign_enrollments_enhanced`
 
 **Operation:** `UPDATE` (conditional - only if business rules determine status change)
 
-**File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 295-577)
+**File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 318-600)
 
 ```sql
 UPDATE engage360.member_campaign_enrollments_enhanced
@@ -309,13 +356,13 @@ member_care_gap_parameters: {...}  (unchanged)
 
 ---
 
-### 4.4. Log Status Change (Audit)
+### 4.5. Log Status Change (Audit)
 
 **Table:** `engage360.member_enrollment_status_history`
 
 **Operation:** `INSERT` (audit trail for status changes)
 
-**File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 716-771)
+**File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 739-794)
 
 ```sql
 INSERT INTO engage360.member_enrollment_status_history
@@ -348,7 +395,7 @@ change_timestamp: 2025-10-17 03:45:25 +00:00
 
 ---
 
-### 4.5. Queue Status Tracking (Optional)
+### 4.6. Queue Status Tracking (Optional)
 
 **Table:** `engage360.analysis_queue_status`
 
@@ -575,10 +622,11 @@ change_timestamp: 2025-10-17 03:45:25 +00:00
 | **Phase 2** | `engage360.outreach_attempts` | INSERT | Before Bland AI call | N records (1 per member) |
 | **Phase 3** | `engage360.outreach_batches` | UPDATE | After Bland API response | 1 record (updated) |
 | **Phase 4.1** | `engage360.bland_call_logs` | INSERT | Webhook (call completion) | 1 record per call |
-| **Phase 4.2** | `engage360.outreach_attempts` | UPDATE | Webhook (call completion) | 1 record per call |
-| **Phase 4.3** | `engage360.member_campaign_enrollments_enhanced` | UPDATE | Webhook (conditional) | 1 record (if status change) |
-| **Phase 4.4** | `engage360.member_enrollment_status_history` | INSERT | Webhook (audit) | 1 record (if status change) |
-| **Phase 4.5** | `engage360.analysis_queue_status` | INSERT + UPDATE | Webhook (optional) | 1 record per call |
+| **Phase 4.2** | `engage360.bland_raw_response` | INSERT | Webhook (call completion, atomic) | 1 record per call (NEW: 2025-01-03) |
+| **Phase 4.3** | `engage360.outreach_attempts` | UPDATE | Webhook (call completion) | 1 record per call |
+| **Phase 4.4** | `engage360.member_campaign_enrollments_enhanced` | UPDATE | Webhook (conditional) | 1 record (if status change) |
+| **Phase 4.5** | `engage360.member_enrollment_status_history` | INSERT | Webhook (audit) | 1 record (if status change) |
+| **Phase 4.6** | `engage360.analysis_queue_status` | INSERT + UPDATE | Webhook (optional) | 1 record per call |
 | **Phase 5.1** | `engage360.member_campaign_enrollments_enhanced` | UPDATE | Webhook (intro ENROLLED) | 1 record (intro campaign) |
 | **Phase 5.2** | `engage360.member_campaign_enrollments_enhanced` | MERGE | Webhook (intro ENROLLED) | 1 record (wellness campaign) |
 | **Phase 5.3** | `engage360.member_enrollment_status_history` | INSERT | Webhook (intro audit) | 1 record |
@@ -603,12 +651,13 @@ change_timestamp: 2025-10-17 03:45:25 +00:00
 **T+30min to T+2hrs (Per Call Webhook - 150 separate webhooks):**
 
 For EACH completed call (150 times):
-1. ✅ INSERT 1 record → `bland_call_logs` (complete call details + raw JSON)
-2. ✅ UPDATE 1 record → `outreach_attempts` (update disposition, duration, summary)
-3. ✅ UPDATE 1 record → `member_campaign_enrollments_enhanced` (if status changes)
-4. ✅ INSERT 1 record → `member_enrollment_status_history` (audit trail)
-5. ✅ INSERT 1 record → `analysis_queue_status` (optional - if Service Bus enabled)
-6. ✅ UPDATE 1 record → `analysis_queue_status` (optional - mark PENDING/FAILED)
+1. ✅ INSERT 1 record → `bland_call_logs` (call metadata, raw_bland_response = NULL)
+2. ✅ INSERT 1 record → `bland_raw_response` (raw webhook JSON payload, atomic with step 1) [NEW: 2025-01-03]
+3. ✅ UPDATE 1 record → `outreach_attempts` (update disposition, duration, summary)
+4. ✅ UPDATE 1 record → `member_campaign_enrollments_enhanced` (if status changes)
+5. ✅ INSERT 1 record → `member_enrollment_status_history` (audit trail)
+6. ✅ INSERT 1 record → `analysis_queue_status` (optional - if Service Bus enabled)
+7. ✅ UPDATE 1 record → `analysis_queue_status` (optional - mark PENDING/FAILED)
 
 **Auto-Transition (For Successful Intro Calls Only):**
 
@@ -630,12 +679,13 @@ For each member with successful intro call (assume 120 out of 150):
 
 **Phase 4 (Webhooks - 150 calls):**
 - 150 INSERT → `bland_call_logs`
+- 150 INSERT → `bland_raw_response` (NEW: 2025-01-03)
 - 150 UPDATE → `outreach_attempts`
 - 150 UPDATE → `member_campaign_enrollments_enhanced`
 - 150 INSERT → `member_enrollment_status_history`
 - 150 INSERT → `analysis_queue_status` (optional)
 - 150 UPDATE → `analysis_queue_status` (optional)
-- **Subtotal: 600-900 operations** (depending on optional features)
+- **Subtotal: 750-1,050 operations** (depending on optional features)
 
 **Phase 5 (Auto-Transition - 120 successful calls):**
 - 120 UPDATE → `member_campaign_enrollments_enhanced` (intro)
@@ -644,7 +694,7 @@ For each member with successful intro call (assume 120 out of 150):
 - 120 INSERT → `member_enrollment_status_history` (wellness audit)
 - **Subtotal: 480 operations**
 
-**GRAND TOTAL: 1,232 - 1,532 database operations** for a 150 member batch with 120 successful calls!
+**GRAND TOTAL: 1,382 - 1,682 database operations** for a 150 member batch with 120 successful calls!
 
 ---
 
