@@ -106,8 +106,8 @@ IOE-functions/
 | `timezone_flag` | nvarchar | 'operating_tz' or 'member_tz' |
 | `max_care_gaps_per_member` | int | Max care gaps to include per call |
 | `audience_file_batch` | nvarchar | File batch identifier |
-| `start_ts` | datetimeoffset | Campaign start date |
-| `end_ts` | datetimeoffset | Campaign end date |
+| `start_ts` | datetimeoffset | Campaign start date (time ignored, date-only comparison in operating_tz) |
+| `end_ts` | datetimeoffset | Campaign end date (time ignored, date-only comparison in operating_tz) |
 
 #### 2. `engage360.campaign_call_configs_enhanced`
 **Purpose**: Bland AI configuration per campaign
@@ -269,8 +269,6 @@ LEFT JOIN engage360.orgs o ON c.org_id = o.org_id
 WHERE c.campaign_type = 'Partner'
   AND LOWER(c.status) IN ('active', 'testing')
   AND c.primary_channel = 'voice'
-  AND (c.start_ts IS NULL OR c.start_ts <= SYSDATETIMEOFFSET())
-  AND (c.end_ts IS NULL OR c.end_ts >= SYSDATETIMEOFFSET())
   AND c.audience_file_batch IS NOT NULL
 ```
 
@@ -278,17 +276,18 @@ WHERE c.campaign_type = 'Partner'
 - `campaign_type = 'Partner'`: Only Partner campaigns (not DTC)
 - `LOWER(c.status) IN ('active', 'testing')`: Campaign must be Active or Testing (case-insensitive)
 - `primary_channel = 'voice'`: Voice calls only (not SMS/email)
-- `start_ts <= SYSDATETIMEOFFSET()`: Campaign has started (or NULL = no start restriction)
-- `end_ts >= SYSDATETIMEOFFSET()`: Campaign hasn't ended (or NULL = no end restriction)
 - `audience_file_batch IS NOT NULL`: Campaign has an audience file assigned
 - `config_status = 'active'`: Call configuration must be active
 
+**Note on start_ts/end_ts**: These fields are retrieved from the database (added to SELECT clause) but validated in Python using timezone-aware **date-only** comparison via the `_is_campaign_time_valid()` method. This ensures campaigns start/end on the correct DATE in their configured `operating_tz`, regardless of the time component stored in the database.
+
 **Post-Query Python Checks**:
 After retrieving campaigns, Python code checks:
-1. **Day of week**: Current day matches `call_days_of_week`
-2. **Time window**: Current time is between `operating_start_time` and `operating_end_time`
-3. **Timezone mode**: Uses `timezone_flag` to determine if checking operating_tz or member_tz
-4. **Flexible scheduling**: If `scheduling_mode = 'Flexible'`, validates `frequency_value` and `frequency_unit`
+1. **Campaign date window** (`_is_campaign_time_valid()`): Current date (in `operating_tz`) falls between `start_ts` and `end_ts` dates (date-only comparison, time component ignored)
+2. **Day of week**: Current day matches `call_days_of_week`
+3. **Time window**: Current time is between `operating_start_time` and `operating_end_time`
+4. **Timezone mode**: Uses `timezone_flag` to determine if checking operating_tz or member_tz
+5. **Flexible scheduling**: If `scheduling_mode = 'Flexible'`, validates `frequency_value` and `frequency_unit`
 
 ---
 

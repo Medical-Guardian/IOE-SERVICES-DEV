@@ -32,8 +32,8 @@ The Partner Campaign Scheduler uses timezone-aware qualification logic to determ
 | `campaign_type` | NVARCHAR(50) | Type of campaign | `Partner`, `Internal` | **Must be 'Partner' to qualify** |
 | `status` | NVARCHAR(50) | Campaign status | `Active`, `Testing`, `Inactive`, `Draft` | **Must be 'Active' or 'Testing' (case-insensitive)** |
 | `primary_channel` | NVARCHAR(50) | Communication channel | `Voice`, `Email`, `SMS` | **Must be 'voice' to qualify** |
-| `start_ts` | DATETIMEOFFSET | Campaign start date/time | `2025-10-16 23:06:00.0000000 +00:00` | Campaign won't run before this |
-| `end_ts` | DATETIMEOFFSET | Campaign end date/time | `2025-11-16 17:00:00.0000000 +00:00` | Campaign won't run after this |
+| `start_ts` | DATETIMEOFFSET | Campaign start date | `2025-10-16 23:06:00.0000000 +00:00` | Campaign won't run before this DATE (time ignored, uses operating_tz) |
+| `end_ts` | DATETIMEOFFSET | Campaign end date | `2025-11-16 17:00:00.0000000 +00:00` | Campaign won't run after this DATE (time ignored, uses operating_tz) |
 | `call_days_of_week` | NVARCHAR(255) | Days campaign can run | `Monday,Tuesday,Wednesday,Thursday` | Comma-separated day names |
 | `operating_start_time` | TIME | Daily start time | `19:06:00` (7:06 PM) | In campaign's operating_tz |
 | `operating_end_time` | TIME | Daily end time | `23:28:00` (11:28 PM) | In campaign's operating_tz |
@@ -52,10 +52,10 @@ The Partner Campaign Scheduler uses timezone-aware qualification logic to determ
 WHERE c.campaign_type = 'Partner'
   AND LOWER(c.status) IN ('active', 'testing')
   AND c.primary_channel = 'voice'
-  AND (c.start_ts IS NULL OR c.start_ts <= SYSDATETIMEOFFSET())
-  AND (c.end_ts IS NULL OR c.end_ts >= SYSDATETIMEOFFSET())
   AND c.audience_file_batch IS NOT NULL
 ```
+
+**Note:** `start_ts` and `end_ts` are retrieved from database but validated in Python using timezone-aware **date-only** comparison (see `_is_campaign_time_valid()` method). This ensures campaigns start/end on the correct DATE in their configured `operating_tz`, regardless of the time component stored in the database.
 
 ---
 
@@ -278,16 +278,23 @@ SYSDATETIMEOFFSET() AT TIME ZONE
 
 ```
 1. Get current UTC time
-2. Query active Partner campaigns from database
+2. Query active Partner campaigns from database (retrieve start_ts, end_ts)
 3. For each campaign:
-   a. Check timezone_flag mode
-   b. If operating_tz: Check campaign's timezone
-   c. If member_tz: Check all US timezones
-   d. Validate day of week in appropriate timezone(s)
-   e. Validate time window in appropriate timezone(s)
-   f. Validate flexible scheduling configuration
+   a. **Check timezone-aware start_ts/end_ts (DATE-only comparison)**
+      - Convert current UTC to campaign timezone
+      - Compare current DATE vs start_ts DATE
+      - Compare current DATE vs end_ts DATE
+      - Skip campaign if outside date window
+   b. Check timezone_flag mode
+   c. If operating_tz: Check campaign's timezone
+   d. If member_tz: Check all US timezones
+   e. Validate day of week in appropriate timezone(s)
+   f. Validate time window in appropriate timezone(s)
+   g. Validate flexible scheduling configuration
 4. Return list of qualified campaigns
 ```
+
+**Key Update:** Step 3a now performs date-only comparison in campaign's timezone before checking daily operating hours. This separates campaign-level date boundaries from daily time windows.
 
 ### Detailed Logic by Timezone Mode
 
@@ -356,6 +363,95 @@ Check all timezones:
 - Pacific: Thursday 20:30 → Day=Thursday ✅, Time=20:30 (inside 20-22) ✅ → PASS ✅
 
 Result: QUALIFIED ✅ (Mountain and Pacific members eligible)
+```
+
+---
+
+### Campaign Date Validation (start_ts/end_ts)
+
+**Method:** `_is_campaign_time_valid()`
+
+**Purpose:** Validate that current date falls within campaign's start and end dates using timezone-aware **date-only** comparison.
+
+**Logic:**
+```python
+1. Get campaign's operating_tz (e.g., "EST")
+2. Convert to pytz timezone object
+3. Convert current UTC time to campaign timezone
+4. Extract DATE only from current time (ignore HH:MM:SS)
+5. Convert start_ts to campaign timezone and extract DATE only
+6. Convert end_ts to campaign timezone and extract DATE only
+7. Compare dates: current_date >= start_date AND current_date <= end_date
+```
+
+**Key Behavior:**
+- **Date-only comparison**: Ignores time components (HH:MM:SS)
+- **Timezone-aware**: Compares dates in campaign's `operating_tz`, not UTC
+- **Separation of concerns**:
+  - `start_ts/end_ts` control which DATES campaign runs
+  - `operating_start_time/operating_end_time` control daily HOURS
+
+**Example 1: Campaign starts today**
+```
+Campaign:
+- start_ts: 2025-10-17 22:00:00 +00:00 (Oct 17, 10 PM UTC)
+- operating_tz: EST
+
+Current time:
+- UTC: 2025-10-17 14:00:00 (Oct 17, 2 PM UTC)
+- EST: 2025-10-17 10:00:00 (Oct 17, 10 AM EST)
+
+Date comparison:
+- Current date (EST): 2025-10-17
+- start_ts date (EST): 2025-10-17 (converted from UTC)
+- Result: 2025-10-17 >= 2025-10-17 ✅
+- Campaign qualifies (date check passes)
+```
+
+**Example 2: Campaign starts tomorrow**
+```
+Campaign:
+- start_ts: 2025-10-18 14:00:00 +00:00 (Oct 18, 2 PM UTC)
+- operating_tz: EST
+
+Current time:
+- UTC: 2025-10-17 23:30:00 (Oct 17, 11:30 PM UTC)
+- EST: 2025-10-17 19:30:00 (Oct 17, 7:30 PM EST)
+
+Date comparison:
+- Current date (EST): 2025-10-17
+- start_ts date (EST): 2025-10-18
+- Result: 2025-10-17 < 2025-10-18 ❌
+- Campaign does NOT qualify (too early)
+```
+
+**Example 3: Campaign ended yesterday**
+```
+Campaign:
+- end_ts: 2025-10-16 05:00:00 +00:00 (Oct 16, 5 AM UTC)
+- operating_tz: EST
+
+Current time:
+- UTC: 2025-10-17 14:00:00 (Oct 17, 2 PM UTC)
+- EST: 2025-10-17 10:00:00 (Oct 17, 10 AM EST)
+
+Date comparison:
+- Current date (EST): 2025-10-17
+- end_ts date (EST): 2025-10-16
+- Result: 2025-10-17 > 2025-10-16 ❌
+- Campaign does NOT qualify (expired)
+```
+
+**Logging Output:**
+```
+🕐 [CAMPAIGN-QUALIFIER] ⏰ TIME COMPARISON for 'Partner Wellness 2024'
+   📍 Campaign timezone: EST
+   🌍 Current time (UTC): 2025-10-17 14:00:00 UTC
+   🌍 Current time (EST): 2025-10-17 10:00:00 EDT
+   📅 start_ts (UTC from DB): 2025-10-17 22:00:00 +00:00
+   📅 start_ts (EST): 2025-10-17 18:00:00 EDT
+   ✅ COMPARISON: Current date >= start_ts date
+      2025-10-17 >= 2025-10-17 (EST)
 ```
 
 ---
@@ -1039,9 +1135,9 @@ else:
 | `campaign_type = 'Partner'` | SQL WHERE | Pre-filter | Not returned from query |
 | `LOWER(status) IN ('active', 'testing')` | SQL WHERE | Pre-filter | Not returned from query |
 | `primary_channel = 'voice'` | SQL WHERE | Pre-filter | Not returned from query |
-| `start_ts` in past | SQL WHERE | Pre-filter | Not returned from query |
-| `end_ts` in future | SQL WHERE | Pre-filter | Not returned from query |
 | `audience_file_batch` not NULL | SQL WHERE | Pre-filter | Not returned from query |
+| `start_ts` date check (timezone-aware) | Python | Runtime check (date-only) | Campaign NOT qualified |
+| `end_ts` date check (timezone-aware) | Python | Runtime check (date-only) | Campaign NOT qualified |
 | Day of week matches | Python | Runtime check | Campaign NOT qualified |
 | Time window matches | Python | Runtime check | Campaign NOT qualified |
 | Flexible scheduling valid | Python | Runtime check | Campaign NOT qualified |
