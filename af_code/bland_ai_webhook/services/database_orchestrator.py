@@ -373,13 +373,16 @@ class DatabaseOrchestrator:
         is_intro_campaign = campaign_id.upper() == INTRO_CAMPAIGN_ID.upper()
         is_wellness_campaign = campaign_id.upper() == WELLNESS_CAMPAIGN_ID.upper()
 
+        # Get campaign type from metadata for Partner identification
+        campaign_type = md.get("campaign_type", "Unknown")
+
         logger.info("🎯 [DB-ORCH] Campaign identification:")
         logger.info(f"🎯 [DB-ORCH]   - Is Intro Campaign: {'✅' if is_intro_campaign else '❌'}")
         logger.info(
             f"🎯 [DB-ORCH]   - Is Wellness Campaign: {'✅' if is_wellness_campaign else '❌'}"
         )
         logger.info(
-            f"🎯 [DB-ORCH]   - Campaign Type: {'INTRO' if is_intro_campaign else 'WELLNESS' if is_wellness_campaign else 'UNKNOWN'}"
+            f"🎯 [DB-ORCH]   - Campaign Type from metadata: {campaign_type}"
         )
 
         # WELLNESS CAMPAIGN LOGIC: Only update status for opt-out
@@ -398,6 +401,34 @@ class DatabaseOrchestrator:
                     f"🩺 [DB-ORCH] ℹ️ Received status '{new_status}' will be logged in outreach_attempts only"
                 )
                 # Log the call but don't change enrollment status for wellness campaigns
+                return None
+
+        # PARTNER CAMPAIGN LOGIC: Only update status for opt-out
+        is_partner_campaign = campaign_type == "Partner"
+
+        logger.info(f"🎯 [DB-ORCH]   - Is Partner Campaign: {'✅' if is_partner_campaign else '❌'}")
+
+        if is_partner_campaign:
+            if new_status.upper() == "OPTED_OUT":
+                logger.info(
+                    "🤝 [DB-ORCH] ✅ Partner campaign opt-out detected - proceeding with status update to OPTED_OUT"
+                )
+                logger.info(
+                    "🤝 [DB-ORCH] ℹ️ Member status will change: 'Active' → 'OPTED_OUT'"
+                )
+                # Continue with normal processing to update status to OPTED_OUT
+            else:
+                logger.info("🤝 [DB-ORCH] ℹ️ Partner campaign call completed successfully")
+                logger.info(
+                    "🤝 [DB-ORCH] ℹ️ No enrollment status change needed - member remains 'Active'"
+                )
+                logger.info(
+                    f"🤝 [DB-ORCH] ℹ️ Received status '{new_status}' will be logged in outreach_attempts only"
+                )
+                logger.info(
+                    "🤝 [DB-ORCH] ℹ️ Partner campaigns maintain 'Active' status for all non-opt-out calls"
+                )
+                # Log the call but don't change enrollment status for partner campaigns
                 return None
 
         # Campaign IDs for auto-transition logic

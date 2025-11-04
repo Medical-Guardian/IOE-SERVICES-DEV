@@ -979,6 +979,129 @@ if response.status_code == 200:
 
 ---
 
+## Webhook Processing for Partner Campaigns
+
+### Overview
+
+Partner campaign call results are processed through the Bland AI webhook endpoint at `/api/bland_ai_webhook`. The webhook updates call attempt records and member enrollment status based on call outcomes.
+
+**File**: `af_code/bland_ai_webhook/services/database_orchestrator.py` (Method: `_build_update_enrollment`)
+
+### Partner Campaign-Specific Behavior
+
+Partner campaigns have **special handling** to prevent incorrect status updates:
+
+**✅ Allowed Status Update**:
+- **OPTED_OUT**: When member requests do-not-contact (disposition: DO_NOT_CONTACT, OPT_OUT)
+  - Updates `member_campaign_enrollments_enhanced.current_status` from 'Active' → 'OPTED_OUT'
+
+**🚫 Prevented Status Updates**:
+- **ENROLLED**: Partner campaigns do NOT use 'ENROLLED' status (they use 'Active')
+- **All other statuses**: Member remains 'Active' for future attempts
+
+### Database Updates on Webhook Receipt
+
+#### Tables Updated (4 Total)
+
+1. **`bland_call_logs`** - Complete webhook audit trail (always updated)
+2. **`bland_raw_response`** - Raw JSON payload (always updated)
+3. **`outreach_attempts`** - Call attempt details (always updated)
+4. **`member_campaign_enrollments_enhanced`** - Enrollment status (**only for OPTED_OUT**)
+
+### Webhook Processing Flow for Partner Campaigns
+
+```python
+# Step 1: Identify campaign type
+campaign_type = metadata.get("campaign_type")  # "Partner"
+is_partner_campaign = campaign_type == "Partner"
+
+# Step 2: Map disposition to enrollment status
+# Examples:
+# - INTERESTED → new_status = "ENROLLED" (default fallback)
+# - DO_NOT_CONTACT → new_status = "OPTED_OUT"
+# - NO_ANSWER → new_status = "Retry"
+
+# Step 3: Apply Partner campaign filtering
+if is_partner_campaign:
+    if new_status.upper() == "OPTED_OUT":
+        # ✅ Update status: 'Active' → 'OPTED_OUT'
+        UPDATE member_campaign_enrollments_enhanced
+           SET current_status = 'OPTED_OUT',
+               last_attempt_ts = SYSDATETIMEOFFSET()
+         WHERE member_id = @member_id
+           AND campaign_id = @campaign_id
+    else:
+        # 🚫 Skip enrollment update - member remains 'Active'
+        # Call still logged in outreach_attempts table
+        return None  # No enrollment status update
+```
+
+### Example Dispositions and Resulting Actions
+
+| Bland AI Disposition | Mapped Status | Partner Campaign Action |
+|---------------------|---------------|------------------------|
+| `INTERESTED` | ENROLLED | **No status update** (remains 'Active') |
+| `NOT_INTERESTED` | Completed | **No status update** (remains 'Active') |
+| `CALL_BACK_SCHEDULED` | Completed | **No status update** (remains 'Active') |
+| `DO_NOT_CONTACT` | OPTED_OUT | **Update to OPTED_OUT** ✅ |
+| `NO_ANSWER` | Retry | **No status update** (remains 'Active') |
+| `FAILED` | Failed | **No status update** (remains 'Active') |
+
+### Key Differences from DTC Campaigns
+
+| Aspect | Partner Campaigns | DTC Campaigns |
+|--------|------------------|---------------|
+| **Initial Status** | 'Active' | 'ENROLLED' or 'PENDING' |
+| **Successful Call** | No status update (stays 'Active') | Updates to 'ENROLLED' or other statuses |
+| **Opt-Out** | Updates to 'OPTED_OUT' | Updates to 'OPTED_OUT' |
+| **Auto-Transition** | Not applicable | Intro → Wellness auto-transition |
+| **Status Tracking** | Binary: Active or OPTED_OUT | Multiple states: ENROLLED, PENDING, UNENROLLED, OPTED_OUT |
+
+### Logging Output Example
+
+```
+🎯 [DB-ORCH] Campaign identification:
+🎯 [DB-ORCH]   - Is Intro Campaign: ❌
+🎯 [DB-ORCH]   - Is Wellness Campaign: ❌
+🎯 [DB-ORCH]   - Campaign Type from metadata: Partner
+🎯 [DB-ORCH]   - Is Partner Campaign: ✅
+🤝 [DB-ORCH] ℹ️ Partner campaign call completed successfully
+🤝 [DB-ORCH] ℹ️ No enrollment status change needed - member remains 'Active'
+🤝 [DB-ORCH] ℹ️ Received status 'ENROLLED' will be logged in outreach_attempts only
+🤝 [DB-ORCH] ℹ️ Partner campaigns maintain 'Active' status for all non-opt-out calls
+```
+
+### Why This Design?
+
+**Rationale**: Partner campaigns use a simpler status model:
+- **'Active'**: Member is eligible for outreach attempts
+- **'OPTED_OUT'**: Member has requested no contact
+
+Unlike DTC campaigns which track enrollment progression (PENDING → ENROLLED → UNENROLLED), Partner campaigns only need to track:
+1. Is the member contactable? (Active = Yes, OPTED_OUT = No)
+2. Frequency protection via `outreach_attempts` table (not enrollment status)
+
+This design:
+- ✅ Prevents incorrect status values in database
+- ✅ Simplifies Partner campaign logic (binary Active/OptedOut)
+- ✅ Maintains call history in `outreach_attempts` for frequency protection
+- ✅ Respects opt-out requests immediately
+
+### SQL Query Executed for Opt-Out
+
+```sql
+UPDATE engage360.member_campaign_enrollments_enhanced
+   SET current_status = 'OPTED_OUT',
+       last_attempt_ts = SYSDATETIMEOFFSET()
+ WHERE member_id = @member_id
+   AND campaign_id = @campaign_id
+   AND (current_status IS NULL OR current_status <> 'OPTED_OUT')  -- Idempotent
+```
+
+**Idempotent Protection**: The `AND (current_status <> 'OPTED_OUT')` clause prevents duplicate updates if webhook is called multiple times.
+
+---
+
 ## Code Examples by Component
 
 ### Component 1: Campaign Qualification
