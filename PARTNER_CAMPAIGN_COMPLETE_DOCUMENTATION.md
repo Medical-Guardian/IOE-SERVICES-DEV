@@ -26,6 +26,7 @@ The Partner Campaign Scheduler is an Azure Function that orchestrates automated 
 ### Key Features
 - **Timer-based execution**: Runs every 30 minutes at 5 minutes past the half-hour
 - **Timezone-aware scheduling**: Supports both operating_tz (campaign timezone) and member_tz (individual member timezones)
+- **Time display logging**: Logs UTC, campaign timezone, and member local time for each batch submission (debugging support)
 - **Member-wise frequency protection**: Tracks attempts per member, not per batch
 - **Disposition-based retry logic**: Handles Completed, Failed, NoAnswer, and Pending dispositions
 - **Flexible care gap selection**: Prioritizes care gaps per campaign configuration
@@ -1378,6 +1379,55 @@ def _select_care_gaps(self, member: EligibleMember, campaign: QualifiedCampaign)
     return selected_gaps
 ```
 
+**Time Display Logging** (`batch_orchestrator.py:210-230`):
+
+The batch orchestrator includes comprehensive time display logging for each member being processed. This feature helps debug timezone-related issues by showing:
+
+```python
+# TIME DISPLAY - Show current time and member's local time
+now_utc = datetime.now(pytz.UTC)
+campaign_tz = TimezoneConverter.to_pytz(campaign.operating_tz)
+now_in_campaign_tz = now_utc.astimezone(campaign_tz)
+
+logger.info(f"🕐 [BATCH-ORCHESTRATOR] ⏰ TIME CHECK for member {member.member_id}")
+logger.info(f"   📍 Campaign timezone: {campaign.operating_tz} (mode: {campaign.timezone_flag})")
+logger.info(f"   🌍 Current time (UTC): {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+logger.info(f"   🌍 Current time ({campaign.operating_tz}): {now_in_campaign_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+logger.info(f"   👤 Member timezone: {member.timezone}")
+logger.info(f"   ⏰ Member current time (from SQL): {member.member_current_time}")
+```
+
+**Example Logging Output**:
+```
+🕐 [BATCH-ORCHESTRATOR] ⏰ TIME CHECK for member abc-123-def
+   📍 Campaign timezone: America/New_York (mode: member_tz)
+   🌍 Current time (UTC): 2025-11-06 14:30:00 UTC
+   🌍 Current time (America/New_York): 2025-11-06 09:30:00 EST
+   👤 Member timezone: America/Chicago
+   ⏰ Member current time (from SQL): 08:30:00
+```
+
+**What It Shows**:
+- **Campaign timezone**: The campaign's `operating_tz` and whether it's in `operating_tz` or `member_tz` mode
+- **Current time (UTC)**: The current system time in UTC for reference
+- **Current time (campaign TZ)**: Current time converted to the campaign's timezone
+- **Member timezone**: The individual member's timezone (from `members.timezone` field)
+- **Member current time (from SQL)**: The member's local time calculated by the SQL query (already converted)
+
+**Key Features**:
+- **Respects timezone_flag**:
+  - In `operating_tz` mode: All members show the same campaign timezone
+  - In `member_tz` mode: Each member shows their individual timezone
+- **Uses SQL-calculated time**: Leverages the `member_current_time` field already calculated in the eligibility query
+- **Follows existing pattern**: Matches the logging pattern from `campaign_qualifier.py` for consistency
+- **Debugging support**: Helps troubleshoot timezone-related eligibility issues
+
+**When This Is Useful**:
+1. **Timezone validation**: Verify that members are being called in their correct local time
+2. **Operating hours debugging**: Confirm members' local time falls within campaign operating hours
+3. **DST troubleshooting**: Validate daylight saving time transitions
+4. **Multi-timezone campaigns**: Debug member_tz mode campaigns spanning multiple US timezones
+
 ---
 
 ### Component 4: Database Tracking
@@ -1971,6 +2021,103 @@ LEFT JOIN engage360.members m
     ON mce.member_id = m.member_id
 WHERE c.campaign_id = '<campaign_id>'
 ```
+
+---
+
+### Issue 2.5: "Members eligible but not called during operating hours"
+
+**Symptoms**:
+```
+📊 [MEMBER-ELIGIBILITY] Found 25 eligible members for campaign
+📊 [BATCH-ORCHESTRATOR] Built 0 calls (all members outside operating hours)
+```
+
+**Possible Causes**:
+
+1. **Timezone misconfiguration**
+   - Check: Member's local time doesn't match campaign operating hours
+   - Fix: Verify `operating_tz` or member `timezone` field
+
+2. **Operating hours too narrow**
+   - Check: `operating_start_time` and `operating_end_time` don't cover member timezones
+   - Fix: Expand operating hours window
+
+3. **member_tz mode spanning multiple timezones**
+   - Check: Campaign runs 9am-5pm ET but members are in PT (6am-2pm local)
+   - Fix: Adjust hours to accommodate all member timezones
+
+**Debug Using Time Display Logging**:
+
+The batch orchestrator logs detailed timezone information for each member:
+
+```
+🕐 [BATCH-ORCHESTRATOR] ⏰ TIME CHECK for member abc-123
+   📍 Campaign timezone: America/New_York (mode: member_tz)
+   🌍 Current time (UTC): 2025-11-06 14:30:00 UTC
+   🌍 Current time (America/New_York): 2025-11-06 09:30:00 EST
+   👤 Member timezone: America/Los_Angeles
+   ⏰ Member current time (from SQL): 06:30:00
+```
+
+**Interpretation**:
+- Campaign runs 9am-5pm in America/New_York (EST)
+- Current time: 9:30am EST (within operating hours ✅)
+- Member timezone: America/Los_Angeles (Pacific)
+- Member local time: 6:30am PT (before 9am operating start ❌)
+- **Result**: Member will NOT be called yet (too early in their timezone)
+
+**Debug Steps**:
+
+1. **Check time display logs**:
+   ```bash
+   # Search Application Insights logs
+   traces
+   | where message contains "⏰ TIME CHECK"
+   | project timestamp, message
+   | order by timestamp desc
+   ```
+
+2. **Compare member local time vs operating hours**:
+   - If `member_current_time` < `operating_start_time`: Member not called yet
+   - If `member_current_time` > `operating_end_time`: Member window closed today
+   - Solution: Wait for member's local time to reach operating hours
+
+3. **Verify timezone_flag mode**:
+   ```sql
+   SELECT
+       c.name,
+       c.timezone_flag,
+       c.operating_tz,
+       c.operating_start_time,
+       c.operating_end_time
+   FROM engage360.campaigns_enhanced c
+   WHERE c.campaign_id = '<campaign_id>'
+   ```
+
+4. **Check member timezone distribution**:
+   ```sql
+   SELECT
+       m.timezone,
+       COUNT(*) as member_count
+   FROM engage360.members m
+   INNER JOIN engage360.member_campaign_enrollments_enhanced mce
+       ON m.member_id = mce.member_id
+   WHERE mce.campaign_id = '<campaign_id>'
+       AND mce.current_status = 'Active'
+   GROUP BY m.timezone
+   ORDER BY member_count DESC
+   ```
+
+**Solutions**:
+
+1. **For operating_tz mode**: All members use campaign timezone
+   - No changes needed - time display shows all members in same timezone
+
+2. **For member_tz mode**: Each member uses their own timezone
+   - **Option A**: Expand operating hours to cover all US timezones
+     - Example: 9am-5pm ET becomes 6am-8pm ET to cover PT (6am-5pm PT)
+   - **Option B**: Switch to operating_tz mode if all members should be called at same local time
+   - **Option C**: Create separate campaigns for different timezone groups
 
 ---
 

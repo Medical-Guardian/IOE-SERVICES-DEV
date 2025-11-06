@@ -2,15 +2,19 @@ import logging
 import json
 import uuid
 from typing import List, Dict, Any
+from datetime import datetime
+import pytz
 from ..models.qualified_campaign import QualifiedCampaign
 from ..models.eligible_member import EligibleMember
 from ..models.batch_request import BatchRequest, BatchResult
 from ...shared.bland_ai_client import BlandAIClient
 from ...bland_ai_webhook.services.config_manager import ConfigManager
 from ...bland_ai_webhook.services.database_service import DatabaseService
+from ...shared.timezone_utils import TimezoneConverter
 from .care_gap_mapper import CareGapMapper
 
 logger = logging.getLogger(__name__)
+
 
 class BatchOrchestrator:
     """
@@ -34,8 +38,10 @@ class BatchOrchestrator:
             logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] Bland AI client unavailable: {str(e)}")
             logger.info("🔧 [BATCH-ORCHESTRATOR] Service initialized in disabled mode")
             self.bland_client = None
-    
-    def submit_batch(self, campaign: QualifiedCampaign, members: List[EligibleMember]) -> BatchResult:
+
+    def submit_batch(
+        self, campaign: QualifiedCampaign, members: List[EligibleMember]
+    ) -> BatchResult:
         """
         Submit a batch of members to Bland AI for calling (SYNCHRONOUS)
 
@@ -51,15 +57,19 @@ class BatchOrchestrator:
         Returns:
             BatchResult with success status and details
         """
-        logger.info(f"🚀 [BATCH-ORCHESTRATOR] Submitting batch of {len(members)} members for campaign: {campaign.name}")
+        logger.info(
+            f"🚀 [BATCH-ORCHESTRATOR] Submitting batch of {len(members)} members for campaign: {campaign.name}"
+        )
 
         if not self.enabled:
-            logger.warning("⚠️ [BATCH-ORCHESTRATOR] Batch orchestrator disabled - skipping submission")
+            logger.warning(
+                "⚠️ [BATCH-ORCHESTRATOR] Batch orchestrator disabled - skipping submission"
+            )
             return BatchResult(
                 success=False,
                 error="Batch orchestrator disabled (Bland AI API key not configured)",
                 members_count=len(members),
-                campaign_id=str(campaign.campaign_id)  # Convert UUID to string
+                campaign_id=str(campaign.campaign_id),  # Convert UUID to string
             )
 
         try:
@@ -67,29 +77,35 @@ class BatchOrchestrator:
             # PHASE 1: Create batch record BEFORE Bland AI call
             # ============================================================
             batch_id = self._create_outreach_batch(campaign.campaign_id, len(members))
-            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 1 Complete: Batch record created with ID: {batch_id}")
+            logger.info(
+                f"✅ [BATCH-ORCHESTRATOR] Phase 1 Complete: Batch record created with ID: {batch_id}"
+            )
 
             # ============================================================
             # PHASE 2: Create attempt records BEFORE Bland AI call
             # ============================================================
             attempt_id_map = self._create_outreach_attempts(members, batch_id)
-            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 2 Complete: {len(members)} attempt records created")
+            logger.info(
+                f"✅ [BATCH-ORCHESTRATOR] Phase 2 Complete: {len(members)} attempt records created"
+            )
 
             # Build Bland AI batch request with attempt_id mapping
             batch_request = self._build_batch_request(campaign, members, batch_id, attempt_id_map)
 
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] Built batch request with {len(batch_request.calls)} calls")
+            logger.info(
+                f"📞 [BATCH-ORCHESTRATOR] Built batch request with {len(batch_request.calls)} calls"
+            )
             logger.info(f"🎭 [BATCH-ORCHESTRATOR] Using pathway: {batch_request.pathway_id}")
             logger.info(f"🎤 [BATCH-ORCHESTRATOR] Using voice: {batch_request.voice_id}")
 
             # Submit to Bland AI (SYNCHRONOUS - waits for response)
             response = self.bland_client.submit_batch_calls(batch_request)
 
-            if response.get('success'):
-                vendor_batch_id = response.get('batch_id')
-                calls_submitted = response.get('calls_submitted', len(members))
+            if response.get("success"):
+                vendor_batch_id = response.get("batch_id")
+                calls_submitted = response.get("calls_submitted", len(members))
 
-                logger.info(f"✅ [BATCH-ORCHESTRATOR] Bland AI accepted batch")
+                logger.info("✅ [BATCH-ORCHESTRATOR] Bland AI accepted batch")
                 logger.info(f"📦 [BATCH-ORCHESTRATOR] Vendor Batch ID: {vendor_batch_id}")
                 logger.info(f"📊 [BATCH-ORCHESTRATOR] Calls submitted: {calls_submitted}")
 
@@ -97,20 +113,24 @@ class BatchOrchestrator:
                 # PHASE 3: Update batch with vendor_batch_id AFTER Bland AI response
                 # ============================================================
                 self._update_batch_with_vendor_id(batch_id, vendor_batch_id)
-                logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 3 Complete: Batch updated with vendor ID")
+                logger.info(
+                    "✅ [BATCH-ORCHESTRATOR] Phase 3 Complete: Batch updated with vendor ID"
+                )
 
                 return BatchResult(
                     success=True,
                     batch_id=vendor_batch_id,  # Return Bland AI batch ID
                     members_count=len(members),
                     campaign_id=str(campaign.campaign_id),  # Convert UUID to string
-                    submitted_members=[str(m.member_id) for m in members]  # Convert UUIDs to strings
+                    submitted_members=[
+                        str(m.member_id) for m in members
+                    ],  # Convert UUIDs to strings
                 )
             else:
-                error_msg = response.get('error', 'Unknown error')
-                status_code = response.get('status_code', 'Unknown')
+                error_msg = response.get("error", "Unknown error")
+                status_code = response.get("status_code", "Unknown")
 
-                logger.error(f"❌ [BATCH-ORCHESTRATOR] Batch submission failed")
+                logger.error("❌ [BATCH-ORCHESTRATOR] Batch submission failed")
                 logger.error(f"❌ [BATCH-ORCHESTRATOR] Error: {error_msg}")
                 logger.error(f"❌ [BATCH-ORCHESTRATOR] Status code: {status_code}")
 
@@ -121,24 +141,30 @@ class BatchOrchestrator:
                     success=False,
                     error=f"Status {status_code}: {error_msg}",
                     members_count=len(members),
-                    campaign_id=str(campaign.campaign_id)  # Convert UUID to string
+                    campaign_id=str(campaign.campaign_id),  # Convert UUID to string
                 )
 
         except Exception as e:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Exception during batch submission: {str(e)}")
 
             # Mark batch as Failed if it was created
-            if 'batch_id' in locals():
+            if "batch_id" in locals():
                 self._mark_batch_failed(batch_id, str(e))
 
             return BatchResult(
                 success=False,
                 error=f"Exception: {str(e)}",
                 members_count=len(members),
-                campaign_id=str(campaign.campaign_id)  # Convert UUID to string
+                campaign_id=str(campaign.campaign_id),  # Convert UUID to string
             )
-    
-    def _build_batch_request(self, campaign: QualifiedCampaign, members: List[EligibleMember], batch_id: str, attempt_id_map: Dict[str, str]) -> BatchRequest:
+
+    def _build_batch_request(
+        self,
+        campaign: QualifiedCampaign,
+        members: List[EligibleMember],
+        batch_id: str,
+        attempt_id_map: Dict[str, str],
+    ) -> BatchRequest:
         """
         Build the Bland AI batch request payload with DTC-style request_data and complete metadata
 
@@ -159,7 +185,9 @@ class BatchOrchestrator:
             attempt_id = attempt_id_map.get(enrollment_id)
 
             if not attempt_id:
-                logger.error(f"❌ [BATCH-ORCHESTRATOR] No attempt_id found for enrollment {enrollment_id}")
+                logger.error(
+                    f"❌ [BATCH-ORCHESTRATOR] No attempt_id found for enrollment {enrollment_id}"
+                )
                 skipped_members += 1
                 continue
 
@@ -167,30 +195,67 @@ class BatchOrchestrator:
             phone_number = self._get_target_phone(member, campaign.contact_pref)
 
             if not phone_number:
-                logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] No valid phone for member: {member.member_id}")
+                logger.warning(
+                    f"⚠️ [BATCH-ORCHESTRATOR] No valid phone for member: {member.member_id}"
+                )
                 skipped_members += 1
                 continue
 
             # Build DTC-style request_data with care gaps and demographics
-            logger.info(f"📋 [BATCH-ORCHESTRATOR] Building request_data for member: {member.member_id}")
+            logger.info(
+                f"📋 [BATCH-ORCHESTRATOR] Building request_data for member: {member.member_id}"
+            )
             request_data = self._build_request_data(member, campaign)
+
+            # ============================================================
+            # TIME DISPLAY - Show current time and member's local time
+            # ============================================================
+            # Get current UTC time
+            now_utc = datetime.now(pytz.UTC)
+
+            # Convert to campaign timezone for comparison
+            campaign_tz = TimezoneConverter.to_pytz(campaign.operating_tz)
+            now_in_campaign_tz = now_utc.astimezone(campaign_tz)
+
+            # Log time comparison (similar to campaign_qualifier.py pattern)
+            logger.info(f"🕐 [BATCH-ORCHESTRATOR] ⏰ TIME CHECK for member {member.member_id}")
+            logger.info(
+                f"   📍 Campaign timezone: {campaign.operating_tz} (mode: {campaign.timezone_flag})"
+            )
+            logger.info(f"   🌍 Current time (UTC): {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            logger.info(
+                f"   🌍 Current time ({campaign.operating_tz}): {now_in_campaign_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            )
+            logger.info(f"   👤 Member timezone: {member.timezone}")
+            logger.info(f"   ⏰ Member current time (from SQL): {member.member_current_time}")
 
             # Log complete request_data for traceability
             logger.info(f"📦 [BATCH-ORCHESTRATOR] Member {member.member_id} request_data:")
-            logger.info(f"   👤 Demographics: name={request_data.get('first_name')} {request_data.get('last_name')}, "
-                       f"language={request_data.get('language_pref')}, dob={request_data.get('dob')}")
-            logger.info(f"   📍 Address: {request_data.get('service_address')}, "
-                       f"{request_data.get('city')}, {request_data.get('state')} {request_data.get('zip_code')}")
+            logger.info(
+                f"   👤 Demographics: name={request_data.get('first_name')} {request_data.get('last_name')}, "
+                f"language={request_data.get('language_pref')}, dob={request_data.get('dob')}"
+            )
+            logger.info(
+                f"   📍 Address: {request_data.get('service_address')}, "
+                f"{request_data.get('city')}, {request_data.get('state')} {request_data.get('zip_code')}"
+            )
             logger.info(f"   📞 Phone: {request_data.get('primary_phone')}")
-            logger.info(f"   🏥 Partner: {request_data.get('partner_contact_name')} - {request_data.get('org_name')}")
+            logger.info(
+                f"   🏥 Partner: {request_data.get('partner_contact_name')} - {request_data.get('org_name')}"
+            )
 
             # Log care gap flags
-            care_gap_flags = {k: v for k, v in request_data.items()
-                            if k.endswith('_import_flag') or k.endswith('_completion_flag')}
+            care_gap_flags = {
+                k: v
+                for k, v in request_data.items()
+                if k.endswith("_import_flag") or k.endswith("_completion_flag")
+            }
             if care_gap_flags:
-                logger.info(f"   🩺 Care gaps ({len(care_gap_flags)//2} active): {json.dumps(care_gap_flags, indent=2)}")
+                logger.info(
+                    f"   🩺 Care gaps ({len(care_gap_flags)//2} active): {json.dumps(care_gap_flags, indent=2)}"
+                )
             else:
-                logger.info(f"   🩺 Care gaps: None")
+                logger.info("   🩺 Care gaps: None")
 
             # Build complete metadata (DTC fields + Partner fields)
             call_data = {
@@ -198,41 +263,49 @@ class BatchOrchestrator:
                 "request_data": request_data,  # DTC-style request_data
                 "metadata": {
                     # Core Tracking IDs (DTC + Partner)
-                    "attempt_id": attempt_id,                        # FROM DTC - CRITICAL for webhook
-                    "batch_id": batch_id,                            # FROM DTC - Batch tracking
-                    "campaign_id": str(campaign.campaign_id),        # Both have this
-                    "member_id": str(member.member_id),              # Both have this
-                    "enrollment_id": enrollment_id,                  # Partner-specific
-                    "org_id": str(campaign.org_id),                  # Partner-specific
+                    "attempt_id": attempt_id,  # FROM DTC - CRITICAL for webhook
+                    "batch_id": batch_id,  # FROM DTC - Batch tracking
+                    "campaign_id": str(campaign.campaign_id),  # Both have this
+                    "member_id": str(member.member_id),  # Both have this
+                    "enrollment_id": enrollment_id,  # Partner-specific
+                    "org_id": str(campaign.org_id),  # Partner-specific
                     "call_type_id": str(campaign.call_type_id) if campaign.call_type_id else None,
-
                     # Bland AI Configuration
-                    "pathway_id": campaign.pathway_id or (campaign.bland_parameters_global.get("pathway_id") if campaign.bland_parameters_global else None),
-
+                    "pathway_id": campaign.pathway_id
+                    or (
+                        campaign.bland_parameters_global.get("pathway_id")
+                        if campaign.bland_parameters_global
+                        else None
+                    ),
                     # Member Identification (DTC + Partner)
-                    "first_name": member.first_name,                 # Both have this
-                    "last_name": member.last_name,                   # Both have this
-                    "called_number": phone_number,                   # FROM DTC - Phone actually called
-                    "salesforce_account_number": getattr(member, 'salesforce_account_number', None),  # FROM DTC - if available
-
+                    "first_name": member.first_name,  # Both have this
+                    "last_name": member.last_name,  # Both have this
+                    "called_number": phone_number,  # FROM DTC - Phone actually called
+                    "salesforce_account_number": getattr(
+                        member, "salesforce_account_number", None
+                    ),  # FROM DTC - if available
                     # Communication Preferences
-                    "language_pref": getattr(member, 'language_pref', None) or request_data.get('language_pref'),  # FROM DTC
-                    "contact_preference": campaign.contact_pref,     # Partner-specific
-
+                    "language_pref": getattr(member, "language_pref", None)
+                    or request_data.get("language_pref"),  # FROM DTC
+                    "contact_preference": campaign.contact_pref,  # Partner-specific
                     # Partner-Specific Context
                     "campaign_type": "Partner",
                     "audience_file_batch": campaign.audience_file_batch,
                     "member_timezone": member.timezone,
                     "is_device_callable": member.is_device_callable,
                     "total_previous_attempts": member.total_attempts,
-                }
+                },
             }
             calls.append(call_data)
 
         if skipped_members > 0:
-            logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] Skipped {skipped_members} members due to missing phone numbers")
+            logger.warning(
+                f"⚠️ [BATCH-ORCHESTRATOR] Skipped {skipped_members} members due to missing phone numbers"
+            )
 
-        logger.info(f"📞 [BATCH-ORCHESTRATOR] Successfully built {len(calls)} calls with complete request_data")
+        logger.info(
+            f"📞 [BATCH-ORCHESTRATOR] Successfully built {len(calls)} calls with complete request_data"
+        )
 
         # Get Bland AI parameters (campaign-specific or fallback to environment)
         pathway_id = self._get_pathway_id(campaign)
@@ -242,19 +315,25 @@ class BatchOrchestrator:
         # This includes all 18+ parameters: pathway_version, wait_for_greeting, record, etc.
         bland_params = campaign.bland_parameters_global if campaign.bland_parameters_global else {}
 
-        logger.info(f"📋 [BATCH-ORCHESTRATOR] Passing {len(bland_params)} Bland AI parameters from campaign configuration")
+        logger.info(
+            f"📋 [BATCH-ORCHESTRATOR] Passing {len(bland_params)} Bland AI parameters from campaign configuration"
+        )
         if bland_params:
-            logger.info(f"🔧 [BATCH-ORCHESTRATOR] Available parameters: {list(bland_params.keys())}")
+            logger.info(
+                f"🔧 [BATCH-ORCHESTRATOR] Available parameters: {list(bland_params.keys())}"
+            )
 
         return BatchRequest(
             campaign_id=str(campaign.campaign_id),  # Convert UUID to string for JSON serialization
             calls=calls,
             pathway_id=pathway_id,
             voice_id=voice_id,
-            bland_parameters_global=bland_params  # Pass complete JSON
+            bland_parameters_global=bland_params,  # Pass complete JSON
         )
 
-    def _build_request_data(self, member: EligibleMember, campaign: QualifiedCampaign) -> Dict[str, Any]:
+    def _build_request_data(
+        self, member: EligibleMember, campaign: QualifiedCampaign
+    ) -> Dict[str, Any]:
         """
         Build DTC-style request_data with demographics, partner info, and care gaps
 
@@ -281,16 +360,16 @@ class BatchOrchestrator:
             "city": member.address_city or "",
             "state": member.address_state or "",
             "dob": member.dob.strftime("%Y-%m-%d") if member.dob else "",
-
             # Partner organization fields
             "partner_contact_name": campaign.partner_contact_name or "",
             "org_name": campaign.org_name or "",
-
             # Care gap flags (import + completion)
-            **care_gaps_data
+            **care_gaps_data,
         }
 
-        logger.debug(f"✅ [BATCH-ORCHESTRATOR] Built request_data with {len(care_gaps_data)//2} care gaps")
+        logger.debug(
+            f"✅ [BATCH-ORCHESTRATOR] Built request_data with {len(care_gaps_data)//2} care gaps"
+        )
         return request_data
 
     def _extract_care_gaps_with_completion(self, member_care_gap_parameters: str) -> Dict[str, str]:
@@ -315,13 +394,15 @@ class BatchOrchestrator:
         care_gaps_data = {}
 
         if not member_care_gap_parameters:
-            logger.debug(f"🩺 [BATCH-ORCHESTRATOR] No care gap parameters for member")
+            logger.debug("🩺 [BATCH-ORCHESTRATOR] No care gap parameters for member")
             return care_gaps_data
 
         try:
             # Parse JSON string
             care_gap_flags = json.loads(member_care_gap_parameters)
-            logger.debug(f"🩺 [BATCH-ORCHESTRATOR] Parsed {len(care_gap_flags)} care gap flags from JSON")
+            logger.debug(
+                f"🩺 [BATCH-ORCHESTRATOR] Parsed {len(care_gap_flags)} care gap flags from JSON"
+            )
 
             # Filter for "Y" values and add completion flags
             for flag_name, flag_value in care_gap_flags.items():
@@ -336,11 +417,17 @@ class BatchOrchestrator:
                     if completion_flag_name:
                         # Add completion flag with empty string value
                         care_gaps_data[completion_flag_name] = ""
-                        logger.debug(f"   📋 [BATCH-ORCHESTRATOR] Added completion flag: {completion_flag_name} = \"\"")
+                        logger.debug(
+                            f'   📋 [BATCH-ORCHESTRATOR] Added completion flag: {completion_flag_name} = ""'
+                        )
                     else:
-                        logger.warning(f"   ⚠️ [BATCH-ORCHESTRATOR] No completion flag mapping found for: {flag_name}")
+                        logger.warning(
+                            f"   ⚠️ [BATCH-ORCHESTRATOR] No completion flag mapping found for: {flag_name}"
+                        )
 
-            logger.info(f"🩺 [BATCH-ORCHESTRATOR] Extracted {len(care_gaps_data)//2} active care gaps")
+            logger.info(
+                f"🩺 [BATCH-ORCHESTRATOR] Extracted {len(care_gaps_data)//2} active care gaps"
+            )
 
         except json.JSONDecodeError as e:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Failed to parse care gap JSON: {str(e)}")
@@ -348,6 +435,7 @@ class BatchOrchestrator:
         except Exception as e:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Error extracting care gaps: {str(e)}")
             import traceback
+
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Traceback: {traceback.format_exc()}")
 
         return care_gaps_data
@@ -379,13 +467,17 @@ class BatchOrchestrator:
 
         try:
             self.db_service.execute_query(query, params, fetch_results=False)
-            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 1: Batch record created successfully")
+            logger.info("✅ [BATCH-ORCHESTRATOR] Phase 1: Batch record created successfully")
             return batch_id
         except Exception as e:
-            logger.error(f"🚨 [BATCH-ORCHESTRATOR] Phase 1 FAILED: Error creating batch record: {str(e)}")
+            logger.error(
+                f"🚨 [BATCH-ORCHESTRATOR] Phase 1 FAILED: Error creating batch record: {str(e)}"
+            )
             raise
 
-    def _create_outreach_attempts(self, members: List[EligibleMember], batch_id: str) -> Dict[str, str]:
+    def _create_outreach_attempts(
+        self, members: List[EligibleMember], batch_id: str
+    ) -> Dict[str, str]:
         """
         PHASE 2: Create outreach attempt records in database BEFORE Bland AI call
 
@@ -413,11 +505,13 @@ class BatchOrchestrator:
             attempt_id_map[enrollment_id] = attempt_id
 
             values_list.append("(%s, %s, 'Voice', SYSDATETIMEOFFSET(), 'Pending', 0, %s)")
-            params.extend([
-                attempt_id,
-                enrollment_id,         # FK to member_campaign_enrollments_enhanced
-                batch_id               # FK to outreach_batches
-            ])
+            params.extend(
+                [
+                    attempt_id,
+                    enrollment_id,  # FK to member_campaign_enrollments_enhanced
+                    batch_id,  # FK to outreach_batches
+                ]
+            )
 
         query = f"""
             INSERT INTO engage360.outreach_attempts
@@ -427,11 +521,17 @@ class BatchOrchestrator:
 
         try:
             self.db_service.execute_query(query, params, fetch_results=False)
-            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 2: {len(members)} attempt records created successfully")
-            logger.info(f"🔑 [BATCH-ORCHESTRATOR] Generated {len(attempt_id_map)} attempt_id mappings for metadata")
+            logger.info(
+                f"✅ [BATCH-ORCHESTRATOR] Phase 2: {len(members)} attempt records created successfully"
+            )
+            logger.info(
+                f"🔑 [BATCH-ORCHESTRATOR] Generated {len(attempt_id_map)} attempt_id mappings for metadata"
+            )
             return attempt_id_map
         except Exception as e:
-            logger.error(f"🚨 [BATCH-ORCHESTRATOR] Phase 2 FAILED: Error creating attempt records: {str(e)}")
+            logger.error(
+                f"🚨 [BATCH-ORCHESTRATOR] Phase 2 FAILED: Error creating attempt records: {str(e)}"
+            )
             raise
 
     def _update_batch_with_vendor_id(self, batch_id: str, vendor_batch_id: str) -> None:
@@ -444,7 +544,9 @@ class BatchOrchestrator:
             batch_id: UUID of our batch record (from Phase 1)
             vendor_batch_id: Batch ID returned by Bland AI
         """
-        logger.info(f"🔄 [BATCH-ORCHESTRATOR] Phase 3: Updating batch {batch_id} with vendor ID: {vendor_batch_id}")
+        logger.info(
+            f"🔄 [BATCH-ORCHESTRATOR] Phase 3: Updating batch {batch_id} with vendor ID: {vendor_batch_id}"
+        )
 
         query = """
             UPDATE engage360.outreach_batches
@@ -458,7 +560,7 @@ class BatchOrchestrator:
 
         try:
             self.db_service.execute_query(query, params, fetch_results=False)
-            logger.info(f"✅ [BATCH-ORCHESTRATOR] Phase 3: Batch updated successfully")
+            logger.info("✅ [BATCH-ORCHESTRATOR] Phase 3: Batch updated successfully")
         except Exception as e:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Phase 3 FAILED: Error updating batch: {str(e)}")
             raise
@@ -485,7 +587,7 @@ class BatchOrchestrator:
 
         try:
             self.db_service.execute_query(query, params, fetch_results=False)
-            logger.info(f"✅ [BATCH-ORCHESTRATOR] Batch marked as Failed")
+            logger.info("✅ [BATCH-ORCHESTRATOR] Batch marked as Failed")
         except Exception as e:
             logger.error(f"🚨 [BATCH-ORCHESTRATOR] Error marking batch as Failed: {str(e)}")
             # Don't raise - this is cleanup code
@@ -498,57 +600,67 @@ class BatchOrchestrator:
         logger.debug(f"📞 [BATCH-ORCHESTRATOR] Campaign contact_pref: {contact_pref}")
         logger.debug(f"📞 [BATCH-ORCHESTRATOR] Member contact_pref: {member.contact_pref}")
         logger.debug(f"📞 [BATCH-ORCHESTRATOR] Device callable: {member.is_device_callable}")
-        
+
         # Handle auto -> member_preference conversion
-        if contact_pref == 'auto':
-            contact_pref = 'member_preference'
-            logger.debug(f"📞 [BATCH-ORCHESTRATOR] Converted 'auto' to 'member_preference'")
-        
-        if contact_pref == 'phone':
+        if contact_pref == "auto":
+            contact_pref = "member_preference"
+            logger.debug("📞 [BATCH-ORCHESTRATOR] Converted 'auto' to 'member_preference'")
+
+        if contact_pref == "phone":
             target_phone = member.primary_phone
             if target_phone:
                 logger.debug(f"📞 [BATCH-ORCHESTRATOR] Using primary phone: {target_phone}")
             return target_phone
-            
-        elif contact_pref == 'device':
+
+        elif contact_pref == "device":
             # Use device only if callable
             if member.device_phone_number and member.is_device_callable:
                 target_phone = member.device_phone_number
                 logger.debug(f"📞 [BATCH-ORCHESTRATOR] Using device number: {target_phone}")
                 return target_phone
             else:
-                logger.debug(f"📞 [BATCH-ORCHESTRATOR] Device not callable or missing number")
+                logger.debug("📞 [BATCH-ORCHESTRATOR] Device not callable or missing number")
                 return None
-            
-        elif contact_pref == 'member_preference':
+
+        elif contact_pref == "member_preference":
             # Use member's existing contact_pref field
-            if member.contact_pref == 'phone' and member.primary_phone:
+            if member.contact_pref == "phone" and member.primary_phone:
                 target_phone = member.primary_phone
                 logger.debug(f"📞 [BATCH-ORCHESTRATOR] Member prefers phone, using: {target_phone}")
                 return target_phone
-                
-            elif member.contact_pref == 'device' and member.device_phone_number and member.is_device_callable:
-                target_phone = member.device_phone_number  
-                logger.debug(f"📞 [BATCH-ORCHESTRATOR] Member prefers device, using: {target_phone}")
+
+            elif (
+                member.contact_pref == "device"
+                and member.device_phone_number
+                and member.is_device_callable
+            ):
+                target_phone = member.device_phone_number
+                logger.debug(
+                    f"📞 [BATCH-ORCHESTRATOR] Member prefers device, using: {target_phone}"
+                )
                 return target_phone
-                
+
             else:
                 # Fallback to available number (phone first, then device if callable)
                 if member.primary_phone:
                     target_phone = member.primary_phone
-                    logger.debug(f"📞 [BATCH-ORCHESTRATOR] Fallback to primary phone: {target_phone}")
+                    logger.debug(
+                        f"📞 [BATCH-ORCHESTRATOR] Fallback to primary phone: {target_phone}"
+                    )
                     return target_phone
                 elif member.device_phone_number and member.is_device_callable:
                     target_phone = member.device_phone_number
                     logger.debug(f"📞 [BATCH-ORCHESTRATOR] Fallback to device: {target_phone}")
                     return target_phone
                 else:
-                    logger.debug(f"📞 [BATCH-ORCHESTRATOR] No fallback options available")
+                    logger.debug("📞 [BATCH-ORCHESTRATOR] No fallback options available")
                     return None
-        
-        logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] No valid phone found for member: {member.member_id}")
+
+        logger.warning(
+            f"⚠️ [BATCH-ORCHESTRATOR] No valid phone found for member: {member.member_id}"
+        )
         return None
-    
+
     def _get_pathway_id(self, campaign: QualifiedCampaign) -> str:
         """
         Get pathway ID from campaign bland_parameters_global or fallback to environment
@@ -559,12 +671,18 @@ class BatchOrchestrator:
         3. Default: "default-partner-pathway"
         """
         if campaign.pathway_id:
-            logger.info(f"🎭 [BATCH-ORCHESTRATOR] Using campaign-specific pathway ID: {campaign.pathway_id}")
+            logger.info(
+                f"🎭 [BATCH-ORCHESTRATOR] Using campaign-specific pathway ID: {campaign.pathway_id}"
+            )
             return campaign.pathway_id
 
         # Fallback to environment variable
-        pathway_id = self.config_manager.get_config("PARTNER_CAMPAIGN_PATHWAY_ID", "default-partner-pathway")
-        logger.info(f"🎭 [BATCH-ORCHESTRATOR] Using fallback pathway ID from environment: {pathway_id}")
+        pathway_id = self.config_manager.get_config(
+            "PARTNER_CAMPAIGN_PATHWAY_ID", "default-partner-pathway"
+        )
+        logger.info(
+            f"🎭 [BATCH-ORCHESTRATOR] Using fallback pathway ID from environment: {pathway_id}"
+        )
         return pathway_id
 
     def _get_voice_id(self, campaign: QualifiedCampaign) -> str:
@@ -577,7 +695,9 @@ class BatchOrchestrator:
         3. Default: "default-voice"
         """
         if campaign.voice_id:
-            logger.info(f"🎤 [BATCH-ORCHESTRATOR] Using campaign-specific voice ID: {campaign.voice_id}")
+            logger.info(
+                f"🎤 [BATCH-ORCHESTRATOR] Using campaign-specific voice ID: {campaign.voice_id}"
+            )
             return campaign.voice_id
 
         # Fallback to environment variable
@@ -597,19 +717,29 @@ class BatchOrchestrator:
         This is the key improvement: webhook URL now comes from database configuration
         """
         if campaign.webhook_url:
-            logger.info(f"🔗 [BATCH-ORCHESTRATOR] Using campaign-specific webhook URL: {campaign.webhook_url}")
+            logger.info(
+                f"🔗 [BATCH-ORCHESTRATOR] Using campaign-specific webhook URL: {campaign.webhook_url}"
+            )
             return campaign.webhook_url
 
         # Fallback to environment variable
         webhook_url = self.config_manager.get_config("BLAND_WEBHOOK_URL")
         if webhook_url:
-            logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] Using fallback webhook URL from environment: {webhook_url}")
-            logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] Consider configuring webhook_url in bland_parameters_global for campaign: {campaign.name}")
+            logger.warning(
+                f"⚠️ [BATCH-ORCHESTRATOR] Using fallback webhook URL from environment: {webhook_url}"
+            )
+            logger.warning(
+                f"⚠️ [BATCH-ORCHESTRATOR] Consider configuring webhook_url in bland_parameters_global for campaign: {campaign.name}"
+            )
             return webhook_url
 
         # No webhook URL configured
-        logger.error(f"🚨 [BATCH-ORCHESTRATOR] No webhook URL configured for campaign: {campaign.name}")
-        logger.error(f"🚨 [BATCH-ORCHESTRATOR] Please configure webhook_url in bland_parameters_global or BLAND_WEBHOOK_URL environment variable")
+        logger.error(
+            f"🚨 [BATCH-ORCHESTRATOR] No webhook URL configured for campaign: {campaign.name}"
+        )
+        logger.error(
+            "🚨 [BATCH-ORCHESTRATOR] Please configure webhook_url in bland_parameters_global or BLAND_WEBHOOK_URL environment variable"
+        )
         raise ValueError(f"No webhook URL configured for campaign: {campaign.name}")
 
     def _get_max_duration(self, campaign: QualifiedCampaign) -> str:
@@ -622,10 +752,14 @@ class BatchOrchestrator:
         3. Default: "300" (5 minutes)
         """
         if campaign.max_duration:
-            logger.info(f"⏱️ [BATCH-ORCHESTRATOR] Using campaign-specific max duration: {campaign.max_duration}s")
+            logger.info(
+                f"⏱️ [BATCH-ORCHESTRATOR] Using campaign-specific max duration: {campaign.max_duration}s"
+            )
             return campaign.max_duration
 
         # Fallback to environment variable
         max_duration = self.config_manager.get_config("BLAND_MAX_DURATION", "300")
-        logger.info(f"⏱️ [BATCH-ORCHESTRATOR] Using fallback max duration from environment: {max_duration}s")
+        logger.info(
+            f"⏱️ [BATCH-ORCHESTRATOR] Using fallback max duration from environment: {max_duration}s"
+        )
         return max_duration
