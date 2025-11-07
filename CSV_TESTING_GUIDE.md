@@ -124,9 +124,9 @@ DTC_YYYYMMDD[_Suffix].csv
 
 **Test CSV Content**:
 ```csv
-org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-ORG001,123456789,enroll,English,Phone,John,Doe,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG001,987654321,update,Spanish,Email,Maria,Garcia,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
+org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
+ORG001,987654321,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
 ```
 
 **Upload Steps**:
@@ -171,10 +171,10 @@ ORG001,987654321,update,Spanish,Email,Maria,Garcia,UDI987654321,Home Device,+155
 
 **Test CSV Content** (with errors):
 ```csv
-org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-,123456789,enroll,English,Phone,John,Doe,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG001,,update,Spanish,Email,Maria,Garcia,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
-ORG001,111111111,invalid_status,InvalidLang,InvalidChannel,,,,,,,,,,,InvalidTZ,InvalidMethod,InvalidDays,InvalidWindow
+org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
+,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
+ORG001,,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
+ORG001,111111111,invalid_status,InvalidLang,InvalidChannel,,,,,,,,,,,,,InvalidTZ,InvalidMethod,InvalidDays,InvalidWindow
 ```
 
 **Expected Logs - Business Logic Errors**:
@@ -218,10 +218,10 @@ EOF
 ```bash
 # Create valid DTC test file
 cat > DTC_20241226.csv << 'EOF'
-org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-ORG001,123456789,enroll,English,Phone,John,Doe,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday Thursday Friday,EV1-2
-ORG001,987654321,update,Spanish,Email,Maria,Garcia,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Monday Wednesday Friday,EV4-6
-ORG002,111222333,enroll,English,Phone,Robert,Johnson,UDI111222333,Mobile Device,+15551112222,Y,789 Pine St,Riverside,TX,75001,USA,America/Central,Phone,Tuesday Thursday Saturday,EV2-3
+org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday Thursday Friday,EV1-2
+ORG001,987654321,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Monday Wednesday Friday,EV4-6
+ORG002,111222333,enroll,English,Phone,Robert,Johnson,1980-11-05,,UDI111222333,Mobile Device,+15551112222,Y,789 Pine St,Riverside,TX,75001,USA,America/Central,Phone,Tuesday Thursday Saturday,EV2-3
 EOF
 ```
 
@@ -247,6 +247,43 @@ org_id,salesforce_account_number,enrollment_status,language_preference,timezone
 ORG001,,invalid_status,InvalidLang,InvalidTZ
 EOF
 ```
+
+---
+
+### DTC CSV Field Reference
+
+#### New Optional Fields
+
+**member_gender** (Added: 2025-11-07)
+- **Type**: String (optional)
+- **Accepted Values**:
+  - `M` or `Male` → Stored as "M"
+  - `F` or `Female` → Stored as "F"
+  - Any other value → Stored as "Other"
+  - Empty/blank → Stored as NULL (no error)
+- **Validation**: No validation errors if missing or empty
+- **Location in CSV**: After `member_dob`, before `device_udi`
+- **Database**: Stored in `engage360.members.gender`
+- **Behavior**:
+  - If provided in CSV, value is standardized and stored
+  - If not provided, field remains NULL (no error thrown)
+  - On updates, uses `ISNULL()` to preserve existing value if new CSV doesn't provide it
+
+**Example with gender**:
+```csv
+member_first_name,member_last_name,member_dob,member_gender
+John,Doe,1965-03-15,M
+Jane,Smith,1970-08-22,Female
+```
+
+**Example without gender (valid)**:
+```csv
+member_first_name,member_last_name,member_dob
+John,Doe,1965-03-15
+Jane,Smith,1970-08-22
+```
+
+Both examples above are valid. The gender field is completely optional.
 
 ---
 
