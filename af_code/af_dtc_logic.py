@@ -18,9 +18,11 @@ from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass, field
 import pymssql  # Replaced pyodbc
 from pathlib import Path
+
 try:
     import pandera as pa
     from pandera import Column, DataFrameSchema, Check
+
     PANDERA_AVAILABLE = True
 except ImportError:
     # Fallback when pandera is not available
@@ -31,8 +33,10 @@ except ImportError:
     Check = None
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from datetime import date  # For date handling
+
 try:
     from azure.storage.blob import BlobServiceClient
+
     AZURE_STORAGE_AVAILABLE = True
 except ImportError:
     BlobServiceClient = None
@@ -285,6 +289,7 @@ def get_dtc_schema() -> DataFrameSchema:
             "member_phone_number": Column(str, nullable=True),
             "customer_timezone": Column(str, nullable=True),
             "member_dob": Column(str, nullable=True),
+            "member_gender": Column(str, nullable=True),  # Optional field
             "member_email": Column(str, nullable=True),
             "member_address_street": Column(str, nullable=True),
             "member_address_city": Column(str, nullable=True),
@@ -779,6 +784,7 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
             "member_phone_number",
             "customer_timezone",
             "member_dob",
+            "member_gender",
             "member_email",
             "member_address_street",
             "member_address_city",
@@ -806,6 +812,7 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
             "caregiver_email_clean",
             "device_phone_clean",
             "dob_clean",
+            "gender_clean",
             "timezone_clean",
             "is_device_callable_clean",
         ]
@@ -919,9 +926,15 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
         )
 
 
-def log_enrollment_status_change(connection, member_id: str, campaign_id: str, 
-                                 previous_status: Optional[str], new_status: str, 
-                                 change_source: str, change_details: Optional[str] = None):
+def log_enrollment_status_change(
+    connection,
+    member_id: str,
+    campaign_id: str,
+    previous_status: Optional[str],
+    new_status: str,
+    change_source: str,
+    change_details: Optional[str] = None,
+):
     """Log status changes to member_enrollment_status_history table for CSV processing."""
     logger = logging.getLogger("dtc_file_processor")
     try:
@@ -937,19 +950,21 @@ def log_enrollment_status_change(connection, member_id: str, campaign_id: str,
             cursor = connection.cursor()
             cursor.execute(last_change_query, (member_id, campaign_id))
             last_change = cursor.fetchone()
-            
+
             if last_change:
                 from datetime import datetime, timezone
+
                 current_time = datetime.now(timezone.utc)
                 last_time = last_change[0]
-                
+
                 if last_time.tzinfo is None:
                     import pytz
+
                     last_time = pytz.UTC.localize(last_time)
-                
+
                 duration_delta = current_time - last_time
                 duration_hours = round(duration_delta.total_seconds() / 3600, 2)
-        
+
         # Insert audit record
         audit_query = """
             INSERT INTO engage360.member_enrollment_status_history 
@@ -957,15 +972,25 @@ def log_enrollment_status_change(connection, member_id: str, campaign_id: str,
              change_source, change_details)
             VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
-        
+
         cursor = connection.cursor()
-        cursor.execute(audit_query, (
-            member_id, campaign_id, previous_status, new_status, 
-            duration_hours, change_source, change_details
-        ))
-        
-        logger.info(f"📋 [DTC-AUDIT] Status change logged: {member_id} {previous_status}→{new_status} ({change_source})")
-        
+        cursor.execute(
+            audit_query,
+            (
+                member_id,
+                campaign_id,
+                previous_status,
+                new_status,
+                duration_hours,
+                change_source,
+                change_details,
+            ),
+        )
+
+        logger.info(
+            f"📋 [DTC-AUDIT] Status change logged: {member_id} {previous_status}→{new_status} ({change_source})"
+        )
+
     except Exception as e:
         logger.error(f"❌ [DTC-AUDIT] Failed to log status change: {e}")
 
@@ -977,7 +1002,7 @@ def validate_and_cleanse_data_before_insert(
     Comprehensive data validation and cleansing before database insertion.
     Returns cleansed DataFrame and list of validation errors.
     """
-    import re
+
     logger = logging.getLogger("dtc_file_processor")
     validation_errors = []
     df_clean = df.copy()
@@ -997,6 +1022,7 @@ def validate_and_cleanse_data_before_insert(
     df_clean["processing_status"] = "PENDING"
     df_clean["error_message"] = None
     df_clean["dob_clean"] = None
+    df_clean["gender_clean"] = None
     df_clean["timezone_clean"] = None
     df_clean["is_device_callable_clean"] = None
     # 🔥 ADD MISSING TIMESTAMP COLUMNS:
@@ -1006,7 +1032,9 @@ def validate_and_cleanse_data_before_insert(
     df_clean["enrollment_started_ts"] = None  # Will be set during enrollment
     logger.info(f"Initialized clean columns. DataFrame now has {len(df_clean.columns)} columns")
 
-    logger.info("🔥🔥🔥 [VALIDATION-START] CODE VERSION: 2025-10-16-DEBUG-v3 - CHECKIN_TIME VALIDATION ACTIVE")
+    logger.info(
+        "🔥🔥🔥 [VALIDATION-START] CODE VERSION: 2025-10-16-DEBUG-v3 - CHECKIN_TIME VALIDATION ACTIVE"
+    )
     logger.info("Starting comprehensive data validation and cleansing...")
 
     # Step 1: Handle Empty Values and NULL Conversion
@@ -1039,7 +1067,9 @@ def validate_and_cleanse_data_before_insert(
         if not partner_name:
             row_errors.append(f"{row_id}: Missing required partner_name")
         elif len(partner_name) > 100:
-            row_errors.append(f"Invalid partner_name: '{partner_name}' (exceeds the 100 character limit)")
+            row_errors.append(
+                f"Invalid partner_name: '{partner_name}' (exceeds the 100 character limit)"
+            )
         elif partner_name != "Medical Guardian":
             row_errors.append(
                 f"Invalid partner_name: '{partner_name}' (expected 'Medical Guardian')"
@@ -1256,6 +1286,23 @@ def validate_and_cleanse_data_before_insert(
             df_clean.loc[idx, "member_dob"] = None
             df_clean.loc[idx, "dob_clean"] = None
 
+        # GENDER VALIDATION (OPTIONAL)
+        # ============================
+        gender = clean_empty_values(row.get("member_gender"))
+        if gender:
+            # Standardize gender values (case-insensitive)
+            gender_upper = str(gender).upper().strip()
+            if gender_upper in ["M", "MALE"]:
+                df_clean.loc[idx, "gender_clean"] = "M"
+            elif gender_upper in ["F", "FEMALE"]:
+                df_clean.loc[idx, "gender_clean"] = "F"
+            else:
+                # Accept any other value as "Other"
+                df_clean.loc[idx, "gender_clean"] = "Other"
+        else:
+            # Keep as None if not provided
+            df_clean.loc[idx, "gender_clean"] = None
+
         # TIMEZONE VALIDATION
         # ==================
 
@@ -1277,8 +1324,6 @@ def validate_and_cleanse_data_before_insert(
         email = clean_empty_values(row.get("member_email"))
         if email:
             # Basic email format validation
-            import re
-
             email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
             if not re.match(email_pattern, email):
                 row_errors.append(f"Invalid email format: '{email}'")
@@ -1344,35 +1389,51 @@ def validate_and_cleanse_data_before_insert(
 
         # Debug logging for checkin_time validation
         raw_checkin_time = row.get("checkin_time")
-        logger.info(f"🔍 [VALIDATION-DEBUG] {row_id} - Raw checkin_time value: |{raw_checkin_time}| (type: {type(raw_checkin_time).__name__})")
+        logger.info(
+            f"🔍 [VALIDATION-DEBUG] {row_id} - Raw checkin_time value: |{raw_checkin_time}| (type: {type(raw_checkin_time).__name__})"
+        )
 
         checkin_time = clean_empty_values(row.get("checkin_time"))
-        logger.info(f"🔍 [VALIDATION-DEBUG] {row_id} - After clean_empty_values: |{checkin_time}| (is None: {checkin_time is None})")
+        logger.info(
+            f"🔍 [VALIDATION-DEBUG] {row_id} - After clean_empty_values: |{checkin_time}| (is None: {checkin_time is None})"
+        )
         logger.info(f"🔍 [VALIDATION-DEBUG] {row_id} - enrollment_status: |{enrollment_status}|")
 
         valid_checkin_times = ["AM", "PM", "EV"]
 
         # BUSINESS RULE: checkin_time is REQUIRED for ALL enrollment statuses
         if enrollment_status:
-            logger.info(f"🔍 [VALIDATION-DEBUG] {row_id} - Checking if checkin_time is required (enrollment_status exists)")
+            logger.info(
+                f"🔍 [VALIDATION-DEBUG] {row_id} - Checking if checkin_time is required (enrollment_status exists)"
+            )
             if not checkin_time:
-                logger.warning(f"❌ [VALIDATION-DEBUG] {row_id} - checkin_time is MISSING! Adding error to row_errors")
+                logger.warning(
+                    f"❌ [VALIDATION-DEBUG] {row_id} - checkin_time is MISSING! Adding error to row_errors"
+                )
                 row_errors.append(
-                    f"checkin_time is required for all records (must be: AM, PM, or EV)"
+                    "checkin_time is required for all records (must be: AM, PM, or EV)"
                 )
             else:
-                logger.info(f"✅ [VALIDATION-DEBUG] {row_id} - checkin_time is present: {checkin_time}")
+                logger.info(
+                    f"✅ [VALIDATION-DEBUG] {row_id} - checkin_time is present: {checkin_time}"
+                )
         else:
-            logger.warning(f"⚠️ [VALIDATION-DEBUG] {row_id} - No enrollment_status, skipping checkin_time validation")
+            logger.warning(
+                f"⚠️ [VALIDATION-DEBUG] {row_id} - No enrollment_status, skipping checkin_time validation"
+            )
 
         if checkin_time:
             if checkin_time.upper() not in valid_checkin_times:
-                logger.warning(f"❌ [VALIDATION-DEBUG] {row_id} - Invalid checkin_time value: {checkin_time}")
+                logger.warning(
+                    f"❌ [VALIDATION-DEBUG] {row_id} - Invalid checkin_time value: {checkin_time}"
+                )
                 row_errors.append(
                     f"Invalid checkin_time: '{checkin_time}' (must be: {valid_checkin_times})"
                 )
             df_clean.loc[idx, "checkin_time"] = checkin_time.upper()
-            logger.info(f"✅ [VALIDATION-DEBUG] {row_id} - Set checkin_time to: {checkin_time.upper()}")
+            logger.info(
+                f"✅ [VALIDATION-DEBUG] {row_id} - Set checkin_time to: {checkin_time.upper()}"
+            )
         else:
             df_clean.loc[idx, "checkin_time"] = None
             logger.info(f"ℹ️ [VALIDATION-DEBUG] {row_id} - Set checkin_time to None")
@@ -1784,6 +1845,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 stg.caregiver_phone_clean AS caregiver_phone,
                 stg.member_email AS email,
                 stg.dob_clean AS dob,
+                stg.gender_clean AS gender,
                 ISNULL(stg.language_pref, 'EN') AS language_pref,
                 stg.timezone_clean AS timezone,
                 stg.member_address_street AS address_street,
@@ -1812,6 +1874,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 caregiver_phone = ISNULL(src.caregiver_phone, tgt.caregiver_phone),
                 email = ISNULL(src.email, tgt.email),
                 dob = ISNULL(src.dob, tgt.dob),
+                gender = ISNULL(src.gender, tgt.gender),
                 language_pref = ISNULL(src.language_pref, tgt.language_pref),
                 timezone = ISNULL(src.timezone, tgt.timezone),
                 address_street = ISNULL(src.address_street, tgt.address_street),
@@ -1822,11 +1885,11 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         WHEN NOT MATCHED THEN
             INSERT (member_id, org_id, salesforce_account_number, first_name, last_name,
                    caregiver_first_name, caregiver_last_name, caregiver_email, primary_phone, caregiver_phone,
-                   email, dob, language_pref, timezone, address_street, address_city,
+                   email, dob, gender, language_pref, timezone, address_street, address_city,
                    address_state, address_zip, address_country, created_ts)
             VALUES (NEWID(), src.org_id, src.salesforce_account_number, src.first_name, src.last_name,
                    src.caregiver_first_name, src.caregiver_last_name, src.caregiver_email, src.primary_phone, src.caregiver_phone,
-                   src.email, src.dob, src.language_pref, src.timezone, src.address_street, src.address_city,
+                   src.email, src.dob, src.gender, src.language_pref, src.timezone, src.address_street, src.address_city,
                    src.address_state, src.address_zip, src.address_country, SYSDATETIMEOFFSET());
         """
 
@@ -1870,7 +1933,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
 
         # Handle "enroll" - use intro campaign, but first handle UNENROLLED wellness transitions
         logger.info("Processing 'enroll' records...")
-        
+
         # First, transition UNENROLLED wellness members back to intro campaign
         logger.info("Handling UNENROLLED wellness members transition to intro campaign...")
         wellness_to_intro_sql = f"""
@@ -1891,13 +1954,15 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
           AND wellness_enroll.current_status = 'UNENROLLED'
         """
         cursor = db_manager.execute_with_retry(
-            context.connection, 
-            wellness_to_intro_sql, 
-            (str(intro_campaign_id), str(context.file_batch_id), str(wellness_campaign_id))
+            context.connection,
+            wellness_to_intro_sql,
+            (str(intro_campaign_id), str(context.file_batch_id), str(wellness_campaign_id)),
         )
         transitioned_wellness = cursor.rowcount
-        logger.info(f"Transitioned {transitioned_wellness} UNENROLLED wellness members back to intro campaign")
-        
+        logger.info(
+            f"Transitioned {transitioned_wellness} UNENROLLED wellness members back to intro campaign"
+        )
+
         # Log status changes for transitioned members
         if transitioned_wellness > 0:
             # Get the member IDs that were transitioned for audit logging
@@ -1914,20 +1979,24 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                   AND e.campaign_id = %s
             """
             cursor = db_manager.execute_with_retry(
-                context.connection, 
-                transitioned_members_sql, 
-                (str(context.file_batch_id), str(intro_campaign_id))
+                context.connection,
+                transitioned_members_sql,
+                (str(context.file_batch_id), str(intro_campaign_id)),
             )
             transitioned_member_ids = cursor.fetchall()
-            
+
             for member_record in transitioned_member_ids:
                 member_id = str(member_record[0])
                 log_enrollment_status_change(
-                    context.connection, member_id, str(intro_campaign_id),
-                    "UNENROLLED", "ENROLLED", "CSV_PROCESSING",
-                    "Re-enrollment: Transitioned from UNENROLLED wellness back to intro ENROLLED"
+                    context.connection,
+                    member_id,
+                    str(intro_campaign_id),
+                    "UNENROLLED",
+                    "ENROLLED",
+                    "CSV_PROCESSING",
+                    "Re-enrollment: Transitioned from UNENROLLED wellness back to intro ENROLLED",
                 )
-        
+
         # Then handle normal intro campaign enrollments (new enrollments and re-enrollments)
         enroll_sql = f"""
         MERGE engage360.member_campaign_enrollments_enhanced AS tgt
@@ -1965,15 +2034,19 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             VALUES (NEWID(), src.member_id, src.campaign_id, SYSDATETIMEOFFSET(), 'ENROLLED', src.preferred_window);
         """
         cursor = db_manager.execute_with_retry(
-            context.connection, 
-            enroll_sql, 
-            (str(intro_campaign_id), str(context.file_batch_id), str(wellness_campaign_id))
+            context.connection,
+            enroll_sql,
+            (str(intro_campaign_id), str(context.file_batch_id), str(wellness_campaign_id)),
         )
         new_enrollments = cursor.rowcount
-        logger.info(f"Processed {new_enrollments} intro campaign enrollment records (new + re-enrolled)")
-        
+        logger.info(
+            f"Processed {new_enrollments} intro campaign enrollment records (new + re-enrolled)"
+        )
+
         total_enrollments = transitioned_wellness + new_enrollments
-        logger.info(f"Total enrollment processing: {total_enrollments} records (transitions + new/re-enrolled)")
+        logger.info(
+            f"Total enrollment processing: {total_enrollments} records (transitions + new/re-enrolled)"
+        )
 
         # Handle "update" - use wellness campaign
         logger.info("Processing 'update' records...")
@@ -2062,7 +2135,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         )
         unenrolled_count = cursor.rowcount
         logger.info(f"Unenrolled {unenrolled_count} members")
-        
+
         # Log status changes for unenrolled members
         if unenrolled_count > 0:
             # Get the member IDs and campaign IDs that were unenrolled for audit logging
@@ -2085,15 +2158,19 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 (str(context.file_batch_id), str(intro_campaign_id), str(wellness_campaign_id)),
             )
             unenrolled_member_records = cursor.fetchall()
-            
+
             for member_record in unenrolled_member_records:
                 member_id = str(member_record[0])
                 campaign_id = str(member_record[1])
                 # Assume previous status was ENROLLED (since we only unenroll active members)
                 log_enrollment_status_change(
-                    context.connection, member_id, campaign_id,
-                    "ENROLLED", "UNENROLLED", "CSV_PROCESSING",
-                    "CSV unenroll processing"
+                    context.connection,
+                    member_id,
+                    campaign_id,
+                    "ENROLLED",
+                    "UNENROLLED",
+                    "CSV_PROCESSING",
+                    "CSV unenroll processing",
                 )
 
         # 📦 Handle device processing (if any devices in data)
