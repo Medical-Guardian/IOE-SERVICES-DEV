@@ -1291,14 +1291,15 @@ def validate_and_cleanse_data_before_insert(
         gender = clean_empty_values(row.get("member_gender"))
         if gender:
             # Standardize gender values (case-insensitive)
+            # Production table constraint: gender CHAR(1) CHECK (gender IN ('M', 'F', NULL))
             gender_upper = str(gender).upper().strip()
             if gender_upper in ["M", "MALE"]:
                 df_clean.loc[idx, "gender_clean"] = "M"
             elif gender_upper in ["F", "FEMALE"]:
                 df_clean.loc[idx, "gender_clean"] = "F"
             else:
-                # Accept any other value as "Other"
-                df_clean.loc[idx, "gender_clean"] = "Other"
+                # Map any other value to None (production table only allows M, F, NULL)
+                df_clean.loc[idx, "gender_clean"] = None
         else:
             # Keep as None if not provided
             df_clean.loc[idx, "gender_clean"] = None

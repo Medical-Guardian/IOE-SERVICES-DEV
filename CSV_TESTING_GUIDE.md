@@ -254,20 +254,22 @@ EOF
 
 #### New Optional Fields
 
-**member_gender** (Added: 2025-11-07)
+**member_gender** (Added: 2025-11-07, Updated: 2025-11-10)
 - **Type**: String (optional)
 - **Accepted Values**:
-  - `M` or `Male` → Stored as "M"
-  - `F` or `Female` → Stored as "F"
-  - Any other value → Stored as "Other"
+  - `M` or `Male` → Stored as "M" (CHAR 1)
+  - `F` or `Female` → Stored as "F" (CHAR 1)
+  - Any other value → Stored as NULL (production constraint: only M, F, NULL allowed)
   - Empty/blank → Stored as NULL (no error)
 - **Validation**: No validation errors if missing or empty
-- **Location in CSV**: After `member_dob`, before `device_udi`
-- **Database**: Stored in `engage360.members.gender`
+- **Location in CSV**: After `member_dob`, before `member_email`
+- **Database**: Stored in `engage360.members.gender` (CHAR 1 with CHECK constraint)
+- **Constraint**: Production table allows only 'M', 'F', or NULL
 - **Behavior**:
-  - If provided in CSV, value is standardized and stored
+  - If provided in CSV, value is standardized (M/F) or mapped to NULL
   - If not provided, field remains NULL (no error thrown)
   - On updates, uses `ISNULL()` to preserve existing value if new CSV doesn't provide it
+  - Values like "Other", "Non-binary" are stored as NULL for database compatibility
 
 **Example with gender**:
 ```csv
