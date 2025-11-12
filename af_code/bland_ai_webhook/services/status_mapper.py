@@ -38,7 +38,17 @@ class StatusMapper:
                 "next_action": "Retry",
                 "contact_made": False,
             },
-            ("completed", "NO_ANSWER"): {
+            ("no-answer", "NO_ANSWER"): {
+                "disposition": "NoAnswer",
+                "next_action": "Retry",
+                "contact_made": False,
+            },
+            ("no-answer", None): {
+                "disposition": "NoAnswer",
+                "next_action": "Retry",
+                "contact_made": False,
+            },
+            ("busy", None): {
                 "disposition": "NoAnswer",
                 "next_action": "Retry",
                 "contact_made": False,
