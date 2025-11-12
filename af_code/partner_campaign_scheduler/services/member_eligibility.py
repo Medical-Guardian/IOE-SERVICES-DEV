@@ -135,7 +135,7 @@ class MemberEligibilityService:
             -- UTC date range variables for "today" filtering (performance optimization)
             DECLARE @CurrentUtcTimestamp DATETIMEOFFSET = SYSDATETIMEOFFSET();
             DECLARE @TodayStartUtc DATETIMEOFFSET = CAST(CAST(@CurrentUtcTimestamp AS DATE) AS DATETIMEOFFSET);
-            DECLARE @TodayEndUtc DATETIMEOFFSET = DATEADD(DAY, 1, @TodayStartUtc);
+            DECLARE @TodayEndUtc DATETIMEOFFSET = DATEADD(DAY, 2, @TodayStartUtc);
 
             WITH LastSuccessfulAttempts AS (
                 -- Only count SUCCESSFUL attempts for frequency calculation
