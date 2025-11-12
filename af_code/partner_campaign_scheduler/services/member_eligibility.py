@@ -21,22 +21,45 @@ class MemberEligibilityService:
         """
         Find eligible members with timezone-aware filtering and enhanced frequency protection
         """
+        logger.info("👥 [MEMBER-ELIGIBILITY] ============================================")
         logger.info(
             f"👥 [MEMBER-ELIGIBILITY] Finding eligible members for campaign: {campaign.name}"
         )
+        logger.info(f"👥 [MEMBER-ELIGIBILITY] Campaign ID: {campaign.campaign_id}")
         logger.info(f"🌍 [MEMBER-ELIGIBILITY] Timezone mode: {campaign.timezone_flag}")
+        logger.info(f"🌍 [MEMBER-ELIGIBILITY] Operating TZ: {campaign.operating_tz}")
         logger.info(f"📋 [MEMBER-ELIGIBILITY] Audience batch: {campaign.audience_file_batch}")
         logger.info(f"📞 [MEMBER-ELIGIBILITY] Contact preference: {campaign.contact_pref}")
         logger.info(
             f"⏰ [MEMBER-ELIGIBILITY] Frequency: {campaign.frequency_value} per {campaign.frequency_unit}"
         )
+        logger.info(
+            f"🕐 [MEMBER-ELIGIBILITY] Operating hours: {campaign.operating_start_time} - {campaign.operating_end_time}"
+        )
+        logger.info(f"📅 [MEMBER-ELIGIBILITY] Call days: {campaign.call_days_of_week}")
 
         # Build timezone-aware member eligibility query with enhanced frequency checks
         query = self._build_enhanced_frequency_query()
         params = self._build_query_parameters(campaign)
 
+        logger.info("🔍 [MEMBER-ELIGIBILITY] SQL query parameters:")
+        logger.info(f"   - campaign_id: {campaign.campaign_id}")
+        logger.info(f"   - org_id: {campaign.org_id}")
+        logger.info(f"   - audience_file_batch: {campaign.audience_file_batch}")
+        logger.info(f"   - operating_tz: {campaign.operating_tz}")
+        logger.info(f"   - timezone_flag: {campaign.timezone_flag}")
+        logger.info(f"   - start_time: {campaign.operating_start_time}")
+        logger.info(f"   - end_time: {campaign.operating_end_time}")
+        logger.info(f"   - call_days: {campaign.call_days_of_week}")
+        logger.info(f"   - contact_pref: {campaign.contact_pref}")
+        logger.info(f"   - frequency_value: {campaign.frequency_value}")
+        logger.info(f"   - frequency_unit: {campaign.frequency_unit}")
+
         logger.info("🔍 [MEMBER-ELIGIBILITY] Executing enhanced member eligibility query...")
         members_data = self.db_service.execute_query(query, params, fetch_results=True)
+        logger.info(
+            f"🔍 [MEMBER-ELIGIBILITY] Query returned {len(members_data)} eligible members from database"
+        )
 
         eligible_members = []
         timezone_stats = {}
@@ -114,14 +137,27 @@ class MemberEligibilityService:
             eligible_members.append(eligible_member)
 
         # Log comprehensive statistics
-        logger.info(f"📊 [MEMBER-ELIGIBILITY] Found {len(eligible_members)} eligible members")
-        logger.info("🌍 [MEMBER-ELIGIBILITY] Timezone distribution:")
+        logger.info("📊 [MEMBER-ELIGIBILITY] ============================================")
+        logger.info(
+            f"📊 [MEMBER-ELIGIBILITY] ELIGIBILITY SUMMARY: Found {len(eligible_members)} eligible members"
+        )
+        logger.info("📊 [MEMBER-ELIGIBILITY] Timezone distribution:")
         for tz, count in timezone_stats.items():
             logger.info(f"   🕒 {tz}: {count} members")
 
-        logger.info("📞 [MEMBER-ELIGIBILITY] Contact method distribution:")
+        logger.info("📊 [MEMBER-ELIGIBILITY] Contact method distribution:")
         for method, count in contact_method_stats.items():
             logger.info(f"   📱 {method}: {count} members")
+
+        if len(eligible_members) == 0:
+            logger.warning("⚠️ [MEMBER-ELIGIBILITY] NO ELIGIBLE MEMBERS FOUND - Check:")
+            logger.warning("   - Campaign operating hours match member timezones")
+            logger.warning("   - Members exist in audience_file_batch")
+            logger.warning("   - Members have valid phone numbers (primary_phone or device_phone)")
+            logger.warning("   - Frequency limits not exceeded")
+            logger.warning("   - No recent attempts today")
+
+        logger.info("📊 [MEMBER-ELIGIBILITY] ============================================")
 
         return eligible_members
 

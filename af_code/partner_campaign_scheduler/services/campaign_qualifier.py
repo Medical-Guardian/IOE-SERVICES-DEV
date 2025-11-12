@@ -81,20 +81,66 @@ class CampaignQualifier:
 
             for campaign_data in campaigns_data:
                 campaign_name = campaign_data.get("name", "Unknown")
+                campaign_id = campaign_data.get("campaign_id", "Unknown")
+                logger.info("🔍 [CAMPAIGN-QUALIFIER] ============================================")
                 logger.info(f"🔍 [CAMPAIGN-QUALIFIER] Evaluating campaign: {campaign_name}")
+                logger.info(f"🔍 [CAMPAIGN-QUALIFIER] Campaign ID: {campaign_id}")
+                logger.info(
+                    f"🔍 [CAMPAIGN-QUALIFIER] Org: {campaign_data.get('org_name', 'Unknown')} (ID: {campaign_data.get('org_id', 'Unknown')})"
+                )
+                logger.info(
+                    f"🔍 [CAMPAIGN-QUALIFIER] Status: {campaign_data.get('status', 'Unknown')}"
+                )
+                logger.info(
+                    f"🔍 [CAMPAIGN-QUALIFIER] Audience Batch: {campaign_data.get('audience_file_batch', 'None')}"
+                )
+                logger.info(
+                    f"🔍 [CAMPAIGN-QUALIFIER] Contact Pref: {campaign_data.get('contact_pref', 'Unknown')}"
+                )
+                logger.info(
+                    f"🔍 [CAMPAIGN-QUALIFIER] Timezone Mode: {campaign_data.get('timezone_flag', 'Unknown')}"
+                )
+                logger.info(
+                    f"🔍 [CAMPAIGN-QUALIFIER] Operating TZ: {campaign_data.get('operating_tz', 'Unknown')}"
+                )
+                logger.info(
+                    f"🔍 [CAMPAIGN-QUALIFIER] Operating Hours: {campaign_data.get('operating_start_time', 'Unknown')} - {campaign_data.get('operating_end_time', 'Unknown')}"
+                )
+                logger.info(
+                    f"🔍 [CAMPAIGN-QUALIFIER] Call Days: {campaign_data.get('call_days_of_week', 'Unknown')}"
+                )
+                logger.info(
+                    f"🔍 [CAMPAIGN-QUALIFIER] Frequency: {campaign_data.get('frequency_value', 'Unknown')} {campaign_data.get('frequency_unit', 'Unknown')}"
+                )
 
                 # Check timezone-aware start/end times
+                logger.info(
+                    "🔍 [CAMPAIGN-QUALIFIER] Step 1: Checking campaign start_ts/end_ts window..."
+                )
                 if not self._is_campaign_time_valid(campaign_data, now_utc):
                     logger.info(f"❌ [CAMPAIGN-QUALIFIER] Campaign NOT qualified: {campaign_name}")
+                    logger.info("   ⏰ Reason: Outside start_ts/end_ts window in campaign timezone")
                     logger.info(
-                        "   ⏰ Reason: Outside start_ts/end_ts window in campaign timezone"
+                        "❌ [CAMPAIGN-QUALIFIER] ============================================"
                     )
                     continue
 
+                logger.info(
+                    "✅ [CAMPAIGN-QUALIFIER] Step 1 PASSED: Campaign is within start_ts/end_ts window"
+                )
+
                 # Check if campaign is qualified for current time and has valid configuration
-                if self._is_campaign_qualified_now(
-                    campaign_data, now_utc
-                ) and self._validate_flexible_scheduling(campaign_data):
+                logger.info(
+                    "🔍 [CAMPAIGN-QUALIFIER] Step 2: Checking operating hours and timezone qualification..."
+                )
+                is_time_qualified = self._is_campaign_qualified_now(campaign_data, now_utc)
+
+                logger.info(
+                    "🔍 [CAMPAIGN-QUALIFIER] Step 3: Validating flexible scheduling configuration..."
+                )
+                is_config_valid = self._validate_flexible_scheduling(campaign_data)
+
+                if is_time_qualified and is_config_valid:
                     # Handle auto contact preference conversion
                     contact_pref = campaign_data["contact_pref"]
                     if contact_pref == "auto":
@@ -138,7 +184,8 @@ class CampaignQualifier:
                     )
                     qualified_campaigns.append(qualified_campaign)
 
-                    logger.info(f"✅ [CAMPAIGN-QUALIFIER] Campaign QUALIFIED: {campaign_name}")
+                    logger.info(f"✅✅✅ [CAMPAIGN-QUALIFIER] Campaign QUALIFIED: {campaign_name}")
+                    logger.info("✅ [CAMPAIGN-QUALIFIER] All qualification checks passed")
                     logger.info(
                         f"   📋 Operating hours: {campaign_data['operating_start_time']} - {campaign_data['operating_end_time']}"
                     )
@@ -146,12 +193,26 @@ class CampaignQualifier:
                     logger.info(f"   🔄 Schedule: {campaign_data['scheduling_mode']}")
                     logger.info(f"   🌍 Timezone mode: {campaign_data['timezone_flag']}")
                     logger.info(f"   📦 Audience batch: {campaign_data['audience_file_batch']}")
+                    logger.info(f"   📞 Contact pref: {contact_pref}")
+                    logger.info(
+                        f"   🎯 Pathway ID: {bland_params.get('pathway_id') if bland_params else 'None'}"
+                    )
+                    logger.info(
+                        "✅ [CAMPAIGN-QUALIFIER] ============================================"
+                    )
                 else:
                     logger.info(f"❌ [CAMPAIGN-QUALIFIER] Campaign NOT qualified: {campaign_name}")
+                    if not is_time_qualified:
+                        logger.info("   ❌ Failed Step 2: Not within operating hours/timezone")
+                    if not is_config_valid:
+                        logger.info("   ❌ Failed Step 3: Invalid scheduling configuration")
                     logger.info(
                         f"   ⏰ Operating hours: {campaign_data['operating_start_time']} - {campaign_data['operating_end_time']}"
                     )
                     logger.info(f"   📅 Allowed days: {campaign_data['call_days_of_week']}")
+                    logger.info(
+                        "❌ [CAMPAIGN-QUALIFIER] ============================================"
+                    )
 
             logger.info(
                 f"📊 [CAMPAIGN-QUALIFIER] QUALIFICATION COMPLETE: {len(qualified_campaigns)} campaigns qualified out of {len(campaigns_data)} total"
@@ -295,7 +356,12 @@ class CampaignQualifier:
         campaign_name = campaign_data.get("name", "Unknown")
         scheduling_mode = campaign_data.get("scheduling_mode")
 
+        logger.info(f"   🔍 [CAMPAIGN-QUALIFIER] Checking scheduling mode: {scheduling_mode}")
+
         if scheduling_mode == "Flexible":
+            logger.info(
+                "   🔍 [CAMPAIGN-QUALIFIER] Flexible mode detected - validating frequency settings..."
+            )
             frequency_value = campaign_data.get("frequency_value")
             frequency_unit = campaign_data.get("frequency_unit")
 
@@ -321,7 +387,11 @@ class CampaignQualifier:
                 return False
 
             logger.info(
-                f"✅ [CAMPAIGN-QUALIFIER] Flexible scheduling validation passed: {frequency_value} per {frequency_unit}"
+                f"   ✅ [CAMPAIGN-QUALIFIER] Flexible scheduling validation passed: {frequency_value} per {frequency_unit}"
+            )
+        else:
+            logger.info(
+                f"   ✅ [CAMPAIGN-QUALIFIER] Scheduling mode '{scheduling_mode}' - no frequency validation needed"
             )
 
         return True
