@@ -90,7 +90,7 @@ class MemberEligibilityService:
         
         return eligible_members
     
-    def create_batches(self, members: List[EligibleMember], batch_size: int = 1000) -> List[List[EligibleMember]]:
+    def create_batches(self, members: List[EligibleMember], batch_size: int = 100) -> List[List[EligibleMember]]:
         """
         Split eligible members into batches for Bland AI submission
         """
@@ -117,7 +117,12 @@ class MemberEligibilityService:
             DECLARE @start_time TIME = %s;
             DECLARE @end_time TIME = %s;
             DECLARE @call_days NVARCHAR(255) = %s;
-            
+
+            -- UTC date range variables for "today" filtering (performance optimization)
+            DECLARE @CurrentUtcTimestamp DATETIMEOFFSET = SYSDATETIMEOFFSET();
+            DECLARE @TodayStartUtc DATETIMEOFFSET = CAST(CAST(@CurrentUtcTimestamp AS DATE) AS DATETIMEOFFSET);
+            DECLARE @TodayEndUtc DATETIMEOFFSET = DATEADD(DAY, 1, @TodayStartUtc);
+
             WITH LastSuccessfulAttempts AS (
                 -- Only count SUCCESSFUL attempts for frequency calculation
                 -- Failed and NoAnswer don't count toward frequency limits
@@ -125,9 +130,9 @@ class MemberEligibilityService:
                     mce.member_id,
                     MAX(oa.attempt_ts) as last_attempt_ts,
                     COUNT(*) as total_attempts,
-                    -- Check if successfully attempted today
+                    -- Check if successfully attempted today (range-based for consistency)
                     MAX(CASE
-                        WHEN CAST(oa.attempt_ts AS DATE) = CAST(SYSDATETIMEOFFSET() AS DATE)
+                        WHEN oa.attempt_ts >= @TodayStartUtc AND oa.attempt_ts < @TodayEndUtc
                         THEN 1 ELSE 0
                     END) as attempted_today
                 FROM engage360.member_campaign_enrollments_enhanced mce
@@ -156,7 +161,8 @@ class MemberEligibilityService:
                 INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
                 INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
                 WHERE ob.campaign_id = @campaign_id
-                  AND CAST(oa.attempt_ts AS DATE) = CAST(SYSDATETIMEOFFSET() AS DATE)
+                  AND oa.attempt_ts >= @TodayStartUtc  -- Range-based filtering (SARGable)
+                  AND oa.attempt_ts < @TodayEndUtc
                   AND oa.disposition IN ('Completed', 'Pending')  -- Exclude successful OR in-progress calls
             ),
             TimezoneEligible AS (

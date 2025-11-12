@@ -212,9 +212,9 @@ def _execute_partner_campaign_scheduler(request_id: str, start_time: datetime, t
             total_members_found += len(eligible_members)
             
             # Step 3.x.2: Create and process batches
-            logging.info(f"📦 [PARTNER-SCHEDULER] Step 3.{campaign_num}.2: Creating batches (max 1000 per batch)...")
+            logging.info(f"📦 [PARTNER-SCHEDULER] Step 3.{campaign_num}.2: Creating batches (max 100 per batch)...")
             logging.info(f"📦 [PARTNER-SCHEDULER] Step 3.{campaign_num}.2: Calling member_service.create_batches()...")
-            batches = member_service.create_batches(eligible_members, batch_size=1000)
+            batches = member_service.create_batches(eligible_members, batch_size=100)
             logging.info(f"📊 [PARTNER-SCHEDULER] Step 3.{campaign_num}.2: Created {len(batches)} batches")
             
             # Step 3.x.3: Process each batch

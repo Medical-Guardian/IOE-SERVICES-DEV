@@ -1168,7 +1168,7 @@ flowchart TD
 5. **Device Validation**: For device preference, device must be callable
 
 #### **Batch Management Rules**
-1. **Batch Size**: Maximum 1000 members per batch
+1. **Batch Size**: Partner campaigns: 100 members per batch; DTC campaigns: Maximum 1000 members per batch
 2. **API Limits**: Respects Bland AI API rate limits
 3. **Error Handling**: Handles batch submission failures gracefully
 4. **Status Tracking**: Comprehensive tracking of batch status and results

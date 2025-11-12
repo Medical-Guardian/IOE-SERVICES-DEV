@@ -80,7 +80,7 @@ CREATE INDEX IX_member_devices_member_callable ON engage360.member_devices(...);
   3. Batch submission tracking (via outreach_batches table)
 
 ### **5. Batch Management:**
-- ✅ 1000 members per batch (configurable)
+- ✅ 100 members per batch (configurable)
 - ✅ Batch tracking in outreach_batches table
 - ✅ Individual attempt tracking in outreach_attempts table
 - ✅ Comprehensive logging and monitoring
@@ -174,7 +174,7 @@ WHERE name = 'Flu Outreach Q4-2025';
 
 ### **Performance Metrics:**
 - **Execution frequency:** Every 30 minutes
-- **Batch size:** Up to 1000 members per campaign
+- **Batch size:** Up to 100 members per batch
 - **Processing time:** Expected < 2 minutes per execution
 - **Database operations:** ~5-10 queries per campaign
 

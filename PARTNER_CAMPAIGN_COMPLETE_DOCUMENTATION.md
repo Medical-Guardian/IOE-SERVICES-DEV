@@ -294,13 +294,30 @@ After retrieving campaigns, Python code checks:
 
 ### Query 2: Member Eligibility Query (COMPLETE WITH ALL CTEs)
 
-**File**: `af_code/partner_campaign_scheduler/services/member_eligibility.py:40-244`
+**File**: `af_code/partner_campaign_scheduler/services/member_eligibility.py:105-350`
 
 **Purpose**: Find up to 1000 eligible members for a campaign, prioritizing members who have never been attempted and applying frequency protection.
 
 ```sql
--- CTE 1: Get frequency from campaign configuration
-WITH FrequencyConfig AS (
+-- Variable Declarations
+DECLARE @campaign_id UNIQUEIDENTIFIER = %s;
+DECLARE @frequency_unit VARCHAR(10) = %s;
+DECLARE @frequency_value INT = %s;
+DECLARE @timezone_flag VARCHAR(20) = %s;
+DECLARE @operating_tz VARCHAR(50) = %s;
+DECLARE @contact_pref VARCHAR(50) = %s;
+DECLARE @audience_batch VARCHAR(255) = %s;
+DECLARE @start_time TIME = %s;
+DECLARE @end_time TIME = %s;
+DECLARE @call_days NVARCHAR(255) = %s;
+
+-- UTC date range variables for "today" filtering (performance optimization)
+DECLARE @CurrentUtcTimestamp DATETIMEOFFSET = SYSDATETIMEOFFSET();
+DECLARE @TodayStartUtc DATETIMEOFFSET = CAST(CAST(@CurrentUtcTimestamp AS DATE) AS DATETIMEOFFSET);
+DECLARE @TodayEndUtc DATETIMEOFFSET = DATEADD(DAY, 1, @TodayStartUtc);
+
+-- CTE 1: Track successful attempts and check for same-day attempts
+WITH LastSuccessfulAttempts AS (
     SELECT
         frequency_value,
         frequency_unit
@@ -342,7 +359,8 @@ TodayActiveAttempts AS (
     INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
     INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
     WHERE ob.campaign_id = @campaign_id
-      AND CAST(oa.attempt_ts AS DATE) = CAST(SYSDATETIMEOFFSET() AS DATE)
+      AND oa.attempt_ts >= @TodayStartUtc  -- Range-based filtering (SARGable, better performance)
+      AND oa.attempt_ts < @TodayEndUtc
       AND oa.disposition IN ('Completed', 'Pending')  -- Exclude successful OR in-progress calls
 ),
 
@@ -1207,7 +1225,7 @@ class MemberEligibility:
             timezone_filter: Optional timezone to filter members (for member_tz mode)
 
         Returns:
-            List of EligibleMember objects (max 1000)
+            List of EligibleMember objects (batches of 100)
         """
         # 1. Build parameters for SQL query
         # 2. Execute member eligibility query (shown in SQL Queries section)

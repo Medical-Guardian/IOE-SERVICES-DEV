@@ -127,9 +127,9 @@ LEFT JOIN engage360.orgs o ON c.org_id = o.org_id
 | `campaign_id` | UNIQUEIDENTIFIER | FK to campaigns | Campaign ID | Links batch to campaign |
 | `vendor_batch_id` | NVARCHAR(255) | Bland AI batch ID | `batch_abc123` | Returned from Bland AI API |
 | `batch_status` | NVARCHAR(50) | Current status | `Submitted`, `Pending`, `Completed`, `Failed` | Updated by reconciler |
-| `total_calls_intended` | INT | Members in batch | `1000`, `250` | Set at submission |
-| `total_calls_completed` | INT | Completed calls | `950` | Updated by reconciler |
-| `total_calls_failed` | INT | Failed calls | `50` | Updated by reconciler |
+| `total_calls_intended` | INT | Members in batch | `100`, `50` | Set at submission (max 100) |
+| `total_calls_completed` | INT | Completed calls | `95` | Updated by reconciler |
+| `total_calls_failed` | INT | Failed calls | `5` | Updated by reconciler |
 | `submitted_ts` | DATETIMEOFFSET | Submission time | Current timestamp | When batch was sent |
 | `last_status_check_ts` | DATETIMEOFFSET | Last reconciliation | Last check time | Updated by reconciler |
 | `status_reason` | NVARCHAR(MAX) | Status details | Error messages | For debugging |
