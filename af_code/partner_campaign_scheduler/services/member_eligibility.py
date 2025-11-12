@@ -76,6 +76,20 @@ class MemberEligibilityService:
                 address_zip=member_data.get('address_zip'),
                 dob=member_data.get('dob')
             )
+
+            # Log detailed member qualification data
+            logger.info(f"✅ [MEMBER-ELIGIBILITY] Member qualified: {member_data['member_id']}")
+            logger.info(f"   👤 Name: {member_data['first_name']} {member_data['last_name']}")
+            logger.info(f"   🌍 Timezone: {member_timezone} (campaign mode: {campaign.timezone_flag})")
+            logger.info(f"   ⏰ Current time: {member_data.get('member_current_time')} (SQL-calculated)")
+            logger.info(f"   📅 Current day: {member_data.get('member_current_day')} (SQL-calculated)")
+            logger.info(f"   ⏳ Time window: {member_data.get('preferred_window')}")
+            logger.info(f"   📞 Contact method: {contact_method} (campaign requires: {campaign.contact_pref})")
+            logger.info(f"   📱 Primary phone: {member_data.get('primary_phone')}, Device: {member_data.get('device_phone_number')} (callable: {member_data.get('is_device_callable')})")
+            logger.info(f"   🔁 Frequency: Last attempt {member_data.get('last_attempt_ts') or 'Never'}, Total: {member_data.get('total_attempts', 0)}, Limit: {campaign.frequency_value} {campaign.frequency_unit}")
+            logger.info(f"   🩺 Care gaps: {member_data.get('member_care_gap_parameters') or 'None'}")
+            logger.info(f"   ✅ Passed SQL filters: FrequencyCheck, No TodayActiveAttempts, TimezoneEligible, TimeWindow, DayOfWeek")
+
             eligible_members.append(eligible_member)
         
         # Log comprehensive statistics
