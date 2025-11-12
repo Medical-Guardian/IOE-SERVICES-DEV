@@ -36,9 +36,9 @@ VALUES (%s, %s, 'Pending', %s, SYSDATETIMEOFFSET())
 
 # CORRECTED: Replaced '?' with '%s'
 CREATE_ATTEMPT_QUERY = """
-INSERT INTO engage360.outreach_attempts 
+INSERT INTO engage360.outreach_attempts
 (attempt_id, enrollment_id, channel, attempt_ts, disposition, retry_seq, batch_id)
-VALUES (%s, %s, 'Voice', SYSDATETIMEOFFSET(), 'Pending', 0, %s)
+VALUES (%s, %s, 'Voice', SYSUTCDATETIME(), 'Pending', 0, %s)
 """
 
 # --- CHANGE: Added a JOIN to get call_type_code and ensured all member fields are selected ---

@@ -504,7 +504,7 @@ class BatchOrchestrator:
             # Store mapping for metadata inclusion
             attempt_id_map[enrollment_id] = attempt_id
 
-            values_list.append("(%s, %s, 'Voice', SYSDATETIMEOFFSET(), 'Pending', 0, %s)")
+            values_list.append("(%s, %s, 'Voice', SYSUTCDATETIME(), 'Pending', 0, %s)")
             params.extend(
                 [
                     attempt_id,

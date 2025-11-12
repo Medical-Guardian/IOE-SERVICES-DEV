@@ -85,7 +85,7 @@ class StatusTracker:
         for member in members:
             # Only create records for members who were actually submitted (have valid phone numbers)
             if member.member_id in (batch_result.submitted_members or []):
-                values_list.append("(NEWID(), %s, %s, %s, %s, SYSDATETIMEOFFSET(), %s, %s)")
+                values_list.append("(NEWID(), %s, %s, %s, %s, SYSUTCDATETIME(), %s, %s)")
                 params.extend([
                     member.enrollment_id,     # Use enrollment_id FK (existing table structure)
                     batch_id,                 # FK to outreach_batches
