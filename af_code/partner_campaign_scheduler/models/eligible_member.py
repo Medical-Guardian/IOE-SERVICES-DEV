@@ -2,9 +2,11 @@ from dataclasses import dataclass
 from typing import Optional
 from datetime import datetime, time, date
 
+
 @dataclass
 class EligibleMember:
     """Model representing a member eligible for campaign outreach"""
+
     member_id: str
     campaign_id: str
     enrollment_id: str  # Added for FK to outreach_attempts
@@ -12,7 +14,7 @@ class EligibleMember:
     last_name: str
     primary_phone: Optional[str]
     device_phone_number: Optional[str]  # From member_devices table
-    contact_pref: Optional[str]  # Use existing members.contact_pref
+    channel: Optional[str]  # Use existing members.Channel field
     is_device_callable: Optional[bool]  # From member_devices
     timezone: str
     preferred_window: Optional[str]

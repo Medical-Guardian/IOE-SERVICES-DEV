@@ -4,6 +4,7 @@ from ...bland_ai_webhook.services.database_service import DatabaseService
 
 logger = logging.getLogger(__name__)
 
+
 class CareGapMapper:
     """
     Service to map care gap import flags to completion flag names
@@ -38,12 +39,16 @@ class CareGapMapper:
 
             # Build mapping dictionary
             for row in results:
-                csv_flag = row['csv_import_flag_name']
-                completion_flag = row['completion_flag_name']
+                csv_flag = row["csv_import_flag_name"]
+                completion_flag = row["completion_flag_name"]
                 self.care_gap_mapping[csv_flag] = completion_flag
 
-            logger.info(f"✅ [CARE-GAP-MAPPER] Loaded {len(self.care_gap_mapping)} care gap mappings")
-            logger.info(f"📊 [CARE-GAP-MAPPER] Available mappings: {list(self.care_gap_mapping.keys())}")
+            logger.info(
+                f"✅ [CARE-GAP-MAPPER] Loaded {len(self.care_gap_mapping)} care gap mappings"
+            )
+            logger.info(
+                f"📊 [CARE-GAP-MAPPER] Available mappings: {list(self.care_gap_mapping.keys())}"
+            )
 
             # Log first few mappings as examples
             if self.care_gap_mapping:
@@ -54,6 +59,7 @@ class CareGapMapper:
         except Exception as e:
             logger.error(f"🚨 [CARE-GAP-MAPPER] Failed to load care gap mappings: {str(e)}")
             import traceback
+
             logger.error(f"🚨 [CARE-GAP-MAPPER] Traceback: {traceback.format_exc()}")
             # Initialize empty mapping to prevent crashes
             self.care_gap_mapping = {}

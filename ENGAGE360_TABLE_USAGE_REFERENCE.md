@@ -40,7 +40,7 @@
 **Where used:** Member Eligibility Service (member_eligibility.py), DTC Logic (af_partner_logic.py), Batch Orchestrator
 **Files:** 8 Python files, 5 Markdown files
 **Operations:** SELECT (eligibility checks), INSERT/MERGE (CSV uploads)
-**Key columns:** member_id, org_id, salesforce_account_number, first_name, last_name, primary_phone, timezone, contact_pref, language_pref, dob, gender, address_street, address_city, address_state, address_zip, 30+ care_gap_import_flags
+**Key columns:** member_id, org_id, salesforce_account_number, first_name, last_name, primary_phone, timezone, Channel, language_pref, dob, gender, address_street, address_city, address_state, address_zip, 30+ care_gap_import_flags
 
 ---
 

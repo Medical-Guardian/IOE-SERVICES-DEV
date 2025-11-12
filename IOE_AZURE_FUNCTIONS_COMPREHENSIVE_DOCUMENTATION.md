@@ -221,7 +221,7 @@ CREATE TABLE engage360.campaigns_enhanced (
 CREATE TABLE engage360.members (
     member_id UNIQUEIDENTIFIER PRIMARY KEY,
     primary_phone NVARCHAR(20),
-    contact_pref NVARCHAR(50) CHECK (contact_pref IN ('phone', 'device', 'member_preference')),
+    Channel NVARCHAR(50) CHECK (Channel IN ('phone', 'device')),
     timezone NVARCHAR(50),
     preferred_window NVARCHAR(50),  -- 'Morning', 'Afternoon', 'Evening'
     -- Additional member fields...
@@ -1111,7 +1111,7 @@ class EligibleMember:
     member_id: str
     enrollment_id: str
     phone_number: str
-    contact_preference: str  # 'phone', 'device', 'member_preference'
+    channel: str  # 'phone', 'device'
     timezone: str
     preferred_window: str
     device_phone: Optional[str] = None

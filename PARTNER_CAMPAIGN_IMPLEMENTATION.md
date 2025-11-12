@@ -41,7 +41,7 @@ CREATE INDEX IX_member_devices_member_callable ON engage360.member_devices(...);
 
 ### **Existing Tables Used:**
 - ✅ `engage360.campaigns_enhanced` (with new audience_file_batch column)
-- ✅ `engage360.members` (using existing contact_pref, timezone, primary_phone)
+- ✅ `engage360.members` (using existing Channel, timezone, primary_phone)
 - ✅ `engage360.member_devices` (using device_phone_number, is_device_callable)
 - ✅ `engage360.member_campaign_enrollments_enhanced` (using enrollment_id FK)
 - ✅ `engage360.outreach_batches` (for batch tracking)
@@ -71,7 +71,7 @@ CREATE INDEX IX_member_devices_member_callable ON engage360.member_devices(...);
 - ✅ `phone` → uses members.primary_phone
 - ✅ `device` → uses member_devices.device_phone_number (if is_device_callable = 1)
 - ✅ `auto` → converts to member_preference automatically
-- ✅ `member_preference` → uses member's contact_pref field with fallback
+- ✅ `member_preference` → uses member's Channel field with fallback
 
 ### **4. Duplicate Prevention:**
 - ✅ Triple protection against duplicate calls:

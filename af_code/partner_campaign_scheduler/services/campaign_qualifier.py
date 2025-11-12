@@ -86,7 +86,9 @@ class CampaignQualifier:
                 # Check timezone-aware start/end times
                 if not self._is_campaign_time_valid(campaign_data, now_utc):
                     logger.info(f"❌ [CAMPAIGN-QUALIFIER] Campaign NOT qualified: {campaign_name}")
-                    logger.info(f"   ⏰ Reason: Outside start_ts/end_ts window in campaign timezone")
+                    logger.info(
+                        "   ⏰ Reason: Outside start_ts/end_ts window in campaign timezone"
+                    )
                     continue
 
                 # Check if campaign is qualified for current time and has valid configuration
@@ -343,7 +345,7 @@ class CampaignQualifier:
         """
         campaign_name = campaign_data.get("name", "Unknown")
         start_ts = campaign_data.get("start_ts")  # From database (UTC)
-        end_ts = campaign_data.get("end_ts")      # From database (UTC)
+        end_ts = campaign_data.get("end_ts")  # From database (UTC)
         operating_tz_str = campaign_data.get("operating_tz", "EST")
 
         # Convert operating_tz to pytz object
@@ -356,54 +358,76 @@ class CampaignQualifier:
         logger.info(f"🕐 [CAMPAIGN-QUALIFIER] ⏰ TIME COMPARISON for '{campaign_name}'")
         logger.info(f"   📍 Campaign timezone: {operating_tz_str}")
         logger.info(f"   🌍 Current time (UTC): {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-        logger.info(f"   🌍 Current time ({operating_tz_str}): {now_in_campaign_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+        logger.info(
+            f"   🌍 Current time ({operating_tz_str}): {now_in_campaign_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+        )
 
         # LOG 2: Database start_ts (if exists)
         if start_ts is not None:
             start_ts_in_campaign_tz = start_ts.astimezone(campaign_tz)
 
-            logger.info(f"   📅 start_ts (UTC from DB): {start_ts.strftime('%Y-%m-%d %H:%M:%S %z')}")
-            logger.info(f"   📅 start_ts ({operating_tz_str}): {start_ts_in_campaign_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            logger.info(
+                f"   📅 start_ts (UTC from DB): {start_ts.strftime('%Y-%m-%d %H:%M:%S %z')}"
+            )
+            logger.info(
+                f"   📅 start_ts ({operating_tz_str}): {start_ts_in_campaign_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            )
 
             # Check if campaign has started (compare dates only, ignore time)
             if now_in_campaign_tz.date() < start_ts_in_campaign_tz.date():
-                logger.info(f"   ❌ COMPARISON: Current date < start_ts date")
-                logger.info(f"      {now_in_campaign_tz.strftime('%Y-%m-%d')} < {start_ts_in_campaign_tz.strftime('%Y-%m-%d')} ({operating_tz_str})")
-                logger.warning(f"❌ [CAMPAIGN-QUALIFIER] Campaign '{campaign_name}' has NOT started yet")
+                logger.info("   ❌ COMPARISON: Current date < start_ts date")
+                logger.info(
+                    f"      {now_in_campaign_tz.strftime('%Y-%m-%d')} < {start_ts_in_campaign_tz.strftime('%Y-%m-%d')} ({operating_tz_str})"
+                )
+                logger.warning(
+                    f"❌ [CAMPAIGN-QUALIFIER] Campaign '{campaign_name}' has NOT started yet"
+                )
                 return False
             else:
-                logger.info(f"   ✅ COMPARISON: Current date >= start_ts date")
-                logger.info(f"      {now_in_campaign_tz.strftime('%Y-%m-%d')} >= {start_ts_in_campaign_tz.strftime('%Y-%m-%d')} ({operating_tz_str})")
+                logger.info("   ✅ COMPARISON: Current date >= start_ts date")
+                logger.info(
+                    f"      {now_in_campaign_tz.strftime('%Y-%m-%d')} >= {start_ts_in_campaign_tz.strftime('%Y-%m-%d')} ({operating_tz_str})"
+                )
         else:
-            logger.info(f"   ℹ️  start_ts: NULL (no start restriction)")
+            logger.info("   ℹ️  start_ts: NULL (no start restriction)")
 
         # LOG 3: Database end_ts (if exists)
         if end_ts is not None:
             end_ts_in_campaign_tz = end_ts.astimezone(campaign_tz)
 
             logger.info(f"   📅 end_ts (UTC from DB): {end_ts.strftime('%Y-%m-%d %H:%M:%S %z')}")
-            logger.info(f"   📅 end_ts ({operating_tz_str}): {end_ts_in_campaign_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            logger.info(
+                f"   📅 end_ts ({operating_tz_str}): {end_ts_in_campaign_tz.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            )
 
             # Check if campaign has ended (compare dates only, ignore time)
             if now_in_campaign_tz.date() > end_ts_in_campaign_tz.date():
-                logger.info(f"   ❌ COMPARISON: Current date > end_ts date")
-                logger.info(f"      {now_in_campaign_tz.strftime('%Y-%m-%d')} > {end_ts_in_campaign_tz.strftime('%Y-%m-%d')} ({operating_tz_str})")
+                logger.info("   ❌ COMPARISON: Current date > end_ts date")
+                logger.info(
+                    f"      {now_in_campaign_tz.strftime('%Y-%m-%d')} > {end_ts_in_campaign_tz.strftime('%Y-%m-%d')} ({operating_tz_str})"
+                )
                 logger.warning(f"❌ [CAMPAIGN-QUALIFIER] Campaign '{campaign_name}' has ENDED")
                 return False
             else:
-                logger.info(f"   ✅ COMPARISON: Current date <= end_ts date")
-                logger.info(f"      {now_in_campaign_tz.strftime('%Y-%m-%d')} <= {end_ts_in_campaign_tz.strftime('%Y-%m-%d')} ({operating_tz_str})")
+                logger.info("   ✅ COMPARISON: Current date <= end_ts date")
+                logger.info(
+                    f"      {now_in_campaign_tz.strftime('%Y-%m-%d')} <= {end_ts_in_campaign_tz.strftime('%Y-%m-%d')} ({operating_tz_str})"
+                )
         else:
-            logger.info(f"   ℹ️  end_ts: NULL (no end restriction)")
+            logger.info("   ℹ️  end_ts: NULL (no end restriction)")
 
         # LOG 4: Final result summary
         logger.info(f"✅ [CAMPAIGN-QUALIFIER] Campaign '{campaign_name}' is WITHIN time window")
         if start_ts or end_ts:
             logger.info(f"   📊 Active window ({operating_tz_str}):")
             if start_ts:
-                logger.info(f"      Start: {start_ts.astimezone(campaign_tz).strftime('%Y-%m-%d %H:%M %Z')}")
+                logger.info(
+                    f"      Start: {start_ts.astimezone(campaign_tz).strftime('%Y-%m-%d %H:%M %Z')}"
+                )
             if end_ts:
-                logger.info(f"      End: {end_ts.astimezone(campaign_tz).strftime('%Y-%m-%d %H:%M %Z')}")
+                logger.info(
+                    f"      End: {end_ts.astimezone(campaign_tz).strftime('%Y-%m-%d %H:%M %Z')}"
+                )
 
         return True
 

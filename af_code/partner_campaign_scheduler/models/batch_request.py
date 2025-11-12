@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from typing import List, Dict, Any, Optional
 
+
 @dataclass
 class BatchRequest:
     """Model for Bland AI batch call request with all global parameters (matching DTC implementation)"""
+
     campaign_id: str
     calls: List[Dict[str, Any]]
 
@@ -15,9 +17,11 @@ class BatchRequest:
     # Store complete JSON for flexible parameter passing
     bland_parameters_global: Optional[Dict[str, Any]] = None
 
-@dataclass  
+
+@dataclass
 class BatchResult:
     """Model for batch submission result"""
+
     success: bool
     members_count: int
     campaign_id: str

@@ -598,7 +598,7 @@ class BatchOrchestrator:
         """
         logger.debug(f"📞 [BATCH-ORCHESTRATOR] Determining phone for member {member.member_id}")
         logger.debug(f"📞 [BATCH-ORCHESTRATOR] Campaign contact_pref: {contact_pref}")
-        logger.debug(f"📞 [BATCH-ORCHESTRATOR] Member contact_pref: {member.contact_pref}")
+        logger.debug(f"📞 [BATCH-ORCHESTRATOR] Member channel: {member.channel}")
         logger.debug(f"📞 [BATCH-ORCHESTRATOR] Device callable: {member.is_device_callable}")
 
         # Handle auto -> member_preference conversion
@@ -623,14 +623,14 @@ class BatchOrchestrator:
                 return None
 
         elif contact_pref == "member_preference":
-            # Use member's existing contact_pref field
-            if member.contact_pref == "phone" and member.primary_phone:
+            # Use member's existing Channel field
+            if member.channel == "phone" and member.primary_phone:
                 target_phone = member.primary_phone
                 logger.debug(f"📞 [BATCH-ORCHESTRATOR] Member prefers phone, using: {target_phone}")
                 return target_phone
 
             elif (
-                member.contact_pref == "device"
+                member.channel == "device"
                 and member.device_phone_number
                 and member.is_device_callable
             ):

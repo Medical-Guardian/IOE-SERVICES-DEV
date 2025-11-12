@@ -1,9 +1,11 @@
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
+
 @dataclass
 class QualifiedCampaign:
     """Model representing a Partner campaign that qualifies for current execution"""
+
     campaign_id: str
     org_id: str
     name: str
