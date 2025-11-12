@@ -104,7 +104,7 @@ class MemberEligibilityService:
         
         return eligible_members
     
-    def create_batches(self, members: List[EligibleMember], batch_size: int = 100) -> List[List[EligibleMember]]:
+    def create_batches(self, members: List[EligibleMember], batch_size: int = 150) -> List[List[EligibleMember]]:
         """
         Split eligible members into batches for Bland AI submission
         """
