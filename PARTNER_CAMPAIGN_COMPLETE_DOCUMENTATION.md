@@ -182,10 +182,10 @@ IOE-functions/
 | `call_details` | nvarchar(MAX) | JSON with phone, care gaps, metadata |
 
 **Disposition Logic**:
-- **Pending**: Call in progress, wait for completion (exclude from eligibility)
-- **Completed**: Successful call (exclude from eligibility, counts toward frequency)
-- **Failed**: Failed call (allow retry per policy)
-- **NoAnswer**: No answer (allow retry per policy)
+- **Pending**: Call in progress, wait for completion (blocks same-day retry)
+- **Completed**: Successful call (blocks same-day retry, counts toward frequency)
+- **Failed**: Failed call (blocks same-day retry, can retry next day)
+- **NoAnswer**: No answer (blocks same-day retry, can retry next day)
 
 #### 6. `engage360.members`
 **Purpose**: Member demographic and contact information
@@ -349,11 +349,11 @@ FrequencyCheck AS (
     GROUP BY mce.member_id
 ),
 
--- CTE 3: Check if member has an ACTIVE attempt today (Completed or Pending)
+-- CTE 3: Check if member has ANY attempt today (one attempt per day policy)
 TodayActiveAttempts AS (
-    -- Check if THIS MEMBER has an active attempt today (member-wise, not batch-wise)
-    -- Exclude: 'Completed' (successful) and 'Pending' (in progress)
-    -- Allow retry: 'Failed' and 'NoAnswer' per policy
+    -- Check if THIS MEMBER has ANY attempt today (member-wise, not batch-wise)
+    -- Block all dispositions from same-day retry per policy update
+    -- One attempt per member per day regardless of outcome
     SELECT DISTINCT mce.member_id
     FROM engage360.member_campaign_enrollments_enhanced mce
     INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
@@ -361,7 +361,7 @@ TodayActiveAttempts AS (
     WHERE ob.campaign_id = @campaign_id
       AND oa.attempt_ts >= @TodayStartUtc  -- Range-based filtering (SARGable, better performance)
       AND oa.attempt_ts < @TodayEndUtc
-      AND oa.disposition IN ('Completed', 'Pending')  -- Exclude successful OR in-progress calls
+      AND oa.disposition IN ('Completed', 'Pending', 'Failed', 'NoAnswer')  -- Block all attempt types from same-day retry
 ),
 
 -- CTE 4: Use ROW_NUMBER to deduplicate members (instead of SELECT DISTINCT)
@@ -464,8 +464,7 @@ ORDER BY
 1. ✅ **Active enrollment**: `mce.current_status = 'Active'`
 2. ✅ **Correct audience**: `m.file_batch = @audience_file_batch`
 3. ✅ **Frequency protection**: No completed attempts in last N days/weeks/months
-4. ✅ **No active attempt today**: No 'Completed' or 'Pending' attempts today
-5. ✅ **Failed/NoAnswer can retry**: These dispositions don't block eligibility
+4. ✅ **One attempt per day**: No attempts today regardless of disposition (Completed, Pending, Failed, NoAnswer all block same-day retry)
 
 **Deduplication Strategy**:
 - Uses `ROW_NUMBER() OVER (PARTITION BY mce.member_id)` instead of `SELECT DISTINCT`

@@ -269,13 +269,19 @@ The call scheduling engine has been updated with simplified member qualification
 **Previous Logic**: Members could receive up to 5 failed call attempts per day
 **New Logic**: **One call attempt per member per day** regardless of outcome
 
-**Qualification Criteria**:
+**Qualification Criteria (DTC Campaigns)**:
 - ✅ Campaign status = 'Active'
 - ✅ Member enrollment status = 'PENDING'
 - ✅ Valid timezone and preferred window
 - ✅ Current time within member's preferred window
 - ✅ Today is a valid call day for the member
 - ❌ **NO attempt made today** (any previous attempt blocks qualification)
+
+**Partner Campaign Same-Day Retry Policy**:
+Partner campaigns enforce the same "one attempt per day" policy:
+- ❌ **Blocks ALL dispositions** from same-day retry: Completed, Pending, Failed, NoAnswer
+- ✅ Members can be retried **next day** (or after frequency window for Completed)
+- This reduces member call fatigue and improves experience
 
 **Benefits**:
 - **Improved member experience** - No repeated calls on same day
