@@ -11,6 +11,7 @@ from ...shared.bland_ai_client import BlandAIClient
 from ...bland_ai_webhook.services.config_manager import ConfigManager
 from ...bland_ai_webhook.services.database_service import DatabaseService
 from ...shared.timezone_utils import TimezoneConverter
+from ...shared.phone_utils import standardize_phone
 from .care_gap_mapper import CareGapMapper
 
 logger = logging.getLogger(__name__)
@@ -594,7 +595,13 @@ class BatchOrchestrator:
 
     def _get_target_phone(self, member: EligibleMember, contact_pref: str) -> str:
         """
-        Enhanced contact preference logic supporting member_preference
+        Enhanced contact preference logic supporting member_preference with E.164 validation.
+
+        All phone numbers (primary_phone and device_phone_number) are validated
+        and standardized to E.164 format before returning.
+
+        Returns:
+            Validated E.164 phone number or None if invalid/unavailable
         """
         logger.debug(f"📞 [BATCH-ORCHESTRATOR] Determining phone for member {member.member_id}")
         logger.debug(f"📞 [BATCH-ORCHESTRATOR] Campaign contact_pref: {contact_pref}")
@@ -607,17 +614,34 @@ class BatchOrchestrator:
             logger.debug("📞 [BATCH-ORCHESTRATOR] Converted 'auto' to 'member_preference'")
 
         if contact_pref == "phone":
-            target_phone = member.primary_phone
-            if target_phone:
-                logger.debug(f"📞 [BATCH-ORCHESTRATOR] Using primary phone: {target_phone}")
-            return target_phone
+            if member.primary_phone:
+                validated_phone = standardize_phone(member.primary_phone)
+                if validated_phone:
+                    logger.debug(
+                        f"📞 [BATCH-ORCHESTRATOR] Using validated primary phone: {validated_phone}"
+                    )
+                    return validated_phone
+                else:
+                    logger.warning(
+                        f"⚠️ [BATCH-ORCHESTRATOR] Invalid primary phone format for member {member.member_id}: {member.primary_phone}"
+                    )
+                    return None
+            return None
 
         elif contact_pref == "device":
             # Use device only if callable
             if member.device_phone_number and member.is_device_callable:
-                target_phone = member.device_phone_number
-                logger.debug(f"📞 [BATCH-ORCHESTRATOR] Using device number: {target_phone}")
-                return target_phone
+                validated_phone = standardize_phone(member.device_phone_number)
+                if validated_phone:
+                    logger.debug(
+                        f"📞 [BATCH-ORCHESTRATOR] Using validated device number: {validated_phone}"
+                    )
+                    return validated_phone
+                else:
+                    logger.warning(
+                        f"⚠️ [BATCH-ORCHESTRATOR] Invalid device phone format for member {member.member_id}: {member.device_phone_number}"
+                    )
+                    return None
             else:
                 logger.debug("📞 [BATCH-ORCHESTRATOR] Device not callable or missing number")
                 return None
@@ -625,36 +649,60 @@ class BatchOrchestrator:
         elif contact_pref == "member_preference":
             # Use member's existing Channel field
             if member.channel == "phone" and member.primary_phone:
-                target_phone = member.primary_phone
-                logger.debug(f"📞 [BATCH-ORCHESTRATOR] Member prefers phone, using: {target_phone}")
-                return target_phone
+                validated_phone = standardize_phone(member.primary_phone)
+                if validated_phone:
+                    logger.debug(
+                        f"📞 [BATCH-ORCHESTRATOR] Member prefers phone, using validated: {validated_phone}"
+                    )
+                    return validated_phone
+                else:
+                    logger.warning(
+                        f"⚠️ [BATCH-ORCHESTRATOR] Invalid primary phone format for member {member.member_id}: {member.primary_phone}"
+                    )
 
             elif (
                 member.channel == "device"
                 and member.device_phone_number
                 and member.is_device_callable
             ):
-                target_phone = member.device_phone_number
-                logger.debug(
-                    f"📞 [BATCH-ORCHESTRATOR] Member prefers device, using: {target_phone}"
-                )
-                return target_phone
-
-            else:
-                # Fallback to available number (phone first, then device if callable)
-                if member.primary_phone:
-                    target_phone = member.primary_phone
+                validated_phone = standardize_phone(member.device_phone_number)
+                if validated_phone:
                     logger.debug(
-                        f"📞 [BATCH-ORCHESTRATOR] Fallback to primary phone: {target_phone}"
+                        f"📞 [BATCH-ORCHESTRATOR] Member prefers device, using validated: {validated_phone}"
                     )
-                    return target_phone
-                elif member.device_phone_number and member.is_device_callable:
-                    target_phone = member.device_phone_number
-                    logger.debug(f"📞 [BATCH-ORCHESTRATOR] Fallback to device: {target_phone}")
-                    return target_phone
+                    return validated_phone
                 else:
-                    logger.debug("📞 [BATCH-ORCHESTRATOR] No fallback options available")
-                    return None
+                    logger.warning(
+                        f"⚠️ [BATCH-ORCHESTRATOR] Invalid device phone format for member {member.member_id}: {member.device_phone_number}"
+                    )
+
+            # Fallback to available number (phone first, then device if callable)
+            if member.primary_phone:
+                validated_phone = standardize_phone(member.primary_phone)
+                if validated_phone:
+                    logger.debug(
+                        f"📞 [BATCH-ORCHESTRATOR] Fallback to validated primary phone: {validated_phone}"
+                    )
+                    return validated_phone
+                else:
+                    logger.warning(
+                        f"⚠️ [BATCH-ORCHESTRATOR] Invalid primary phone format for member {member.member_id}: {member.primary_phone}"
+                    )
+
+            if member.device_phone_number and member.is_device_callable:
+                validated_phone = standardize_phone(member.device_phone_number)
+                if validated_phone:
+                    logger.debug(
+                        f"📞 [BATCH-ORCHESTRATOR] Fallback to validated device: {validated_phone}"
+                    )
+                    return validated_phone
+                else:
+                    logger.warning(
+                        f"⚠️ [BATCH-ORCHESTRATOR] Invalid device phone format for member {member.member_id}: {member.device_phone_number}"
+                    )
+
+            logger.debug("📞 [BATCH-ORCHESTRATOR] No valid fallback options available")
+            return None
 
         logger.warning(
             f"⚠️ [BATCH-ORCHESTRATOR] No valid phone found for member: {member.member_id}"

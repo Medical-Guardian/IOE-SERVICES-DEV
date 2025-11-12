@@ -997,6 +997,201 @@ if response.status_code == 200:
 
 ---
 
+## Phone Number Validation
+
+### Overview
+
+All phone numbers (both `primary_phone` and `device_phone_number`) are validated and standardized to E.164 format before submission to Bland AI. This ensures consistent formatting and prevents call failures due to invalid phone numbers.
+
+**File**: `af_code/shared/phone_utils.py`
+
+### E.164 Format
+
+E.164 is the international telephone numbering plan that ensures phone numbers are globally unique.
+
+**Format**: `+[country code][subscriber number]`
+
+**Examples**:
+- US 10-digit: `5551234567` → `+15551234567`
+- US 11-digit: `15551234567` → `+15551234567`
+- Already formatted: `+15551234567` → `+15551234567`
+- International: `442012345678` → `+442012345678`
+
+### Validation Rules
+
+The `standardize_phone()` function enforces these rules:
+
+1. **E.164 format**: Requires `+` prefix followed by 11-15 digits
+2. **US 10-digit numbers**: Area code cannot start with 0 or 1, automatically adds `+1` prefix
+3. **US 11-digit numbers**: Must start with `1`, followed by valid area code (2-9), adds `+` prefix
+4. **International numbers**: 11-15 digits without `+` prefix, adds `+` prefix
+5. **Rejects**: Empty strings, non-numeric input after cleaning, invalid lengths
+
+### Implementation
+
+**Phone Validation Function** (`af_code/shared/phone_utils.py`):
+
+```python
+def standardize_phone(phone: str) -> Optional[str]:
+    """
+    Standardize phone number to E.164 format.
+
+    Args:
+        phone: Raw phone number string (may contain spaces, dashes, parentheses)
+
+    Returns:
+        Standardized phone number in E.164 format (+[digits]) or None if invalid
+    """
+    if not phone or (hasattr(phone, '__iter__') and not isinstance(phone, str)):
+        return None
+
+    # Convert to string and strip whitespace
+    phone_str = str(phone).strip()
+
+    if not phone_str:
+        return None
+
+    # If already in E.164 format (starts with +), validate and return
+    if phone_str.startswith("+"):
+        digits_only = "".join(c for c in phone_str[1:] if c.isdigit())
+        # E.164 format allows 11-15 digits after the +
+        if 11 <= len(digits_only) <= 15:
+            return f"+{digits_only}"
+        else:
+            return None
+
+    # Remove all non-numeric characters
+    digits_only = "".join(c for c in phone_str if c.isdigit())
+
+    # Handle different phone number formats
+    if len(digits_only) == 10 and digits_only[0] in "23456789":
+        # Standard 10-digit US number (area code cannot start with 0 or 1)
+        return f"+1{digits_only}"
+    elif len(digits_only) == 11 and digits_only[0] == "1" and digits_only[1] in "23456789":
+        # 11-digit number starting with 1 (US country code)
+        return f"+{digits_only}"
+    elif 11 <= len(digits_only) <= 15:
+        # International number without + prefix
+        return f"+{digits_only}"
+
+    return None
+```
+
+### Usage in Partner Campaigns
+
+**File**: `af_code/partner_campaign_scheduler/services/batch_orchestrator.py:596-710`
+
+The `_get_target_phone()` method validates all phone numbers before returning:
+
+```python
+def _get_target_phone(self, member: EligibleMember, contact_pref: str) -> str:
+    """
+    Enhanced contact preference logic with E.164 validation.
+
+    All phone numbers are validated and standardized to E.164 format.
+    Returns None if phone is invalid, which causes member to be skipped.
+    """
+    # ... contact preference logic ...
+
+    # Example: Validating primary phone
+    if member.primary_phone:
+        validated_phone = standardize_phone(member.primary_phone)
+        if validated_phone:
+            logger.debug(f"Using validated primary phone: {validated_phone}")
+            return validated_phone
+        else:
+            logger.warning(
+                f"Invalid primary phone format for member {member.member_id}: {member.primary_phone}"
+            )
+            return None
+
+    # Example: Validating device phone
+    if member.device_phone_number:
+        validated_phone = standardize_phone(member.device_phone_number)
+        if validated_phone:
+            logger.debug(f"Using validated device number: {validated_phone}")
+            return validated_phone
+        else:
+            logger.warning(
+                f"Invalid device phone format for member {member.member_id}: {member.device_phone_number}"
+            )
+            return None
+```
+
+### Validation Points
+
+Phone numbers are validated at these points in Partner campaigns:
+
+1. **Batch Creation** (`batch_orchestrator.py:596-710`):
+   - Before creating call request for each member
+   - Both `primary_phone` and `device_phone_number` validated
+   - Invalid numbers logged with warning
+   - Members with invalid phones skipped from batch
+
+2. **Database Storage**:
+   - Phone numbers stored in database are assumed to be pre-validated
+   - Partner file processing does NOT validate (unlike DTC)
+   - Validation occurs at call-time, not import-time
+
+### Error Handling
+
+**Invalid Phone Numbers**:
+- Member skipped from batch submission
+- Warning logged with member ID and invalid phone number
+- No call attempt record created
+- Member remains eligible for future batches (can be corrected in database)
+
+**Example Warning Logs**:
+```
+⚠️ [BATCH-ORCHESTRATOR] Invalid primary phone format for member abc-123: 555-CALL-ME
+⚠️ [BATCH-ORCHESTRATOR] Invalid device phone format for member xyz-789: 12345
+⚠️ [PHONE-UTILS] Invalid E.164 length (8 digits): 12345678
+⚠️ [PHONE-UTILS] Invalid phone format (length: 6): 555123
+```
+
+### Contact Preference Logic
+
+Phone selection respects campaign `contact_pref` setting:
+
+| `contact_pref` | Phone Selection Logic | Validation |
+|----------------|----------------------|------------|
+| `phone` | Use `primary_phone` only | Validate before returning |
+| `device` | Use `device_phone_number` only (if callable) | Validate before returning |
+| `member_preference` | Use `members.Channel` preference | Validate both options |
+| `auto` | Convert to `member_preference` | Validate both options |
+
+**Fallback Logic** (when `contact_pref = member_preference`):
+1. Try member's preferred channel (validate)
+2. If preferred invalid/unavailable, try `primary_phone` (validate)
+3. If primary invalid/unavailable, try `device_phone_number` (validate)
+4. If all invalid/unavailable, skip member
+
+### Testing Phone Validation
+
+**Valid Examples**:
+```python
+standardize_phone("5551234567")        # → "+15551234567"
+standardize_phone("15551234567")       # → "+15551234567"
+standardize_phone("+15551234567")      # → "+15551234567"
+standardize_phone("(555) 123-4567")    # → "+15551234567"
+standardize_phone("555.123.4567")      # → "+15551234567"
+standardize_phone("+442012345678")     # → "+442012345678" (UK)
+```
+
+**Invalid Examples** (returns `None`):
+```python
+standardize_phone("555-CALL-ME")       # Non-numeric characters after cleaning
+standardize_phone("12345")             # Too short (5 digits)
+standardize_phone("0551234567")        # Invalid area code (starts with 0)
+standardize_phone("1551234567")        # Invalid area code (starts with 1)
+standardize_phone("+1234")             # Too short for E.164 (4 digits)
+standardize_phone("+12345678901234567") # Too long for E.164 (17 digits)
+standardize_phone("")                  # Empty string
+standardize_phone(None)                # None value
+```
+
+---
+
 ## Webhook Processing for Partner Campaigns
 
 ### Overview
