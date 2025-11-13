@@ -44,6 +44,9 @@ except ImportError:
 from io import BytesIO
 import re  # For special character cleaning
 
+# Import shared utilities
+from af_code.shared.language_mapper import map_language_code, validate_language_code
+
 # MODULE LOAD VERIFICATION - This will execute when the module is first imported
 logger = logging.getLogger(__name__)
 logger.info("🔄 [MODULE-LOAD] af_dtc_logic.py loading - VERSION: 2025-10-16-DEBUG-v2")
@@ -278,7 +281,7 @@ def get_dtc_schema() -> DataFrameSchema:
             "partner_name": Column(str, nullable=True),
             "campaign_name_source": Column(str, nullable=True),
             "language_pref": Column(
-                str, nullable=True, checks=Check.isin(["EN", "ES", "Other", None])
+                str, nullable=True  # Accept any string - validation done in cleansing logic
             ),
             "salesforce_account_number": Column(
                 str, nullable=False, checks=Check.str_length(min_value=1)
@@ -1108,15 +1111,25 @@ def validate_and_cleanse_data_before_insert(
         )
 
         # Language Preference
+        # Supports both ISO 639-3 codes (eng, spa, som, etc.) and existing format (EN, ES, Other)
+        # Maps: eng→EN, spa→ES, all others→Other
         language_pref = clean_empty_values(row.get("language_pref"))
-        valid_languages = ["EN", "ES", "Other"]
-        if language_pref and language_pref.upper() not in valid_languages:
+
+        # Use language mapper to convert ISO codes to platform format
+        mapped_language = map_language_code(language_pref)
+
+        # Validate the mapped result (should always be EN, ES, or Other)
+        if not validate_language_code(mapped_language):
             row_errors.append(
-                f"Invalid language_pref: '{language_pref}' (must be: {valid_languages})"
+                f"Language mapping failed for '{language_pref}': resulted in invalid code '{mapped_language}'"
             )
-        df_clean.loc[idx, "language_pref"] = (
-            language_pref.upper() if language_pref else "EN"
-        )  # Default to EN
+            mapped_language = "EN"  # Fallback to default
+
+        df_clean.loc[idx, "language_pref"] = mapped_language
+
+        # Log the mapping for debugging (only if input differs from output)
+        if language_pref and language_pref.upper() != mapped_language:
+            logger.debug(f"[LANGUAGE-MAPPING] Row {idx}: '{language_pref}' → '{mapped_language}'")
 
         # PHONE NUMBER VALIDATION
         # ======================
