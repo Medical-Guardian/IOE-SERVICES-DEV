@@ -1,0 +1,97 @@
+# Claude Code files and folders (DO NOT COMMIT)
+.claude/
+CLAUDE.md
+
+# Azure Functions
+bin
+obj
+csx
+.vs
+edge
+Publish
+*.user
+*.suo
+*.cscfg
+*.Cache
+project.lock.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+.venv
+
+# Azure Functions artifacts
+local.settings.json
+.python_packages/
+.vscode/
+.funcignore
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Database
+*.db
+*.sqlite
+
+# Test coverage
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.pytest_cache/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Deployment packages
+*.zip
+
+# Temporary files
+*.tmp
+*.temp
