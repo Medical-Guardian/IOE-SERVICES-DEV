@@ -1,0 +1,6 @@
+org_id,salesforce_account_number,member_first_name,member_last_name,member_phone_number,customer_timezone,member_dob,member_gender,member_email,caregiver_first_name,caregiver_last_name,caregiver_phone_number,caregiver_email,channel_type,device_udi,device_name,is_device_callable,device_phone_number,checkin_time,enrollment_status
+MG001,TEST-MIX-001,Alice,Johnson,+15553334444,America/New_York,1968-05-10,F,alice.johnson@test.com,Tom,Johnson,+15556667777,tom.johnson@test.com,phone,,,N,,,AM,ENROLL
+MG001,TEST-MIX-002,Carlos,Martinez,+15558889999,America/Los_Angeles,1972-11-25,M,carlos.martinez@test.com,Ana,Martinez,+15551231234,ana.martinez@test.com,device,UDI-MIX-001,Home Guardian,Y,+15559998888,PM,ENROLL
+MG001,TEST-MIX-003,Emily,Brown,+15557778888,America/Chicago,1965-07-30,F,emily.brown@test.com,Michael,Brown,+15554564567,michael.brown@test.com,Phone,,,N,,,EV,ENROLL
+MG001,TEST-MIX-004,Daniel,Wilson,+15556667777,America/Denver,1970-03-18,M,daniel.wilson@test.com,Sarah,Wilson,+15553332222,sarah.wilson@test.com,Device,UDI-MIX-002,Medical Alert Plus,Y,+15554443333,AM,ENROLL
+MG001,TEST-MIX-005,Jennifer,Davis,+15552221111,America/New_York,1973-12-05,F,jennifer.davis@test.com,James,Davis,+15559990000,james.davis@test.com,phone,,,N,,,PM,ENROLL

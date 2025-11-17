@@ -18,6 +18,7 @@ from ..utils.config import (
     UPDATE_BATCH_VENDOR_ID_QUERY,
     UPDATE_BATCH_FAILED_QUERY,
 )
+from ..utils.phone_selector import get_target_phone
 
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ class BlandAIService:
         logger.info("🤖 [BlandAIService] Initializing Bland AI service")
 
     def get_campaign_config(self, campaign_id: str) -> Dict:
-        """Get campaign configuration from database"""
+        """Get campaign configuration from database (includes contact_pref)"""
         logger.info(f"⚙️ [BlandAIService] Getting campaign configuration for: {campaign_id}")
         try:
             results = self.db_service.execute_query(GET_CAMPAIGN_CONFIG_QUERY, (campaign_id,))
@@ -48,9 +49,14 @@ class BlandAIService:
                 if isinstance(bland_parameters, str)
                 else bland_parameters
             )
+
+            # Add contact_pref to config (defaults to 'phone' if not in database)
+            config["contact_pref"] = results[0].get("contact_pref", "phone")
+
             logger.info(
                 f"✅ [BlandAIService] Campaign configuration retrieved: {list(config.keys())}"
             )
+            logger.info(f"📋 [BlandAIService] Contact preference: {config['contact_pref']}")
             return config
 
         except Exception as e:
@@ -112,10 +118,12 @@ class BlandAIService:
     def build_bland_payload(
         self, config: Dict, members_with_attempts: List[Dict], batch_id: str
     ) -> Dict:
-        """Build Bland AI batch payload (Updated)"""
+        """Build Bland AI batch payload with dynamic phone selection"""
+        contact_pref = config.get("contact_pref", "phone")
         logger.info(
-            f"🏗️ [BlandAIService] Building Updated Bland AI payload for {len(members_with_attempts)} members"
+            f"🏗️ [BlandAIService] Building Bland AI payload for {len(members_with_attempts)} members"
         )
+        logger.info(f"📋 [BlandAIService] Contact preference: {contact_pref}")
         try:
             # This global_config section is the same as the one from the previous request
             global_config = {
@@ -144,7 +152,19 @@ class BlandAIService:
             }
 
             call_objects = []
+            skipped_members = 0
+
             for member in members_with_attempts:
+                # DYNAMIC PHONE SELECTION based on contact_pref
+                phone_number = get_target_phone(member, contact_pref)
+
+                if not phone_number:
+                    logger.warning(
+                        f"⚠️ [BlandAIService] No valid phone for member {member.get('member_id')} - skipping"
+                    )
+                    skipped_members += 1
+                    continue
+
                 # Format dob to string if it exists, otherwise use None
                 dob_obj = member.get("dob")
                 dob_str = dob_obj.strftime("%Y-%m-%d") if dob_obj else None
@@ -163,10 +183,9 @@ class BlandAIService:
                     "dob": dob_str,
                 }
 
-                # Construct the final call object
-
+                # Construct the final call object with DYNAMIC phone number
                 call_obj = {
-                    "phone_number": member["primary_phone"],
+                    "phone_number": phone_number,  # DYNAMIC (phone or device)
                     "request_data": request_data,
                     "metadata": {
                         # --- NEW FIELDS ADDED HERE ---
@@ -179,13 +198,20 @@ class BlandAIService:
                         "salesforce_account_number": member.get("salesforce_account_number"),
                         "first_name": member.get("first_name"),
                         "last_name": member.get("last_name"),
-                        "called_number": member.get("primary_phone"),
+                        "called_number": phone_number,  # DYNAMIC (matches phone_number)
+                        "contact_preference": contact_pref,  # NEW: Track routing mode
+                        "is_device_callable": member.get("is_device_callable"),  # NEW: Device status
                         "language_pref": member.get("language_pref"),
                         "call_type_code": member.get("call_type"),  # Sourced from the new query
                     },
                 }
 
                 call_objects.append(call_obj)
+
+            if skipped_members > 0:
+                logger.warning(
+                    f"⚠️ [BlandAIService] Skipped {skipped_members} members (no valid phone number)"
+                )
 
             payload = {"global": global_config, "call_objects": call_objects}
             logger.info(

@@ -1,0 +1,4 @@
+org_id,salesforce_account_number,member_first_name,member_last_name,member_phone_number,customer_timezone,member_dob,member_gender,member_email,caregiver_first_name,caregiver_last_name,caregiver_phone_number,caregiver_email,channel_type,device_udi,device_name,is_device_callable,device_phone_number,checkin_time,enrollment_status
+MG001,TEST-DEVICE-001,Carlos,Garcia,+15558889999,America/Los_Angeles,1972-05-25,M,carlos.garcia@test.com,Lisa,Garcia,+15551231234,lisa.garcia@test.com,device,UDI-TEST-001,Guardian Home Alert,Y,+15559998888,AM,ENROLL
+MG001,TEST-DEVICE-002,Maria,Rodriguez,+15557778888,America/New_York,1969-09-14,F,maria.rodriguez@test.com,Jose,Rodriguez,+15554564567,jose.rodriguez@test.com,device,UDI-TEST-002,Emergency Call Device,Y,+15556665555,PM,ENROLL
+MG001,TEST-DEVICE-003,David,Lee,+15556667777,America/Chicago,1971-02-20,M,david.lee@test.com,Susan,Lee,+15553332222,susan.lee@test.com,Device,UDI-TEST-003,Smart Device Pro,Y,+15554443333,EV,ENROLL

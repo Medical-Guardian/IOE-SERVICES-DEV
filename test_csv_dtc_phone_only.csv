@@ -1,0 +1,4 @@
+org_id,salesforce_account_number,member_first_name,member_last_name,member_phone_number,customer_timezone,member_dob,member_gender,member_email,caregiver_first_name,caregiver_last_name,caregiver_phone_number,caregiver_email,channel_type,device_udi,device_name,is_device_callable,device_phone_number,checkin_time,enrollment_status
+MG001,TEST-PHONE-001,John,Doe,+15551234567,America/New_York,1965-03-15,M,john.doe@test.com,Jane,Doe,+15559876543,jane.doe@test.com,phone,,,N,,,AM,ENROLL
+MG001,TEST-PHONE-002,Mary,Smith,+15552223333,America/Chicago,1970-08-22,F,mary.smith@test.com,Bob,Smith,+15554445555,bob.smith@test.com,phone,,,N,,,PM,ENROLL
+MG001,TEST-PHONE-003,Robert,Johnson,+15553334444,America/Denver,1968-11-10,M,robert.johnson@test.com,Linda,Johnson,+15556667777,linda.johnson@test.com,Phone,,,N,,,EV,ENROLL

@@ -1,0 +1,6 @@
+org_id,salesforce_account_number,member_first_name,member_last_name,member_phone_number,customer_timezone,member_dob,member_gender,member_email,caregiver_first_name,caregiver_last_name,caregiver_phone_number,caregiver_email,channel_type,device_udi,device_name,is_device_callable,device_phone_number,checkin_time,enrollment_status
+MG001,TEST-ERR-001,Error1,NoDeviceUDI,+15551111111,America/New_York,1965-03-15,M,err1@test.com,Care,Giver,+15559999999,care@test.com,device,,,Y,+15551112222,AM,ENROLL
+MG001,TEST-ERR-002,Error2,DeviceNotCallable,+15552222222,America/Chicago,1970-08-22,F,err2@test.com,Care,Giver,+15559999998,care2@test.com,device,UDI-ERR-001,Test Device,N,+15552223333,PM,ENROLL
+MG001,TEST-ERR-003,Error3,InvalidChannelType,+15553333333,America/Denver,1968-11-10,M,err3@test.com,Care,Giver,+15559999997,care3@test.com,invalid,,,N,,,EV,ENROLL
+MG001,TEST-ERR-004,Error4,MissingDevicePhone,+15554444444,America/Los_Angeles,1972-05-25,M,err4@test.com,Care,Giver,+15559999996,care4@test.com,device,UDI-ERR-002,Test Device 2,Y,,AM,ENROLL
+MG001,TEST-VALID-001,Valid,Member,+15555555555,America/New_York,1969-09-14,F,valid@test.com,Care,Giver,+15559999995,care5@test.com,phone,,,N,,,PM,ENROLL

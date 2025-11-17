@@ -22,9 +22,13 @@ BLAND_AI_BATCH_URL = "https://api.bland.ai/v2/batches/create"
 # CORRECTED: Replaced '?' with '%s' for pymssql compatibility
 # BUSINESS RULE: One DTC outreach per member per day (intro OR wellness) - other campaigns remain independent
 GET_CAMPAIGN_CONFIG_QUERY = """
-SELECT bland_parameters_global, call_type
-FROM engage360.campaign_call_configs_enhanced 
-WHERE campaign_id = %s AND config_status = 'active'
+SELECT
+    ccc.bland_parameters_global,
+    ccc.call_type,
+    ISNULL(c.contact_pref, 'phone') as contact_pref  -- Default to 'phone' for backward compatibility
+FROM engage360.campaign_call_configs_enhanced ccc
+JOIN engage360.campaigns_enhanced c ON ccc.campaign_id = c.campaign_id
+WHERE ccc.campaign_id = %s AND ccc.config_status = 'active'
 """
 
 # CORRECTED: Replaced '?' with '%s'
@@ -44,18 +48,20 @@ VALUES (%s, %s, 'Voice', SYSUTCDATETIME(), 'Pending', 0, %s)
 # --- CHANGE: Added a JOIN to get call_type_code and ensured all member fields are selected ---
 GET_MEMBERS_WITH_ATTEMPTS_QUERY = """
 SELECT 
-    m.member_id, 
-    m.salesforce_account_number, 
-    m.first_name, 
+    m.member_id,
+    m.salesforce_account_number,
+    m.first_name,
     m.last_name,
-    m.primary_phone, 
+    m.primary_phone,
+    m.Channel,  -- Member's routing preference (phone/device)
     m.language_pref,
     m.dob,
     m.address_street,
     m.address_city,
     m.address_state,
     m.address_zip,
-    md.device_id as device_udi, 
+    md.device_id as device_udi,
+    md.device_phone_number,  -- Device phone number
     md.is_device_callable,
     oa.attempt_id, 
     mce.campaign_id, 

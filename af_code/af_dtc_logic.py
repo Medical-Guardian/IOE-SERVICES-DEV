@@ -307,6 +307,9 @@ def get_dtc_schema() -> DataFrameSchema:
             ),
             "caregiver_phone_number": Column(str, nullable=True),
             "caregiver_email": Column(str, nullable=True),  # ADDED
+            "channel_type": Column(
+                str, nullable=True, checks=Check.isin(["phone", "device", "Phone", "Device", None])
+            ),
             "device_udi": Column(str, nullable=True),
             "device_name": Column(str, nullable=True),
             "is_device_callable": Column(
@@ -798,6 +801,7 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
             "caregiver_last_name",
             "caregiver_phone_number",
             "caregiver_email",
+            "channel_type",  # Channel preference: phone or device
             "device_udi",
             "device_name",
             "is_device_callable",
@@ -813,6 +817,7 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
             "caregiver_last_clean",
             "caregiver_phone_clean",
             "caregiver_email_clean",
+            "channel_type_clean",
             "device_phone_clean",
             "dob_clean",
             "gender_clean",
@@ -1021,6 +1026,7 @@ def validate_and_cleanse_data_before_insert(
     df_clean["caregiver_last_clean"] = None
     df_clean["caregiver_phone_clean"] = None
     df_clean["caregiver_email_clean"] = None  # ADDED
+    df_clean["channel_type_clean"] = None  # Channel preference cleaned
     df_clean["device_phone_clean"] = None
     df_clean["processing_status"] = "PENDING"
     df_clean["error_message"] = None
@@ -1355,12 +1361,48 @@ def validate_and_cleanse_data_before_insert(
         else:
             df_clean.loc[idx, "caregiver_email_clean"] = None
 
+        # CHANNEL TYPE VALIDATION
+        # =======================
+        # Channel type determines if call goes to phone or device
+        channel_type = clean_empty_values(row.get("channel_type"))
+
+        if channel_type:
+            channel_type_lower = channel_type.strip().lower()
+
+            # Validate channel_type value
+            if channel_type_lower not in ["phone", "device"]:
+                row_errors.append(
+                    f"Invalid channel_type '{channel_type}' - must be 'phone' or 'device'"
+                )
+                df_clean.loc[idx, "channel_type_clean"] = "phone"  # Default to phone
+            else:
+                df_clean.loc[idx, "channel_type_clean"] = channel_type_lower
+        else:
+            # Default to 'phone' if not provided (backward compatibility)
+            df_clean.loc[idx, "channel_type_clean"] = "phone"
+
         # DEVICE VALIDATION
         # ================
 
         device_udi = clean_empty_values(row.get("device_udi"))
         device_name = clean_empty_values(row.get("device_name"))
         is_callable = clean_empty_values(row.get("is_device_callable"))
+
+        # BUSINESS RULE: If channel_type = "device", validate device requirements
+        if df_clean.loc[idx, "channel_type_clean"] == "device":
+            # Check if device is callable
+            if not is_callable or is_callable.upper() not in ["Y", "YES", "TRUE", "1"]:
+                row_errors.append(
+                    "When channel_type='device', is_device_callable must be 'Y'"
+                )
+
+            # Check required device fields
+            if not device_udi:
+                row_errors.append("device_udi is required when channel_type='device'")
+            if not device_name:
+                row_errors.append("device_name is required when channel_type='device'")
+            if not device_phone:
+                row_errors.append("device_phone_number is required when channel_type='device'")
 
         # Device UDI validation
         if device_udi:
@@ -1866,7 +1908,8 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 stg.member_address_city AS address_city,
                 stg.member_address_state AS address_state,
                 stg.member_address_zip AS address_zip,
-                ISNULL(stg.member_address_country, 'US') AS address_country
+                ISNULL(stg.member_address_country, 'US') AS address_country,
+                stg.channel_type_clean AS channel_type
             FROM {context.config.staging_table} stg
             WHERE stg.file_batch_id = %s
               AND stg.processing_status = 'TRANSFORMING'
@@ -1895,16 +1938,17 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 address_city = ISNULL(src.address_city, tgt.address_city),
                 address_state = ISNULL(src.address_state, tgt.address_state),
                 address_zip = ISNULL(src.address_zip, tgt.address_zip),
-                address_country = ISNULL(src.address_country, tgt.address_country)
+                address_country = ISNULL(src.address_country, tgt.address_country),
+                Channel = ISNULL(src.channel_type, tgt.Channel)
         WHEN NOT MATCHED THEN
             INSERT (member_id, org_id, salesforce_account_number, first_name, last_name,
                    caregiver_first_name, caregiver_last_name, caregiver_email, primary_phone, caregiver_phone,
                    email, dob, gender, language_pref, timezone, address_street, address_city,
-                   address_state, address_zip, address_country, created_ts)
+                   address_state, address_zip, address_country, Channel, created_ts)
             VALUES (NEWID(), src.org_id, src.salesforce_account_number, src.first_name, src.last_name,
                    src.caregiver_first_name, src.caregiver_last_name, src.caregiver_email, src.primary_phone, src.caregiver_phone,
                    src.email, src.dob, src.gender, src.language_pref, src.timezone, src.address_street, src.address_city,
-                   src.address_state, src.address_zip, src.address_country, SYSDATETIMEOFFSET());
+                   src.address_state, src.address_zip, src.address_country, src.channel_type, SYSDATETIMEOFFSET());
         """
 
         cursor = db_manager.execute_with_retry(
