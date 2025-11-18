@@ -21,6 +21,7 @@ from af_code.af_dtc_intro_call.utils.config import (
     UPDATE_BATCH_VENDOR_ID_QUERY,
     UPDATE_BATCH_FAILED_QUERY,
 )
+from af_code.af_dtc_intro_call.utils.phone_selector import get_target_phone
 
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,7 @@ class BlandAIServiceWellness:
         logger.info("🤖 [BlandAIServiceWellness] Initializing Bland AI service for Wellness Check")
 
     def get_campaign_config(self, campaign_id: str) -> Dict:
-        """Get campaign configuration from database."""
+        """Get campaign configuration from database (includes contact_pref)"""
         logger.info(f"⚙️ [BlandAIServiceWellness] Getting campaign configuration for: {campaign_id}")
         try:
             results = self.db_service.execute_query(GET_CAMPAIGN_CONFIG_QUERY, (campaign_id,))
@@ -51,9 +52,14 @@ class BlandAIServiceWellness:
                 if isinstance(bland_parameters, str)
                 else bland_parameters
             )
+
+            # Add contact_pref to config (defaults to 'phone' if not in database)
+            config["contact_pref"] = results[0].get("contact_pref", "phone")
+
             logger.info(
                 f"✅ [BlandAIServiceWellness] Campaign configuration retrieved: {list(config.keys())}"
             )
+            logger.info(f"📋 [BlandAIServiceWellness] Contact preference: {config['contact_pref']}")
             return config
 
         except Exception as e:
@@ -123,10 +129,12 @@ class BlandAIServiceWellness:
     def build_bland_payload(
         self, config: Dict, members_with_attempts: List[Dict], batch_id: str
     ) -> Dict:
-        """Build Bland AI batch payload for the Wellness Check."""
+        """Build Bland AI batch payload for the Wellness Check with dynamic phone selection"""
+        contact_pref = config.get("contact_pref", "phone")
         logger.info(
             f"🏗️ [BlandAIServiceWellness] Building Wellness Check Bland AI payload for {len(members_with_attempts)} members"
         )
+        logger.info(f"📋 [BlandAIServiceWellness] Contact preference: {contact_pref}")
         try:
             global_config = {
                 k: v
@@ -154,7 +162,17 @@ class BlandAIServiceWellness:
             }
 
             call_objects = []
+            skipped_members = 0
             for member in members_with_attempts:
+                # Dynamic phone selection based on contact_pref
+                phone_number = get_target_phone(member, contact_pref)
+                if not phone_number:
+                    logger.warning(
+                        f"⚠️ [BlandAIServiceWellness] No valid phone for member {member.get('member_id')} - skipping"
+                    )
+                    skipped_members += 1
+                    continue
+
                 dob_obj = member.get("dob")
                 dob_str = dob_obj.strftime("%Y-%m-%d") if dob_obj else None
 
@@ -177,7 +195,7 @@ class BlandAIServiceWellness:
 
                 # Construct the final call object
                 call_obj = {
-                    "phone_number": member["primary_phone"],
+                    "phone_number": phone_number,
                     "request_data": request_data,
                     "metadata": {
                         "batch_id": batch_id,
@@ -188,9 +206,11 @@ class BlandAIServiceWellness:
                         "salesforce_account_number": member.get("salesforce_account_number"),
                         "first_name": member.get("first_name"),
                         "last_name": member.get("last_name"),
-                        "called_number": member.get("primary_phone"),
+                        "called_number": phone_number,
                         "language_pref": member.get("language_pref"),
                         "call_type_code": member.get("call_type"),
+                        "contact_preference": contact_pref,
+                        "is_device_callable": member.get("is_device_callable"),
                     },
                 }
 
@@ -200,6 +220,10 @@ class BlandAIServiceWellness:
             logger.info(
                 f"✅ [BlandAIServiceWellness] Wellness payload built: {len(call_objects)} call objects"
             )
+            if skipped_members > 0:
+                logger.warning(
+                    f"⚠️ [BlandAIServiceWellness] Skipped {skipped_members} members (no valid phone number)"
+                )
             return payload
         except Exception as e:
             logger.error(f"💥 [BlandAIServiceWellness] Error building Bland AI payload: {str(e)}")
@@ -242,7 +266,9 @@ class BlandAIServiceWellness:
             logger.info("✅ [BlandAIServiceWellness] Bland AI encrypted key retrieved")
             return secret.value
         except Exception as e:
-            logger.error(f"💥 [BlandAIServiceWellness] Failed to fetch Bland AI encrypted key: {str(e)}")
+            logger.error(
+                f"💥 [BlandAIServiceWellness] Failed to fetch Bland AI encrypted key: {str(e)}"
+            )
             raise
 
     def call_bland_ai_api(self, payload: Dict, api_key: str) -> Dict:
@@ -252,11 +278,11 @@ class BlandAIServiceWellness:
         )
         # Get encrypted key from Azure Key Vault
         encrypted_key_value = self.get_bland_encrypted_key()
-        
+
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "encrypted_key": encrypted_key_value
+            "encrypted_key": encrypted_key_value,
         }
         try:
             response = requests.post(BLAND_AI_BATCH_URL, json=payload, headers=headers, timeout=30)
