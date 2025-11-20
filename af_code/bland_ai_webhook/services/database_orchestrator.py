@@ -409,27 +409,17 @@ class DatabaseOrchestrator:
         logger.info(f"🎯 [DB-ORCH]   - Is Partner Campaign: {'✅' if is_partner_campaign else '❌'}")
 
         if is_partner_campaign:
-            if new_status.upper() == "OPTED_OUT":
-                logger.info(
-                    "🤝 [DB-ORCH] ✅ Partner campaign opt-out detected - proceeding with status update to OPTED_OUT"
-                )
-                logger.info(
-                    "🤝 [DB-ORCH] ℹ️ Member status will change: 'Active' → 'OPTED_OUT'"
-                )
-                # Continue with normal processing to update status to OPTED_OUT
-            else:
-                logger.info("🤝 [DB-ORCH] ℹ️ Partner campaign call completed successfully")
-                logger.info(
-                    "🤝 [DB-ORCH] ℹ️ No enrollment status change needed - member remains 'Active'"
-                )
-                logger.info(
-                    f"🤝 [DB-ORCH] ℹ️ Received status '{new_status}' will be logged in outreach_attempts only"
-                )
-                logger.info(
-                    "🤝 [DB-ORCH] ℹ️ Partner campaigns maintain 'Active' status for all non-opt-out calls"
-                )
-                # Log the call but don't change enrollment status for partner campaigns
-                return None
+            # Partner campaigns: Skip ALL enrollment status updates
+            # Members remain 'Active' regardless of call disposition (including opt-outs)
+            logger.info("🤝 [DB-ORCH] ℹ️ Partner campaign - no enrollment status change")
+            logger.info(
+                f"🤝 [DB-ORCH] ℹ️ Received status '{new_status}' will be logged in outreach_attempts only"
+            )
+            logger.info(
+                "🤝 [DB-ORCH] ℹ️ Member remains 'Active' - call logged for audit trail"
+            )
+            # Log the call but don't change enrollment status for partner campaigns
+            return None
 
         # Campaign IDs for auto-transition logic
         INTRO_CAMPAIGN_ID = "34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"
