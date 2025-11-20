@@ -199,6 +199,152 @@ ORG001,111111111,invalid_status,InvalidLang,InvalidChannel,,,,,,,,,,,,,InvalidTZ
 
 ---
 
+#### Scenario 6: DTC File with Duplicate Members
+
+**File Name**: `DTC_20241226_duplicate_members.csv`
+
+**Test CSV Content** (with duplicate members):
+```csv
+org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
+ORG001,123456789,update,English,Phone,John,Doe,1965-03-15,M,UDI999999999,Different Device,+15551234568,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
+ORG001,987654321,enroll,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
+```
+
+**Issue**: Rows 1 and 2 have identical `org_id` + `salesforce_account_number` (ORG001 + 123456789)
+
+**Expected Logs - Duplicate Detection**:
+```
+[2024-12-26 11:10:01] 🟡 New DTC file detected: DTC_20241226_duplicate_members.csv
+[2024-12-26 11:10:04] 📊 [DTC-LOGIC] File validation successful - 3 rows detected
+[2024-12-26 11:10:05] 🧹 [DTC-LOGIC] Data cleansing completed - 0 rows removed, 3 rows remain
+[2024-12-26 11:10:06] ✅ [DTC-LOGIC] Business validation passed - 0 critical errors
+[2024-12-26 11:10:07] 📥 [DTC-LOGIC] Extract phase: Loading 3 records to staging table
+[2024-12-26 11:10:08] ✅ [DTC-LOGIC] Extract completed - 3 records staged
+[2024-12-26 11:10:09] 🔄 [DTC-LOGIC] Transform phase: Checking for duplicate members...
+[2024-12-26 11:10:10] ❌ [DTC-LOGIC] Duplicate members found in staging data:
+[2024-12-26 11:10:10] org_id: ORG001, salesforce_account_number: 123456789, count: 2
+[2024-12-26 11:10:10] 💥 [DTC-LOGIC] Transform phase failed - Duplicate detection error
+[2024-12-26 11:10:11] 📁 [DTC-LOGIC] Moving file to error folder due to duplicate members
+[2024-12-26 11:10:12] ❌ DTC file processing failed
+[2024-12-26 11:10:12] 💥 Error: Duplicate members found in staging data
+[2024-12-26 11:10:12] 🚫 File moved to error folder
+```
+
+**Expected Behavior**:
+- **NO records loaded** to production tables (fail-fast)
+- File moved to `fs-dtc/error/` folder
+- All 3 records remain in staging table for investigation
+- Transaction rolled back - zero database updates
+
+**Database Verification** (staging records preserved):
+```sql
+SELECT
+    org_id,
+    salesforce_account_number,
+    processing_status,
+    COUNT(*) as count
+FROM engage360_stg.stg_dtc_wellness_delta
+WHERE file_batch_id = 'BATCH_20241226111007'
+GROUP BY org_id, salesforce_account_number, processing_status
+ORDER BY count DESC;
+
+-- Expected Result:
+-- org_id    | salesforce_account_number | processing_status | count
+-- ORG001    | 123456789                 | TRANSFORMING      | 2     ← Duplicate
+-- ORG001    | 987654321                 | TRANSFORMING      | 1     ← Valid
+```
+
+---
+
+#### Scenario 7: DTC File with Duplicate Update Enrollments
+
+**File Name**: `DTC_20241226_duplicate_updates.csv`
+
+**Test CSV Content** (with duplicate UPDATE records):
+```csv
+org_id,salesforce_account_number,enrollment_status,preferred_window
+ORG001,123456789,UPDATE,EV1-2
+ORG001,123456789,UPDATE,EV4-6
+```
+
+**Issue**: Same member (ORG001 + 123456789) has two UPDATE records with conflicting preferred_window
+
+**Expected Logs - Duplicate Update Detection**:
+```
+[2024-12-26 11:15:01] 🟡 New DTC file detected: DTC_20241226_duplicate_updates.csv
+[2024-12-26 11:15:07] 📥 [DTC-LOGIC] Extract phase: Loading 2 records to staging table
+[2024-12-26 11:15:08] ✅ [DTC-LOGIC] Extract completed - 2 records staged
+[2024-12-26 11:15:09] 🔄 [DTC-LOGIC] Transform phase: Processing member enrollments
+[2024-12-26 11:15:10] 🔍 [DTC-LOGIC] Checking for duplicate update enrollments first
+[2024-12-26 11:15:11] ❌ [DTC-LOGIC] Duplicate update enrollments found in staging data:
+[2024-12-26 11:15:11] member_id: m12345, count: 2
+[2024-12-26 11:15:11] 💥 [DTC-LOGIC] Transform phase failed - Duplicate update enrollment error
+[2024-12-26 11:15:12] 📁 [DTC-LOGIC] Moving file to error folder
+[2024-12-26 11:15:13] ❌ DTC file processing failed
+[2024-12-26 11:15:13] 💥 Error: Duplicate update enrollments found in staging data
+```
+
+**Expected Behavior**:
+- NO enrollment updates applied
+- File moved to `fs-dtc/error/` folder
+- Prevents conflicting updates to same member
+
+---
+
+#### Scenario 8: DTC File with Duplicate Devices
+
+**File Name**: `DTC_20241226_duplicate_devices.csv`
+
+**Test CSV Content** (with duplicate device_udi):
+```csv
+org_id,salesforce_account_number,enrollment_status,device_udi,device_phone_clean,is_device_callable_clean
+ORG001,123456789,enroll,DEVICE-12345,+15551234567,Y
+ORG002,987654321,enroll,DEVICE-12345,+15559876543,Y
+```
+
+**Issue**: Same device_udi (DEVICE-12345) assigned to two different members
+
+**Expected Logs - Duplicate Device Detection**:
+```
+[2024-12-26 11:20:01] 🟡 New DTC file detected: DTC_20241226_duplicate_devices.csv
+[2024-12-26 11:20:07] 📥 [DTC-LOGIC] Extract phase: Loading 2 records to staging table
+[2024-12-26 11:20:08] ✅ [DTC-LOGIC] Extract completed - 2 records staged
+[2024-12-26 11:20:09] 🔄 [DTC-LOGIC] Transform phase: Processing devices
+[2024-12-26 11:20:10] 🔍 [DTC-LOGIC] Checking for duplicate devices...
+[2024-12-26 11:20:11] ❌ [DTC-LOGIC] Duplicate devices found in staging data:
+[2024-12-26 11:20:11] device_udi: DEVICE-12345, count: 2
+[2024-12-26 11:20:11] 💥 [DTC-LOGIC] Transform phase failed - Duplicate device error
+[2024-12-26 11:20:12] 📁 [DTC-LOGIC] Moving file to error folder
+[2024-12-26 11:20:13] ❌ DTC file processing failed
+[2024-12-26 11:20:13] 💥 Error: Duplicate devices found in staging data
+```
+
+**Expected Behavior**:
+- NO device records created
+- File moved to `fs-dtc/error/` folder
+- Prevents device from being assigned to multiple members
+
+---
+
+### Duplicate Testing Summary
+
+| Duplicate Type | Detection Key | Test Scenario | Expected Outcome |
+|---------------|---------------|---------------|------------------|
+| **Member Duplicates** | `(org_id, salesforce_account_number)` | Scenario 6 | Entire file fails, moves to error/ |
+| **Update Enrollment Duplicates** | `member_id` (for UPDATE status) | Scenario 7 | Entire file fails, moves to error/ |
+| **Device Duplicates** | `device_udi` | Scenario 8 | Entire file fails, moves to error/ |
+
+**Critical Behavior for All Duplicate Types**:
+- ✅ Duplicates detected in Step 4 (TRANSFORM_AND_LOAD_CORE)
+- ❌ **NO partial loading** - All-or-nothing processing
+- ❌ **NO records written** to production tables
+- ✅ Records remain in staging table for investigation
+- ✅ File moved to `error/` folder
+- ✅ Detailed error logged to `file_processing_log`
+
+---
+
 ## Test Data Preparation
 
 ### Required Test Files
@@ -240,11 +386,37 @@ Wrong Partner,Test Campaign,abc123,invalid_status,invalid-email
 Medical Guardian,Test Campaign,,enroll,
 EOF
 
-# Create DTC file with validation errors  
+# Create DTC file with validation errors
 cat > DTC_20241226_errors.csv << 'EOF'
 org_id,salesforce_account_number,enrollment_status,language_preference,timezone
 ,123456789,enroll,English,America/Los_Angeles
 ORG001,,invalid_status,InvalidLang,InvalidTZ
+EOF
+```
+
+#### 4. Duplicate Detection Test Files
+
+```bash
+# Test File 1: Duplicate Members
+cat > DTC_20241226_duplicate_members.csv << 'EOF'
+org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
+ORG001,123456789,update,English,Phone,John,Doe,1965-03-15,M,UDI999999999,Different Device,+15551234568,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
+ORG001,987654321,enroll,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
+EOF
+
+# Test File 2: Duplicate Update Enrollments
+cat > DTC_20241226_duplicate_updates.csv << 'EOF'
+org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
+ORG001,123456789,UPDATE,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
+ORG001,123456789,UPDATE,English,Phone,John,Doe,1965-03-15,M,UDI999999999,Different Device,+15551234568,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Thursday Friday,EV4-6
+EOF
+
+# Test File 3: Duplicate Devices
+cat > DTC_20241226_duplicate_devices.csv << 'EOF'
+org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,DEVICE-12345,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
+ORG002,987654321,enroll,Spanish,Email,Maria,Garcia,1970-08-22,F,DEVICE-12345,Home Device,+15559876543,Y,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
 EOF
 ```
 
@@ -332,15 +504,102 @@ traces
 #### Check Staging Data
 ```sql
 -- Check DTC staging data
-SELECT TOP 10 * 
-FROM engage360.dtc_staging_dev 
+SELECT TOP 10 *
+FROM engage360.dtc_staging_dev
 ORDER BY created_ts DESC;
 
 -- Check processing status
 SELECT processing_status, COUNT(*) as count
-FROM engage360.dtc_staging_dev 
+FROM engage360.dtc_staging_dev
 WHERE file_batch_id = 'BATCH_20241226110004'
 GROUP BY processing_status;
+```
+
+#### Investigate Duplicate Errors
+
+When a file fails due to duplicates, use these queries to investigate:
+
+**1. Find Member Duplicates in Staging**:
+```sql
+SELECT
+    org_id,
+    LTRIM(RTRIM(salesforce_account_number)) AS salesforce_account_number,
+    COUNT(*) as duplicate_count,
+    STRING_AGG(CAST(row_number AS VARCHAR), ', ') as row_numbers
+FROM engage360_stg.stg_dtc_wellness_delta
+WHERE file_batch_id = 'YOUR-FILE-BATCH-ID'
+  AND processing_status = 'TRANSFORMING'
+  AND org_id IS NOT NULL
+  AND salesforce_account_number IS NOT NULL
+GROUP BY org_id, LTRIM(RTRIM(salesforce_account_number))
+HAVING COUNT(*) > 1
+ORDER BY duplicate_count DESC;
+```
+
+**2. Find Update Enrollment Duplicates**:
+```sql
+SELECT
+    m.member_id,
+    stg.org_id,
+    stg.salesforce_account_number,
+    COUNT(*) as duplicate_count,
+    STRING_AGG(stg.preferred_window, ', ') as conflicting_windows
+FROM engage360_stg.stg_dtc_wellness_delta stg
+JOIN engage360.members m
+    ON m.org_id = stg.org_id
+    AND m.salesforce_account_number = stg.salesforce_account_number
+WHERE stg.file_batch_id = 'YOUR-FILE-BATCH-ID'
+  AND stg.processing_status = 'TRANSFORMING'
+  AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UPDATE'
+GROUP BY m.member_id, stg.org_id, stg.salesforce_account_number
+HAVING COUNT(*) > 1;
+```
+
+**3. Find Device Duplicates**:
+```sql
+SELECT
+    stg.device_udi,
+    COUNT(*) as duplicate_count,
+    STRING_AGG(stg.salesforce_account_number, ', ') as assigned_to_members,
+    STRING_AGG(stg.device_phone_clean, ', ') as phone_numbers
+FROM engage360_stg.stg_dtc_wellness_delta stg
+WHERE stg.file_batch_id = 'YOUR-FILE-BATCH-ID'
+  AND stg.processing_status = 'TRANSFORMING'
+  AND stg.device_udi IS NOT NULL
+  AND LTRIM(RTRIM(stg.device_udi)) != ''
+GROUP BY stg.device_udi
+HAVING COUNT(*) > 1;
+```
+
+**4. Check File Processing Log for Duplicate Errors**:
+```sql
+SELECT
+    file_batch_id,
+    file_name,
+    processing_status,
+    final_error_message,
+    processing_start_ts,
+    processing_end_ts,
+    DATEDIFF(SECOND, processing_start_ts, processing_end_ts) as duration_seconds
+FROM engage360_stg.file_processing_log
+WHERE final_error_message LIKE '%Duplicate%'
+  OR file_name LIKE '%YOUR-FILE-NAME%'
+ORDER BY processing_start_ts DESC;
+```
+
+**5. View All Records from Failed Batch**:
+```sql
+SELECT
+    row_number,
+    org_id,
+    salesforce_account_number,
+    enrollment_status,
+    device_udi,
+    processing_status,
+    error_message
+FROM engage360_stg.stg_dtc_wellness_delta
+WHERE file_batch_id = 'YOUR-FILE-BATCH-ID'
+ORDER BY row_number;
 ```
 
 #### Check Member Updates

@@ -698,6 +698,407 @@ For each member with successful intro call (assume 120 out of 150):
 
 ---
 
+## Duplicate Record Detection and Handling
+
+### Overview
+
+The DTC file processor implements **3-level duplicate detection** during the CSV file processing pipeline. When duplicates are detected, the system uses a **fail-fast approach** that rejects the entire file.
+
+**Critical Behavior: NO PARTIAL LOADING**
+- If even one duplicate is found, the entire file processing fails
+- Zero records are loaded to production tables (members, enrollments, devices)
+- All records remain in staging table for investigation
+- File is moved to "error" folder in Azure Blob Storage
+- User must fix CSV and resubmit
+
+---
+
+### Duplicate Detection Types
+
+The system checks for 3 distinct types of duplicates during **Step 4: TRANSFORM_AND_LOAD_CORE**:
+
+---
+
+#### 1. Member Duplicates
+
+**File:** `af_code/af_dtc_logic.py` (Lines 1849-1885)
+
+**Detection Key:** `(org_id, salesforce_account_number)`
+
+**Logic:** Same organization + Salesforce account combination appearing multiple times in a single file
+
+**Query:**
+```sql
+SELECT
+    stg.org_id,
+    LTRIM(RTRIM(stg.salesforce_account_number)) AS salesforce_account_number,
+    COUNT(*) as duplicate_count
+FROM engage360_stg.stg_dtc_wellness_delta stg
+WHERE stg.file_batch_id = %s
+  AND stg.processing_status = 'TRANSFORMING'
+  AND stg.org_id IS NOT NULL
+  AND stg.salesforce_account_number IS NOT NULL
+  AND LTRIM(RTRIM(stg.salesforce_account_number)) != ''
+GROUP BY stg.org_id, LTRIM(RTRIM(stg.salesforce_account_number))
+HAVING COUNT(*) > 1
+```
+
+**Example Duplicate:**
+```csv
+org_id,salesforce_account_number,first_name,last_name,phone_number
+abc-123,SF-5678,John,Doe,+15551234567
+abc-123,SF-5678,John,Doe,+15551234568  ← DUPLICATE (same org_id + salesforce_account_number)
+```
+
+**Error Message:**
+```
+Duplicate members found in staging data:
+org_id: abc-123, salesforce_account_number: SF-5678, count: 2
+```
+
+---
+
+#### 2. Update Enrollment Duplicates
+
+**File:** `af_code/af_dtc_logic.py` (Lines 2112-2140)
+
+**Detection Key:** `member_id` (for records with `enrollment_status = 'UPDATE'`)
+
+**Logic:** Same member appearing multiple times with 'UPDATE' status in a single file
+
+**Query:**
+```sql
+SELECT m.member_id, COUNT(*) as duplicate_count
+FROM engage360_stg.stg_dtc_wellness_delta stg
+JOIN engage360.members m
+    ON m.org_id = stg.org_id
+    AND m.salesforce_account_number = stg.salesforce_account_number
+WHERE stg.file_batch_id = %s
+  AND stg.processing_status = 'TRANSFORMING'
+  AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UPDATE'
+GROUP BY m.member_id
+HAVING COUNT(*) > 1
+```
+
+**Example Duplicate:**
+```csv
+org_id,salesforce_account_number,enrollment_status,preferred_window
+abc-123,SF-5678,UPDATE,morning
+abc-123,SF-5678,UPDATE,evening  ← DUPLICATE (same member with multiple UPDATE records)
+```
+
+**Error Message:**
+```
+Duplicate update enrollments found in staging data:
+member_id: m12345, count: 2
+```
+
+---
+
+#### 3. Device Duplicates
+
+**File:** `af_code/af_dtc_logic.py` (Lines 2237-2266)
+
+**Detection Key:** `device_udi` (Device Unique Identifier)
+
+**Logic:** Same device appearing multiple times in a file with different member associations
+
+**Query:**
+```sql
+SELECT stg.device_udi, COUNT(*) as duplicate_count
+FROM engage360_stg.stg_dtc_wellness_delta stg
+JOIN engage360.members m
+    ON m.org_id = stg.org_id
+    AND m.salesforce_account_number = stg.salesforce_account_number
+WHERE stg.file_batch_id = %s
+  AND stg.processing_status = 'TRANSFORMING'
+  AND stg.device_udi IS NOT NULL
+  AND LTRIM(RTRIM(stg.device_udi)) != ''
+GROUP BY stg.device_udi
+HAVING COUNT(*) > 1
+```
+
+**Example Duplicate:**
+```csv
+org_id,salesforce_account_number,device_udi,device_phone_number
+abc-123,SF-5678,DEVICE-12345,+15551111111
+xyz-456,SF-9012,DEVICE-12345,+15552222222  ← DUPLICATE (same device assigned to different members)
+```
+
+**Error Message:**
+```
+Duplicate devices found in staging data:
+device_udi: DEVICE-12345, count: 2
+```
+
+---
+
+### Processing Pipeline with Duplicate Checks
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Step 1: EXTRACT                                             │
+│ - Read CSV from blob storage (landing/ folder)             │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Step 2: LOAD_TO_STAGING                                     │
+│ - INSERT all rows to engage360_stg.stg_dtc_wellness_delta  │
+│ - File moved to staging/ folder                            │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Step 3: VALIDATE_DATA                                       │
+│ - Field-level validation (phone, dates, required fields)   │
+│ - Rows marked VALIDATION_ERROR or VALIDATED                │
+│ - Processing continues even with validation errors         │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Step 4: TRANSFORM_AND_LOAD_CORE  ← DUPLICATE CHECKS HERE   │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ 4.1: Check Member Duplicates (Line 1849-1885)          │ │
+│ │      ❌ IF FOUND → Raise ValueError → FAIL ENTIRE FILE  │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                            ↓                                │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ 4.2: Upsert members to engage360.members               │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                            ↓                                │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ 4.3: Process enrollments                                │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                            ↓                                │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ 4.4: Check Update Enrollment Duplicates (Line 2112)    │ │
+│ │      ❌ IF FOUND → Raise ValueError → FAIL ENTIRE FILE  │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                            ↓                                │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ 4.5: Check Device Duplicates (Line 2237-2266)          │ │
+│ │      ❌ IF FOUND → Raise ValueError → FAIL ENTIRE FILE  │ │
+│ └─────────────────────────────────────────────────────────┘ │
+│                            ↓                                │
+│ ┌─────────────────────────────────────────────────────────┐ │
+│ │ 4.6: Process devices (insert to member_devices)        │ │
+│ └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│ Step 5: LOG_AUDIT                                           │
+│ - Log success to file_processing_log                       │
+│ - File moved to processed/ folder                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Key Points:**
+- Duplicate checks happen AFTER validation but BEFORE core table inserts
+- All 3 duplicate checks must pass before ANY data is written to production tables
+- One failed check causes complete transaction rollback
+
+---
+
+### What Happens When Duplicates Are Found
+
+#### 1. Exception Raised
+
+```python
+if duplicates:
+    duplicate_details = []
+    for dup in duplicates:
+        duplicate_details.append(
+            f"org_id: {dup[0]}, salesforce_account_number: {dup[1]}, count: {dup[2]}"
+        )
+
+    error_message = "Duplicate members found in staging data:\n" + "\n".join(
+        duplicate_details
+    )
+    logger.error(f"❌ {error_message}")
+    raise ValueError(error_message)  # ← FATAL EXCEPTION - STOPS PROCESSING
+```
+
+#### 2. Transaction Rollback
+
+- All database operations in Step 4 are wrapped in a transaction
+- When ValueError is raised, entire transaction is rolled back
+- Zero records written to production tables:
+  - `engage360.members` - no inserts/updates
+  - `engage360.member_campaign_enrollments_enhanced` - no inserts/updates
+  - `engage360.member_devices` - no inserts/updates
+
+#### 3. File Moved to Error Folder
+
+- File remains in Azure Blob Storage but moved from `staging/` to `error/` folder
+- Original filename preserved for investigation
+
+#### 4. Error Logged to Database
+
+**Table:** `engage360_stg.file_processing_log`
+
+```sql
+UPDATE engage360_stg.file_processing_log
+SET processing_status = 'FAILED',
+    final_error_message = 'Duplicate members found in staging data:...',
+    processing_end_ts = SYSDATETIMEOFFSET()
+WHERE file_batch_id = %s
+```
+
+#### 5. Staging Records Preserved
+
+- All records remain in `engage360_stg.stg_dtc_wellness_delta` with `processing_status = 'TRANSFORMING'`
+- Allows investigation of which records were duplicates
+- Can be manually inspected or cleaned up
+
+---
+
+### Investigation Queries for Duplicate Errors
+
+#### Find Member Duplicates in Staging
+
+```sql
+SELECT
+    org_id,
+    LTRIM(RTRIM(salesforce_account_number)) AS salesforce_account_number,
+    COUNT(*) as count,
+    STRING_AGG(CAST(row_number AS VARCHAR), ', ') as row_numbers
+FROM engage360_stg.stg_dtc_wellness_delta
+WHERE file_batch_id = 'YOUR-FILE-BATCH-ID'
+  AND processing_status = 'TRANSFORMING'
+  AND org_id IS NOT NULL
+  AND salesforce_account_number IS NOT NULL
+GROUP BY org_id, LTRIM(RTRIM(salesforce_account_number))
+HAVING COUNT(*) > 1
+ORDER BY count DESC
+```
+
+#### Find Update Enrollment Duplicates
+
+```sql
+SELECT
+    m.member_id,
+    stg.salesforce_account_number,
+    COUNT(*) as count
+FROM engage360_stg.stg_dtc_wellness_delta stg
+JOIN engage360.members m
+    ON m.org_id = stg.org_id
+    AND m.salesforce_account_number = stg.salesforce_account_number
+WHERE stg.file_batch_id = 'YOUR-FILE-BATCH-ID'
+  AND stg.processing_status = 'TRANSFORMING'
+  AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UPDATE'
+GROUP BY m.member_id, stg.salesforce_account_number
+HAVING COUNT(*) > 1
+```
+
+#### Find Device Duplicates
+
+```sql
+SELECT
+    stg.device_udi,
+    COUNT(*) as count,
+    STRING_AGG(stg.salesforce_account_number, ', ') as assigned_to_members
+FROM engage360_stg.stg_dtc_wellness_delta stg
+WHERE stg.file_batch_id = 'YOUR-FILE-BATCH-ID'
+  AND stg.processing_status = 'TRANSFORMING'
+  AND stg.device_udi IS NOT NULL
+  AND LTRIM(RTRIM(stg.device_udi)) != ''
+GROUP BY stg.device_udi
+HAVING COUNT(*) > 1
+```
+
+#### Check File Processing Log
+
+```sql
+SELECT
+    file_batch_id,
+    file_name,
+    processing_status,
+    final_error_message,
+    processing_start_ts,
+    processing_end_ts
+FROM engage360_stg.file_processing_log
+WHERE file_name LIKE '%YOUR-FILE-NAME%'
+ORDER BY processing_start_ts DESC
+```
+
+---
+
+### Recovery Steps
+
+When a duplicate error occurs:
+
+1. **Identify Duplicates**
+   - Use investigation queries above to find duplicate records
+   - Check staging table for specific org_id/salesforce_account_number combinations
+
+2. **Fix CSV File**
+   - Remove duplicate rows, OR
+   - Consolidate duplicates into single record with correct data, OR
+   - Split into multiple files if intentionally processing updates
+
+3. **Resubmit File**
+   - Upload corrected CSV with new filename (e.g., `_v2` suffix)
+   - Do NOT reuse original filename (blob trigger may not fire)
+
+4. **Clean Up Staging (Optional)**
+   ```sql
+   DELETE FROM engage360_stg.stg_dtc_wellness_delta
+   WHERE file_batch_id = 'FAILED-FILE-BATCH-ID'
+   ```
+
+---
+
+### Duplicate Detection vs Validation Errors
+
+| Aspect | Validation Errors | Duplicate Errors |
+|--------|-------------------|------------------|
+| **Detection Phase** | Step 3 (VALIDATE_DATA) | Step 4 (TRANSFORM_AND_LOAD_CORE) |
+| **Severity** | Row-level (non-fatal) | File-level (fatal) |
+| **Processing Behavior** | Continues, skips invalid rows | Stops immediately, rollback |
+| **Good Records** | Loaded to database | NOT loaded (all-or-nothing) |
+| **Error Storage** | staging table `error_message` column | file_processing_log `final_error_message` |
+| **File Disposition** | Moved to processed/ folder | Moved to error/ folder |
+| **Examples** | Invalid phone, missing field | Same member twice in file |
+
+**Key Difference:**
+- **Validation errors** allow partial loading (good rows processed, bad rows skipped)
+- **Duplicate errors** reject entire file (zero rows processed)
+
+---
+
+### Database Constraints
+
+**Important:** Duplicate prevention is **application-enforced**, not database-enforced.
+
+**No UNIQUE Constraints on:**
+- `engage360_stg.stg_dtc_wellness_delta` - Staging table intentionally allows duplicates for auditing
+- `engage360.members.(org_id, salesforce_account_number)` - No composite unique index
+
+**Why Application-Level?**
+- Allows investigation of duplicate records in staging
+- Provides detailed error messages with counts
+- Enables batch validation before committing to production
+- Maintains audit trail of problematic files
+
+---
+
+### Summary Table
+
+| Feature | Implementation |
+|---------|----------------|
+| **Duplicate Types** | 3 types: Members, Update Enrollments, Devices |
+| **Detection Timing** | Step 4 (after validation, before core inserts) |
+| **Behavior on Duplicates** | Fail-fast: Raise ValueError, rollback transaction |
+| **Partial Loading** | NO - All-or-nothing processing |
+| **Core Table Updates** | ZERO records loaded if duplicates detected |
+| **Staging Records** | Remain in staging for investigation |
+| **File Disposition** | Moved to "error" folder in blob storage |
+| **Retry Possible** | Yes - Fix CSV and resubmit with new filename |
+| **Automatic Correction** | NO - Manual intervention required |
+| **Error Logging** | file_processing_log.final_error_message |
+| **Database Constraints** | None - Application-level enforcement only |
+
+---
+
 ## Key Insights
 
 ### Proactive vs Reactive Architecture
