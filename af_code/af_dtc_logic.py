@@ -1392,9 +1392,7 @@ def validate_and_cleanse_data_before_insert(
         if df_clean.loc[idx, "channel_type_clean"] == "device":
             # Check if device is callable
             if not is_callable or is_callable.upper() not in ["Y", "YES", "TRUE", "1"]:
-                row_errors.append(
-                    "When channel_type='device', is_device_callable must be 'Y'"
-                )
+                row_errors.append("When channel_type='device', is_device_callable must be 'Y'")
 
             # Check required device fields
             if not device_udi:
@@ -2063,8 +2061,8 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                    %s AS campaign_id,
                    CASE LTRIM(RTRIM(UPPER(stg.checkin_time)))
                        WHEN 'AM' THEN 'AM9-10'
-                       WHEN 'PM' THEN 'PM1-3'
-                       WHEN 'EV' THEN 'EV4-6'
+                       WHEN 'PM' THEN 'PM12-1'
+                       WHEN 'EV' THEN 'EV4-5'
                        ELSE NULL
                    END AS preferred_window
             FROM {context.config.staging_table} stg
@@ -2145,8 +2143,8 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             SELECT m.member_id, 
                    CASE LTRIM(RTRIM(UPPER(stg.checkin_time)))
                        WHEN 'AM' THEN 'AM9-10'
-                       WHEN 'PM' THEN 'PM1-3'
-                       WHEN 'EV' THEN 'EV4-6'
+                       WHEN 'PM' THEN 'PM12-1'
+                       WHEN 'EV' THEN 'EV4-5'
                        ELSE NULL
                    END AS preferred_window
             FROM {context.config.staging_table} stg

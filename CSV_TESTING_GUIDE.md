@@ -125,8 +125,8 @@ DTC_YYYYMMDD[_Suffix].csv
 **Test CSV Content**:
 ```csv
 org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG001,987654321,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,AM9-10
+ORG001,987654321,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-5
 ```
 
 **Upload Steps**:
@@ -172,8 +172,8 @@ ORG001,987654321,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Hom
 **Test CSV Content** (with errors):
 ```csv
 org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG001,,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
+,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,AM9-10
+ORG001,,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-5
 ORG001,111111111,invalid_status,InvalidLang,InvalidChannel,,,,,,,,,,,,,InvalidTZ,InvalidMethod,InvalidDays,InvalidWindow
 ```
 
@@ -206,9 +206,9 @@ ORG001,111111111,invalid_status,InvalidLang,InvalidChannel,,,,,,,,,,,,,InvalidTZ
 **Test CSV Content** (with duplicate members):
 ```csv
 org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG001,123456789,update,English,Phone,John,Doe,1965-03-15,M,UDI999999999,Different Device,+15551234568,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG001,987654321,enroll,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,AM9-10
+ORG001,123456789,update,English,Phone,John,Doe,1965-03-15,M,UDI999999999,Different Device,+15551234568,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,AM9-10
+ORG001,987654321,enroll,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-5
 ```
 
 **Issue**: Rows 1 and 2 have identical `org_id` + `salesforce_account_number` (ORG001 + 123456789)
@@ -264,8 +264,8 @@ ORDER BY count DESC;
 **Test CSV Content** (with duplicate UPDATE records):
 ```csv
 org_id,salesforce_account_number,enrollment_status,preferred_window
-ORG001,123456789,UPDATE,EV1-2
-ORG001,123456789,UPDATE,EV4-6
+ORG001,123456789,UPDATE,AM9-10
+ORG001,123456789,UPDATE,EV4-5
 ```
 
 **Issue**: Same member (ORG001 + 123456789) has two UPDATE records with conflicting preferred_window
@@ -365,8 +365,8 @@ EOF
 # Create valid DTC test file
 cat > DTC_20241226.csv << 'EOF'
 org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday Thursday Friday,EV1-2
-ORG001,987654321,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Monday Wednesday Friday,EV4-6
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday Thursday Friday,AM9-10
+ORG001,987654321,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Monday Wednesday Friday,EV4-5
 ORG002,111222333,enroll,English,Phone,Robert,Johnson,1980-11-05,,UDI111222333,Mobile Device,+15551112222,Y,789 Pine St,Riverside,TX,75001,USA,America/Central,Phone,Tuesday Thursday Saturday,EV2-3
 EOF
 ```
@@ -400,23 +400,23 @@ EOF
 # Test File 1: Duplicate Members
 cat > DTC_20241226_duplicate_members.csv << 'EOF'
 org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG001,123456789,update,English,Phone,John,Doe,1965-03-15,M,UDI999999999,Different Device,+15551234568,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG001,987654321,enroll,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,AM9-10
+ORG001,123456789,update,English,Phone,John,Doe,1965-03-15,M,UDI999999999,Different Device,+15551234568,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,AM9-10
+ORG001,987654321,enroll,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Home Device,+15559876543,N,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-5
 EOF
 
 # Test File 2: Duplicate Update Enrollments
 cat > DTC_20241226_duplicate_updates.csv << 'EOF'
 org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-ORG001,123456789,UPDATE,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG001,123456789,UPDATE,English,Phone,John,Doe,1965-03-15,M,UDI999999999,Different Device,+15551234568,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Thursday Friday,EV4-6
+ORG001,123456789,UPDATE,English,Phone,John,Doe,1965-03-15,M,UDI123456789,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,AM9-10
+ORG001,123456789,UPDATE,English,Phone,John,Doe,1965-03-15,M,UDI999999999,Different Device,+15551234568,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Thursday Friday,EV4-5
 EOF
 
 # Test File 3: Duplicate Devices
 cat > DTC_20241226_duplicate_devices.csv << 'EOF'
 org_id,salesforce_account_number,enrollment_status,language_preference,channel_type,member_first_name,member_last_name,member_dob,member_gender,device_udi,device_name,device_phone_clean,is_device_callable_clean,member_address,member_city,member_state,member_zip,member_country,timezone,preferred_contact_method,call_days_of_week,preferred_window
-ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,DEVICE-12345,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,EV1-2
-ORG002,987654321,enroll,Spanish,Email,Maria,Garcia,1970-08-22,F,DEVICE-12345,Home Device,+15559876543,Y,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-6
+ORG001,123456789,enroll,English,Phone,John,Doe,1965-03-15,M,DEVICE-12345,Emergency Device,+15551234567,Y,123 Main St,Anytown,CA,90210,USA,America/Los_Angeles,Phone,Monday Tuesday Wednesday,AM9-10
+ORG002,987654321,enroll,Spanish,Email,Maria,Garcia,1970-08-22,F,DEVICE-12345,Home Device,+15559876543,Y,456 Oak Ave,Springfield,IL,62701,USA,America/Chicago,Email,Thursday Friday,EV4-5
 EOF
 ```
 
