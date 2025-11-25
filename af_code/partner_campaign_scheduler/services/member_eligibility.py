@@ -399,7 +399,7 @@ CASE m.timezone
                   -- Timezone-aware day of week check
                   AND te.member_current_day IN (SELECT value FROM STRING_SPLIT(@call_days, ','))
             )
-            SELECT TOP 1000
+            SELECT TOP 80
                 member_id,
                 campaign_id,
                 enrollment_id,
