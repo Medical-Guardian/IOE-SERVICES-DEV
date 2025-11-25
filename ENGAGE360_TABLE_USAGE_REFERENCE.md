@@ -87,8 +87,8 @@
 **Where used:** Bland AI Webhook Handler (database_orchestrator.py)
 **Files:** 3 Python files, 3 Markdown files
 **Operations:** INSERT (every webhook call creates one record)
-**Key columns:** call_log_id, from_number, price, end_at, status, call_id, summary, analysis, batch_id, metadata, transcripts, recording_url, disposition_tag, raw_bland_response (NULL after 2025-01-03) (32 fields total)
-**Note:** New records insert NULL for raw_bland_response; raw webhook JSON now stored in bland_raw_response table.
+**Key columns:** call_log_id, from_number, to_number, price, end_at, status, call_id, summary, analysis, batch_id, metadata, transcripts, recording_url, disposition_tag, raw_bland_response (NULL after 2025-01-03) (33 fields total)
+**Note:** New records insert NULL for raw_bland_response; raw webhook JSON now stored in bland_raw_response table. to_number added 2025-11-25 to capture member's phone number.
 
 ---
 

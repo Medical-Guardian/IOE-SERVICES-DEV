@@ -226,7 +226,7 @@ class DatabaseOrchestrator:
         """
         q = """
             INSERT INTO engage360.bland_call_logs (
-                from_number, price, end_at, status, call_id, summary, analysis, batch_id,
+                from_number, to_number, price, end_at, status, call_id, summary, analysis, batch_id,
                 first_name, last_name, member_id, attempt_id, language_pref, call_type_code,
                 salesforce_account_number, campaign_id, completed, created_at, pathway_id,
                 answered_by, transcripts, max_duration, pathway_logs, pathway_tags,
@@ -245,6 +245,7 @@ class DatabaseOrchestrator:
         md = webhook_data.get("metadata", {}) or {}
         params = (
             webhook_data.get("from"),
+            webhook_data.get("to"),
             webhook_data.get("price"),
             webhook_data.get("end_at"),
             webhook_data.get("status"),
