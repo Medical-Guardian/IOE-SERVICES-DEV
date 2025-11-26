@@ -239,7 +239,7 @@ class DatabaseOrchestrator:
                 %s, %s, %s, %s, %s,
                 %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
-                %s, %s, %s, %s
+                %s, %s, %s, %s, %s
             )
         """
         md = webhook_data.get("metadata", {}) or {}
