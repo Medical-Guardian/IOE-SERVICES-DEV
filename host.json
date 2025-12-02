@@ -4,8 +4,17 @@
     "applicationInsights": {
       "samplingSettings": {
         "isEnabled": true,
+        "maxTelemetryItemsPerSecond": 20,
         "excludedTypes": "Request"
-      }
+      },
+      "enableDependencyTracking": true,
+      "enablePerformanceCountersCollection": true
+    },
+    "logLevel": {
+      "default": "Information",
+      "Function": "Information",
+      "af_code.shared.bland_ai_client": "Information",
+      "af_code.partner_campaign_scheduler": "Information"
     }
   },
   "extensionBundle": {
