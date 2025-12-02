@@ -536,14 +536,26 @@ class CampaignQualifier:
         try:
             bland_params = json.loads(bland_parameters_json)
 
-            # Normalize field names for backward compatibility
-            # Handle both "webhook" and "webhook_url"
-            if "webhook" in bland_params and "webhook_url" not in bland_params:
-                bland_params["webhook_url"] = bland_params["webhook"]
+            # Normalize field names with deprecation warnings
+            from af_code.shared.bland_parameters_validator import BlandParametersValidator
 
-            # Handle both "voice" and "voice_id"
-            if "voice" in bland_params and "voice_id" not in bland_params:
-                bland_params["voice_id"] = bland_params["voice"]
+            validator = BlandParametersValidator()
+            normalized_params, deprecated_fields = validator.normalize_field_names(bland_params)
+
+            if deprecated_fields:
+                logger.warning(
+                    f"⚠️ [CAMPAIGN-QUALIFIER] Deprecated field names detected in campaign '{campaign_name}'"
+                )
+                for old_field in deprecated_fields:
+                    new_field = validator.DEPRECATED_FIELD_MAPPINGS.get(old_field)
+                    logger.warning(
+                        f"⚠️ [CAMPAIGN-QUALIFIER]   - '{old_field}' is deprecated, use '{new_field}' instead"
+                    )
+                logger.warning(
+                    "⚠️ [CAMPAIGN-QUALIFIER] Update bland_parameters_global in campaign_call_configs_enhanced to use new field names"
+                )
+
+            bland_params = normalized_params
 
             logger.info(
                 f"📋 [CAMPAIGN-QUALIFIER] Parsed Bland AI parameters for campaign: {campaign_name}"
