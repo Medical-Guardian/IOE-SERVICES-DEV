@@ -81,37 +81,34 @@ class BlandAIClient:
                     "⚠️ [BLAND-CLIENT] encrypted_key header NOT added (Blandaitwilio not configured)"
                 )
 
-            # Build DTC-style payload with ALL global configuration parameters
-            # Following EXACT structure from af_dtc_intro_call/services/blandai_service.py
-            # Extract all 18+ parameters from bland_parameters_global JSON
+            # Build global_config with ALL parameters from bland_parameters_global
+            # This ensures all database-configured parameters are passed to Bland AI
+            # Including voicemail_action, voicemail_message, and any future parameters
             bland_params = batch_request.bland_parameters_global or {}
 
-            # Build global_config with ALL parameters (filter None values like DTC)
-            global_config = {
-                k: v
-                for k, v in {
-                    "pathway_id": batch_request.pathway_id,
-                    "pathway_version": bland_params.get("pathway_version"),
-                    "voice": batch_request.voice_id,
-                    "wait_for_greeting": bland_params.get("wait_for_greeting"),
-                    "record": bland_params.get("record"),
-                    "answered_by_enabled": bland_params.get("answered_by_enabled"),
-                    "noise_cancellation": bland_params.get("noise_cancellation"),
-                    "interruption_threshold": bland_params.get("interruption_threshold"),
-                    "block_interruptions": bland_params.get("block_interruptions"),
-                    "max_duration": bland_params.get("max_duration"),
-                    "model": bland_params.get("model"),
-                    "temperature": bland_params.get("temperature"),
-                    "language": bland_params.get("language"),
-                    "background_track": bland_params.get("background_track"),
-                    "endpoint": bland_params.get("endpoint"),
-                    "from": bland_params.get("from"),  # "from" phone number
-                    "timezone": bland_params.get("timezone"),
-                    "webhook": bland_params.get("webhook")
-                    or bland_params.get("webhook_url"),  # Support both field names
-                }.items()
-                if v is not None  # Only include non-None values (DTC pattern)
-            }
+            # Start with all parameters from bland_parameters_global
+            global_config = {}
+
+            # Add ALL parameters from bland_parameters_global (database-driven)
+            # Filter out special fields that don't belong in global config
+            excluded_from_global = {"request_data", "metadata"}
+            for key, value in bland_params.items():
+                if key not in excluded_from_global and value is not None:
+                    global_config[key] = value
+
+            # Override/ensure required parameters are present
+            # pathway_id and voice_id come from batch_request (validated by BlandParametersValidator)
+            if batch_request.pathway_id:
+                global_config["pathway_id"] = batch_request.pathway_id
+            if batch_request.voice_id:
+                # Use 'voice' field name (Bland AI expects 'voice', not 'voice_id')
+                global_config["voice"] = batch_request.voice_id
+
+            # Ensure webhook is present (required parameter)
+            # Support both 'webhook' and 'webhook_url' field names
+            if "webhook_url" in global_config and "webhook" not in global_config:
+                global_config["webhook"] = global_config["webhook_url"]
+                del global_config["webhook_url"]  # Remove webhook_url, use webhook only
 
             logger.info(
                 f"🔧 [BLAND-CLIENT] Built global config with {len(global_config)} parameters"
