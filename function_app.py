@@ -38,6 +38,14 @@ except Exception as e:
     logging.error(f"❌ Failed to import/register partner_file_processor: {str(e)}")
 
 try:
+    from functions import device_activation_file_processor  # Device Activation file processor
+    logging.info("✅ Successfully imported device_activation_file_processor")
+    app.register_functions(device_activation_file_processor.bp)
+    logging.info("✅ Successfully registered Device Activation file processor")
+except Exception as e:
+    logging.error(f"❌ Failed to import/register device_activation_file_processor: {str(e)}")
+
+try:
     from functions.dtc_intro_call_scheduler import dtc_intro_call_bp  # DTC INTRO CALL
     logging.info("✅ Successfully imported dtc_intro_call_bp")
     app.register_functions(dtc_intro_call_bp)
@@ -76,5 +84,21 @@ try:
     logging.info("✅ Successfully registered Batch Completion Reconciler")
 except Exception as e:
     logging.error(f"❌ Failed to import/register batch_completion_bp: {str(e)}")
+
+try:
+    from functions.device_activation_scheduler import device_activation_bp  # Device Activation Scheduler
+    logging.info("✅ Successfully imported device_activation_bp")
+    app.register_functions(device_activation_bp)
+    logging.info("✅ Successfully registered Device Activation Scheduler")
+except Exception as e:
+    logging.error(f"❌ Failed to import/register device_activation_bp: {str(e)}")
+
+try:
+    from functions.operations_device_activation_file_processor import operations_device_activation_bp  # Operations Device Activation File Processor
+    logging.info("✅ Successfully imported operations_device_activation_bp")
+    app.register_functions(operations_device_activation_bp)
+    logging.info("✅ Successfully registered Operations Device Activation file processor (Medicaid, DTC/MA)")
+except Exception as e:
+    logging.error(f"❌ Failed to import/register operations_device_activation_bp: {str(e)}")
 
 logging.info("Function registration process completed.")
