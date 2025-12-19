@@ -21,10 +21,9 @@ from af_code.af_device_activation_logic import process_device_activation_file_co
 operations_device_activation_bp = func.Blueprint()
 
 
+@operations_device_activation_bp.function_name(name="operations_device_activation_file_processor")
 @operations_device_activation_bp.blob_trigger(
-    arg_name="blob",
-    path="fs-ops/landing/{name}",
-    connection="AzureWebJobsStorage"
+    arg_name="blob", path="fs-ops/landing/{name}", connection="AzureWebJobsStorage"
 )
 def operations_device_activation_file_processor(blob: func.InputStream):
     """
@@ -62,13 +61,15 @@ def operations_device_activation_file_processor(blob: func.InputStream):
     # ===================================================================
     filename_patterns = [
         r"MedicalGuardian_DeviceActivationMedicaid_\d{8}_DELTA\.csv",
-        r"MedicalGuardian_DeviceActivationDTCMA_\d{8}_DELTA\.csv"
+        r"MedicalGuardian_DeviceActivationDTCMA_\d{8}_DELTA\.csv",
     ]
 
     filename_match = any(re.match(pattern, blob.name) for pattern in filename_patterns)
 
     if not filename_match:
-        logging.warning(f"⚠️ [OPS-DEVICE-ACTIVATION] Skipping file with unexpected name format: {blob.name}")
+        logging.warning(
+            f"⚠️ [OPS-DEVICE-ACTIVATION] Skipping file with unexpected name format: {blob.name}"
+        )
         logging.info(f"   Expected patterns:")
         logging.info(f"   - MedicalGuardian_DeviceActivationMedicaid_YYYYMMDD_DELTA.csv")
         logging.info(f"   - MedicalGuardian_DeviceActivationDTCMA_YYYYMMDD_DELTA.csv")
@@ -90,7 +91,9 @@ def operations_device_activation_file_processor(blob: func.InputStream):
         logging.info(f"📋 [OPS-DEVICE-ACTIVATION] Campaign: {campaign_name}")
         logging.info(f"   🆔 Campaign ID: {campaign_id}")
     else:
-        logging.error(f"❌ [OPS-DEVICE-ACTIVATION] Unable to determine campaign from filename: {blob.name}")
+        logging.error(
+            f"❌ [OPS-DEVICE-ACTIVATION] Unable to determine campaign from filename: {blob.name}"
+        )
         logging.error(f"   Filename must contain 'Medicaid' or 'DTCMA'")
         return
 
@@ -115,7 +118,7 @@ def operations_device_activation_file_processor(blob: func.InputStream):
             blob_name=blob.name,
             blob_content=blob_content,
             campaign_id=campaign_id,
-            campaign_name=campaign_name
+            campaign_name=campaign_name,
         )
 
         logging.info(f"✅ [OPS-DEVICE-ACTIVATION] File processing completed successfully")
@@ -138,8 +141,9 @@ def operations_device_activation_file_processor(blob: func.InputStream):
 
         # Log full traceback for debugging
         import traceback
+
         logging.error(f"   📚 Traceback:")
-        for line in traceback.format_exc().split('\n'):
+        for line in traceback.format_exc().split("\n"):
             if line.strip():
                 logging.error(f"      {line}")
 

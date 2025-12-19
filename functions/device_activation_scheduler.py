@@ -39,6 +39,7 @@ from af_code.bland_ai_webhook.services.database_service import DatabaseService
 device_activation_bp = func.Blueprint()
 
 
+@device_activation_bp.function_name(name="timer_device_activation")
 @device_activation_bp.timer_trigger(
     schedule="0 */15 * * * *",  # Every 15 minutes (updated for Operations campaigns)
     arg_name="timer",
@@ -87,6 +88,7 @@ def timer_device_activation(timer: func.TimerRequest) -> None:
     logging.info("⏰ [TIMER] Device Activation Scheduler COMPLETED")
 
 
+@device_activation_bp.function_name(name="http_device_activation")
 @device_activation_bp.route(route="create_device_activation_batch", methods=["POST"])
 def http_device_activation(req: func.HttpRequest) -> func.HttpResponse:
     """
@@ -151,9 +153,7 @@ def http_device_activation(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
         )
     except Exception as e:
-        logging.error(
-            f"💥 [HTTP] An internal server error occurred: {str(e)}", exc_info=True
-        )
+        logging.error(f"💥 [HTTP] An internal server error occurred: {str(e)}", exc_info=True)
         return func.HttpResponse(
             json.dumps(
                 {
