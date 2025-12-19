@@ -531,7 +531,8 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # 3. Phone Number Validation and Standardization
         # ===================================================================
-        member_phone = row.get('member_phone_number', '')
+        # Support both column names (pre and post column mapping)
+        member_phone = row.get('primary_phone', '') or row.get('member_phone_number', '')
         standardized_phone = standardize_phone(member_phone)
         if not standardized_phone:
             row_errors.append(f"Invalid member_phone_number: '{member_phone}'")
@@ -539,7 +540,7 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, 'primary_phone_clean'] = standardized_phone
 
         # Device phone (optional)
-        device_phone = row.get('device_phone_number', '')
+        device_phone = row.get('device_phone', '') or row.get('device_phone_number', '')
         if device_phone and str(device_phone).strip():
             standardized_device_phone = standardize_phone(device_phone)
             if standardized_device_phone:
@@ -548,8 +549,9 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # 4. Name Validation and Proper Casing
         # ===================================================================
-        first_name = row.get('member_first_name', '')
-        last_name = row.get('member_last_name', '')
+        # Support both column names (pre and post column mapping)
+        first_name = row.get('first_name', '') or row.get('member_first_name', '')
+        last_name = row.get('last_name', '') or row.get('member_last_name', '')
 
         if not first_name or str(first_name).strip() == '':
             row_errors.append("member_first_name is required")
@@ -564,7 +566,8 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # 5. Timezone Validation and Mapping
         # ===================================================================
-        timezone_val = row.get('member_timezone', '')  # CHANGED from customer_timezone
+        # Support both column names (pre and post column mapping)
+        timezone_val = row.get('timezone', '') or row.get('member_timezone', '')  # CHANGED from customer_timezone
         # Map abbreviations (EST, CST, etc.) to IANA format
         mapped_timezone = map_timezone_to_iana(timezone_val)
 
@@ -588,7 +591,8 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # 7. Date of Birth Validation (Auto-detect format, convert to YYYY-MM-DD)
         # ===================================================================
-        dob = row.get('member_dob', '')  # CHANGED from dob
+        # Support both column names (pre and post column mapping)
+        dob = row.get('dob', '') or row.get('member_dob', '')
         if dob and str(dob).strip():
             dob_parsed = None
             # Try multiple date formats (most common first)
@@ -619,10 +623,11 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # 7.5. Address Combination (NEW - Combine 5 fields into 1)
         # ===================================================================
-        street = str(row.get('member_address_street', '')).strip()
-        city = str(row.get('member_address_city', '')).strip()
-        state = str(row.get('member_address_state', '')).strip()
-        zip_code = str(row.get('member_address_zip', '')).strip()
+        # Support both column names (pre and post column mapping)
+        street = str(row.get('service_address', '') or row.get('member_address_street', '')).strip()
+        city = str(row.get('city', '') or row.get('member_address_city', '')).strip()
+        state = str(row.get('state', '') or row.get('member_address_state', '')).strip()
+        zip_code = str(row.get('zip', '') or row.get('member_address_zip', '')).strip()
 
         # Combine address fields
         if street and city and state and zip_code:
@@ -636,7 +641,8 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # 8. Email Validation (optional)
         # ===================================================================
-        email = row.get('member_email', '')
+        # Support both column names (pre and post column mapping)
+        email = row.get('email', '') or row.get('member_email', '')
         if email and str(email).strip():
             if not validate_email(email):
                 row_errors.append(f"Invalid email format: '{email}'")
@@ -654,7 +660,8 @@ def validate_and_cleanse_data_before_insert(
         # 10. Device Status Validation and Conversion (UPDATED FORMAT)
         # ===================================================================
         # Fall Detection: Convert 1/0 to Active/Inactive
-        fall_detection = row.get('fall_detection', '')  # CHANGED from fall_detection_status
+        # Support both column names (pre and post column mapping)
+        fall_detection = row.get('fall_detection_status', '') or row.get('fall_detection', '')
         if fall_detection and str(fall_detection).strip():
             fall_str = str(fall_detection).strip()
             if fall_str in ['1', '1.0', 'True', 'true', 'Y', 'Yes']:
@@ -670,7 +677,8 @@ def validate_and_cleanse_data_before_insert(
                     df.at[idx, 'fall_detection_status_clean'] = 'Unknown'
 
         # Battery Mode: Map "Standard" and "Powersaver" to "Good"
-        battery = row.get('powersaver_mode', '')  # CHANGED from battery_status
+        # Support both column names (pre and post column mapping)
+        battery = row.get('battery_status', '') or row.get('powersaver_mode', '')
         if battery and str(battery).strip():
             battery_str = str(battery).strip().title()
             if battery_str in ['Standard', 'Powersaver']:
@@ -687,7 +695,8 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, 'battery_status_clean'] = 'Unknown'
 
         # Brand: Map member_brand to brand (no validation needed)
-        member_brand = row.get('member_brand', '')
+        # Support both column names (pre and post column mapping)
+        member_brand = row.get('brand', '') or row.get('member_brand', '')
         if member_brand and str(member_brand).strip():
             df.at[idx, 'brand_clean'] = str(member_brand).strip()
 
