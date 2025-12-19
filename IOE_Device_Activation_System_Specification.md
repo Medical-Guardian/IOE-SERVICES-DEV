@@ -131,12 +131,35 @@ graph TD
 A customer receives their Medical Guardian device and it gets delivered to their home. However, after a certain number of days (let's say 5 days), the device hasn't sent any signal - meaning the customer hasn't turned it on or activated it.
 
 **What Happens:**
-The system gets a list of these customers (members) from a file location. This list contains:
-- Member's name
-- Phone number
-- Device serial number
-- Delivery date
+The system gets a list of these customers (members) from a file location (SFTP). This list contains:
+
+**Core Member Information:**
+- Salesforce Account ID (unique identifier)
+- First name and Last name
+- Phone number (E.164 format: +15551234567)
+- Email address
+- Date of birth
+
+**Service Address:**
+- Service address (street)
+- City
+- State (2-letter code)
+- ZIP code
+
+**Device Information:**
+- Device UDI (serial number)
+- Device name (e.g., "MGMini")
+- Brand (e.g., "Medical Guardian")
+- Device phone number (if callable)
+- Delivery date (critical for calculating "Day 2")
+- Fall detection status (Active/Inactive/Not Applicable)
+- Battery status (Good/Low/Critical/Unknown)
+
+**Campaign Settings:**
+- Customer timezone (for business hours validation)
+- Language preference (EN, ES, Other)
 - Customer type (DTC = individual customer, MS = business/managed service customer)
+- Partner name (organization)
 
 **First Action:**
 The system calculates: "Okay, this device was delivered on Monday. We should start calling them on Wednesday (Day 2)."
@@ -499,10 +522,13 @@ Betty: "Oh yes! She told me you'd call!"
 
 ### Rule 1: Business Days vs Calendar Days
 
-**Business Days** (Monday-Friday, excluding weekends):
+**Business Days** (Monday-Friday, excluding weekends and federal holidays):
 - Used for Call 1 → Call 2: Wait 2 business days
-- Used for Call 2 → Call 3: Wait 2 business days  
+- Used for Call 2 → Call 3: Wait 2 business days
 - Used for Call 3 → Call 4: Wait 5 business days
+- **Federal holidays are automatically skipped** (e.g., Christmas, Thanksgiving, New Year's, Independence Day)
+- Uses US federal holiday calendar with "observed" dates
+- If holiday falls on weekend, the observed date (typically Friday or Monday) is skipped
 
 **Calendar Days** (includes weekends):
 - Used for Call 4 onwards: Wait 7 calendar days
@@ -516,21 +542,88 @@ Call 4: Next Tuesday (5 business days)
 Call 5: Next Tuesday (7 calendar days)
 ```
 
+**Example with Holiday:**
+```
+Call 1: Wednesday, December 24, 2025 (day before Christmas)
+Call 2: Monday, December 29, 2025 (2 business days, skipping Christmas Day Dec 25 and Dec 26)
+
+If July 4th (Independence Day) falls on Saturday:
+- Observed holiday: Friday, July 3rd
+- System skips Friday July 3rd as a holiday
+```
+
 ---
 
 ### Rule 2: Business Hours Only
 
-Calls are ONLY made:
-- **Days:** Monday through Friday
-- **Time:** 9:00 AM - 5:00 PM (member's local timezone)
+Calls are ONLY made when ALL of the following conditions are met:
 
-**What happens if a call is scheduled outside business hours?**
+**1. Business Day Requirement:**
+- **Days:** Monday through Friday
+- **Exclusions:** US federal holidays (Christmas, Thanksgiving, New Year's, Memorial Day, Independence Day, Labor Day, etc.)
+
+**2. Medical Guardian Business Hours (EST):**
+- **Timezone:** Eastern Time (America/New_York)
+- **Hours:** 9:00 AM - 5:00 PM EST
+- **Reason:** Medical Guardian customer care operates in EST timezone
+
+**3. Member Business Hours (Local Timezone):**
+- **Timezone:** Member's local timezone (EST, CST, MST, PST, etc.)
+- **Hours:** 9:00 AM - 5:00 PM (member's local time)
+- **Reason:** Respect member's local business hours for call convenience
+
+**Dual-Timezone Validation:**
+The system validates that the call time is within business hours for **BOTH** Medical Guardian (EST) and the member's local timezone. This ensures:
+- Medical Guardian staff are available to support if needed
+- Members receive calls during their local daytime hours
+- No calls are made too early or too late in either timezone
+
+**Examples:**
+
+**Example 1: Member in Pacific Time (PST)**
+```
+Proposed call: 2:00 PM EST
+- Medical Guardian time: 2:00 PM EST ✅ (within 9 AM - 5 PM EST)
+- Member time: 11:00 AM PST ✅ (within 9 AM - 5 PM PST)
+- Result: VALID ✅ Call can be made
+```
+
+**Example 2: Member in Pacific Time (PST) - Too Late**
+```
+Proposed call: 5:30 PM EST
+- Medical Guardian time: 5:30 PM EST ❌ (outside 9 AM - 5 PM EST)
+- Member time: 2:30 PM PST ✅ (within 9 AM - 5 PM PST)
+- Result: INVALID ❌ - Outside MG business hours
+```
+
+**Example 3: Member in Pacific Time (PST) - Too Early for Member**
+```
+Proposed call: 9:00 AM EST
+- Medical Guardian time: 9:00 AM EST ✅ (within 9 AM - 5 PM EST)
+- Member time: 6:00 AM PST ❌ (outside 9 AM - 5 PM PST)
+- Result: INVALID ❌ - Outside member business hours
+```
+
+**Example 4: Holiday**
+```
+Proposed call: Thursday, December 25, 2025 (Christmas Day) at 2:00 PM EST
+- Business day: ❌ Federal holiday
+- Result: INVALID ❌ - Call automatically rescheduled to next business day
+```
+
+**What happens if a call is scheduled outside valid hours?**
 ```
 Scheduled time: Saturday 2 PM
-Action: Automatically moved to Monday 9 AM
+Action: Automatically moved to Monday 9 AM (member's local time)
 
-Scheduled time: Friday 6 PM
-Action: Automatically moved to next day during business hours
+Scheduled time: Friday 6 PM EST (member in EST)
+Action: Automatically moved to Monday 9 AM EST
+
+Scheduled time: Thursday, Thanksgiving Day
+Action: Automatically moved to Friday 9 AM (if Friday is not also a holiday)
+
+Scheduled time: 9 AM EST, member in PST (6 AM PST - too early for member)
+Action: Automatically adjusted to 12 PM EST (9 AM PST) to respect member timezone
 ```
 
 ---
@@ -580,6 +673,62 @@ Day 5: Callback succeeds → Resume normal flow
 - Business accounts, corporate clients, facility residents
 - At 90 days: Flag sent to human sales/support team for manual follow-up
 - Higher priority because it's a business relationship
+
+---
+
+### Rule 6: Federal Holiday Calendar
+
+The system automatically skips the following US federal holidays when calculating business days:
+
+**Annual Federal Holidays:**
+1. **New Year's Day** - January 1
+2. **Martin Luther King Jr. Day** - Third Monday in January
+3. **Presidents' Day** - Third Monday in February
+4. **Memorial Day** - Last Monday in May
+5. **Independence Day** - July 4
+6. **Labor Day** - First Monday in September
+7. **Columbus Day** - Second Monday in October
+8. **Veterans Day** - November 11
+9. **Thanksgiving Day** - Fourth Thursday in November
+10. **Christmas Day** - December 25
+
+**Observed Holidays:**
+If a holiday falls on a weekend, the "observed" date is used:
+- **Saturday holiday:** Observed on Friday
+- **Sunday holiday:** Observed on Monday
+
+**Example:**
+```
+If Independence Day (July 4) falls on Saturday:
+- Observed date: Friday, July 3
+- System treats Friday July 3 as a holiday
+- No calls scheduled for Friday July 3
+
+If Christmas (December 25) falls on Sunday:
+- Observed date: Monday, December 26
+- System treats Monday December 26 as a holiday
+- No calls scheduled for Monday December 26
+```
+
+**Impact on Call Scheduling:**
+- Business day calculations automatically skip holidays
+- Call 1 → Call 2 (2 business days) excludes holidays in the count
+- Callbacks scheduled on holidays are automatically moved to next business day
+- Holiday information logged in Application Insights for debugging
+
+**2025 Federal Holiday Dates:**
+```
+New Year's Day: Wednesday, January 1, 2025
+Martin Luther King Jr. Day: Monday, January 20, 2025
+Presidents' Day: Monday, February 17, 2025
+Memorial Day: Monday, May 26, 2025
+Independence Day: Friday, July 4, 2025
+Labor Day: Monday, September 1, 2025
+Columbus Day: Monday, October 13, 2025
+Veterans Day: Tuesday, November 11, 2025
+Thanksgiving Day: Thursday, November 27, 2025
+Christmas Day: Thursday, December 25, 2025
+```
 
 ---
 

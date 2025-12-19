@@ -27,6 +27,9 @@ tenacity                  # Retry logic for transient errors
 # For handling timezones
 pytz
 
+# Holiday calendar for business day calculations
+holidays                  # US federal holiday calendar
+
 
 # For making HTTP requests to Bland AI API
 requests
