@@ -434,7 +434,7 @@ def get_device_activation_schema() -> Optional[DataFrameSchema]:
             "device_udi": Column(str, nullable=False),
             "device_name": Column(str, nullable=True),
             "member_brand": Column(str, nullable=True),            # RENAMED from brand
-            "is_device_callable": Column(str, nullable=True),
+            # NOTE: is_device_callable NOT in CSV - inferred from device_phone_number during validation
             "device_phone_number": Column(str, nullable=True),
 
             # Device status (NEW format: numeric 1/0 instead of text)
@@ -736,6 +736,11 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, 'error_message'] = '; '.join(row_errors)
             df.at[idx, 'error_details'] = '\n'.join(row_errors)
             validation_errors_count += 1
+
+            # Log detailed error for this row
+            logger.warning(f"⚠️ [VALIDATION] Row {idx + 1} validation errors:")
+            for error in row_errors:
+                logger.warning(f"  - {error}")
         else:
             df.at[idx, 'validation_status'] = 'VALIDATED'
             df.at[idx, 'error_message'] = ''
@@ -750,6 +755,13 @@ def validate_and_cleanse_data_before_insert(
         f"📊 [VALIDATION] Validation complete: "
         f"{validation_errors_count}/{total_rows} errors ({error_rate:.1f}%)"
     )
+
+    # Log summary of all errors if any exist
+    if validation_errors_count > 0:
+        logger.warning(f"📋 [VALIDATION] Summary of all validation errors:")
+        error_rows = df[df['validation_status'] == 'VALIDATION_ERROR']
+        for idx, row in error_rows.iterrows():
+            logger.warning(f"  Row {idx + 1}: {row['error_message']}")
 
     if error_rate > context.error_threshold_pct:
         logger.error(
