@@ -1,0 +1,13 @@
+# Deployment Marker - Forces Azure to refresh function cache
+# Last updated: 2025-12-20 00:45 UTC
+# Commit: 75c54c1 - Device Activation functions with address/DOB fields
+
+DEPLOYMENT_VERSION=1.0.4
+DEVICE_ACTIVATION_ENABLED=true
+EXPECTED_FUNCTIONS=15
+
+# Device Activation Functions (4 new):
+# 1. ProcessDeviceActivationBlob (Blob)
+# 2. timer_device_activation (Timer)
+# 3. http_device_activation (HTTP)
+# 4. operations_device_activation_file_processor (Blob)

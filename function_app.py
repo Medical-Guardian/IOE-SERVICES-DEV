@@ -102,3 +102,12 @@ except Exception as e:
     logging.error(f"❌ Failed to import/register operations_device_activation_bp: {str(e)}")
 
 logging.info("Function registration process completed.")
+
+# Log total registered functions for deployment verification
+total_functions = len(app._function_builders) if hasattr(app, '_function_builders') else 0
+logging.info(f"📊 [FUNCTION-APP] Total functions registered: {total_functions}")
+logging.info(f"🎯 [FUNCTION-APP] Expected: 15 functions (11 existing + 4 Device Activation)")
+if total_functions >= 15:
+    logging.info("✅ [FUNCTION-APP] Device Activation functions successfully registered!")
+else:
+    logging.warning(f"⚠️ [FUNCTION-APP] Only {total_functions} functions registered - Device Activation may have failed")
