@@ -586,15 +586,35 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, 'language_pref_clean'] = 'EN'  # Default to English
 
         # ===================================================================
-        # 7. Date of Birth Validation
+        # 7. Date of Birth Validation (Auto-detect format, convert to YYYY-MM-DD)
         # ===================================================================
         dob = row.get('member_dob', '')  # CHANGED from dob
         if dob and str(dob).strip():
-            try:
-                dob_parsed = datetime.strptime(str(dob), "%Y-%m-%d").date()
-                df.at[idx, 'dob_clean'] = dob_parsed
-            except ValueError:
-                row_errors.append(f"Invalid member_dob format: '{dob}' (expected YYYY-MM-DD)")
+            dob_parsed = None
+            # Try multiple date formats (most common first)
+            date_formats = [
+                "%m/%d/%Y",    # 12/16/1935 (US format - most common)
+                "%Y-%m-%d",    # 1935-12-16 (ISO format)
+                "%m-%d-%Y",    # 12-16-1935
+                "%d/%m/%Y",    # 16/12/1935 (EU format)
+                "%Y/%m/%d",    # 1935/12/16
+                "%m/%d/%y",    # 12/16/35 (2-digit year)
+                "%d-%m-%Y",    # 16-12-1935
+            ]
+
+            for date_format in date_formats:
+                try:
+                    dob_parsed = datetime.strptime(str(dob), date_format).date()
+                    df.at[idx, 'dob_clean'] = dob_parsed  # Stored as date object (auto YYYY-MM-DD)
+                    break  # Success - stop trying other formats
+                except ValueError:
+                    continue  # Try next format
+
+            if dob_parsed is None:
+                row_errors.append(
+                    f"Invalid member_dob format: '{dob}' "
+                    f"(supported: MM/DD/YYYY, YYYY-MM-DD, DD/MM/YYYY, etc.)"
+                )
 
         # ===================================================================
         # 7.5. Address Combination (NEW - Combine 5 fields into 1)
