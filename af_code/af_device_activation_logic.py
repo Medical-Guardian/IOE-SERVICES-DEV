@@ -774,7 +774,18 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
         logger.info(f"📥 [EXTRACT] Downloaded {len(df)} rows, {len(df.columns)} columns")
 
         # ===================================================================
-        # NEW: Column Mapping for Operations Campaigns (member_ prefix)
+        # STEP 1: Pandera validation (on ORIGINAL columns before mapping)
+        # ===================================================================
+        schema = get_device_activation_schema()
+        if schema is not None:
+            try:
+                validated_df = schema.validate(df, lazy=True)
+                logger.info("✅ [EXTRACT] Pandera schema validation passed")
+            except Exception as e:
+                logger.warning(f"⚠️ [EXTRACT] Pandera validation errors (continuing): {e}")
+
+        # ===================================================================
+        # STEP 2: Column Mapping for Operations Campaigns (member_ prefix)
         # ===================================================================
         # Map CSV columns with 'member_' prefix to staging table column names
         # This supports Operations campaigns (Medicaid, DTC/MA) that use different column naming
@@ -832,15 +843,6 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
         df['uploaded_by_user'] = context.uploaded_by_user
         df['uploaded_ts'] = datetime.now(timezone.utc)
         df['processing_status'] = 'PENDING'
-
-        # Pandera validation
-        schema = get_device_activation_schema()
-        if schema is not None:
-            try:
-                validated_df = schema.validate(df, lazy=True)
-                logger.info("✅ [EXTRACT] Pandera schema validation passed")
-            except Exception as e:
-                logger.warning(f"⚠️ [EXTRACT] Pandera validation errors (continuing): {e}")
 
         # Move file to staging
         try:
