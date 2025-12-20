@@ -25,11 +25,10 @@ import os
 from azure.keyvault.secrets import SecretClient
 from azure.identity import DefaultAzureCredential
 import logging
-import time
 import uuid
 import pandas as pd
-from datetime import datetime, timezone, timedelta, date
-from typing import Optional, Dict, Any, Tuple, List
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field
 import pymssql
 from pathlib import Path
@@ -37,6 +36,7 @@ from pathlib import Path
 try:
     import pandera as pa
     from pandera import Column, DataFrameSchema, Check
+
     PANDERA_AVAILABLE = True
 except ImportError:
     PANDERA_AVAILABLE = False
@@ -49,6 +49,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 try:
     from azure.storage.blob import BlobServiceClient
+
     AZURE_STORAGE_AVAILABLE = True
 except ImportError:
     BlobServiceClient = None
@@ -58,7 +59,7 @@ from io import BytesIO
 import re
 
 # Import shared utilities
-from af_code.shared.language_mapper import map_language_code, validate_language_code
+from af_code.shared.language_mapper import map_language_code
 from af_code.shared.business_hours_utils import add_business_days, is_business_day
 
 # Module load verification
@@ -70,6 +71,7 @@ logger.info("🔄 [MODULE-LOAD] Device Activation file processing with business 
 # ============================================================================
 # BLOB STORAGE UTILITIES
 # ============================================================================
+
 
 def get_blob_service_client():
     """Get Azure Blob Storage client using Key Vault credentials"""
@@ -151,9 +153,7 @@ def handle_blob_movement_with_error_handling(
                     except Exception:  # nosec B112
                         continue
 
-                logger.error(
-                    f"❌ Could not find {source_filename} in any folder"
-                )
+                logger.error(f"❌ Could not find {source_filename} in any folder")
             else:
                 logger.error(f"❌ Unexpected error checking blob: {blob_check_error}")
                 raise blob_check_error
@@ -166,6 +166,7 @@ def handle_blob_movement_with_error_handling(
 # ============================================================================
 # DATABASE CONNECTION UTILITIES
 # ============================================================================
+
 
 def get_db_connection_string():
     """Retrieve database connection string from Key Vault"""
@@ -205,9 +206,11 @@ def get_db_connection():
 # DATA MODELS
 # ============================================================================
 
+
 @dataclass
 class ProcessingResult:
     """Result of a processing operation"""
+
     success: bool
     message: str
     details: Dict[str, Any] = field(default_factory=dict)
@@ -217,6 +220,7 @@ class ProcessingResult:
 @dataclass
 class ProcessingContext:
     """Context for file processing operations"""
+
     file_batch_id: str
     source_filename: str
     container_name: str = "fs-ops"
@@ -224,6 +228,9 @@ class ProcessingContext:
     error_threshold_pct: float = 10.0
     log_level: str = "INFO"
     correlation_id: Optional[str] = None
+    campaign_id: Optional[str] = None  # Explicit campaign UUID for Operations flow
+    campaign_name: Optional[str] = None  # Campaign display name
+    blob_content: Optional[bytes] = None  # Raw CSV bytes from blob trigger
 
     def __post_init__(self):
         if self.correlation_id is None:
@@ -233,6 +240,7 @@ class ProcessingContext:
 # ============================================================================
 # VALIDATION UTILITIES
 # ============================================================================
+
 
 def standardize_phone(phone: str) -> Optional[str]:
     """
@@ -248,13 +256,13 @@ def standardize_phone(phone: str) -> Optional[str]:
         return None
 
     # Remove all non-digit characters
-    digits = re.sub(r'\D', '', str(phone))
+    digits = re.sub(r"\D", "", str(phone))
 
     # Handle different lengths
     if len(digits) == 10:
         # US number without country code
         return f"+1{digits}"
-    elif len(digits) == 11 and digits.startswith('1'):
+    elif len(digits) == 11 and digits.startswith("1"):
         # US number with country code
         return f"+{digits}"
     elif len(digits) >= 10:
@@ -269,7 +277,7 @@ def validate_email(email: str) -> bool:
     if not email or pd.isna(email):
         return False
 
-    email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
     return bool(re.match(email_pattern, str(email)))
 
 
@@ -326,10 +334,17 @@ def validate_timezone(tz: str) -> bool:
         return False
 
     valid_timezones = [
-        'America/New_York', 'America/Chicago', 'America/Denver',
-        'America/Los_Angeles', 'America/Phoenix', 'America/Anchorage',
-        'America/Honolulu', 'America/Puerto_Rico', 'America/Detroit',
-        'America/Indiana/Indianapolis', 'America/Kentucky/Louisville'
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+        "America/Phoenix",
+        "America/Anchorage",
+        "America/Honolulu",
+        "America/Puerto_Rico",
+        "America/Detroit",
+        "America/Indiana/Indianapolis",
+        "America/Kentucky/Louisville",
     ]
 
     return str(tz) in valid_timezones
@@ -391,6 +406,7 @@ def validate_customer_type(customer_type: str) -> Tuple[bool, str]:
 # PANDERA SCHEMA VALIDATION
 # ============================================================================
 
+
 def get_device_activation_schema() -> Optional[DataFrameSchema]:
     """
     Get Pandera schema for Device Activation CSV files
@@ -407,48 +423,41 @@ def get_device_activation_schema() -> Optional[DataFrameSchema]:
             # Campaign metadata (first in actual CSV)
             "partner_name": Column(str, nullable=False),
             "campaign_name_source": Column(str, nullable=True),  # NEW
-
             # Member identity
             "salesforce_account_number": Column(str, nullable=True),
             "salesforce_account_id": Column(str, nullable=False),
             "member_first_name": Column(str, nullable=False),
             "member_last_name": Column(str, nullable=False),
-
             # Contact
             "member_phone_number": Column(str, nullable=False),
             "member_email": Column(str, nullable=True),
-
             # Address (5 separate fields - will be combined)
             "member_address_street": Column(str, nullable=True),  # NEW
-            "member_address_city": Column(str, nullable=True),    # NEW
-            "member_address_state": Column(str, nullable=True),   # NEW
-            "member_address_zip": Column(str, nullable=True),     # NEW
-            "member_address_country": Column(str, nullable=True), # NEW
-
+            "member_address_city": Column(str, nullable=True),  # NEW
+            "member_address_state": Column(str, nullable=True),  # NEW
+            "member_address_zip": Column(str, nullable=True),  # NEW
+            "member_address_country": Column(str, nullable=True),  # NEW
             # Demographics
-            "member_dob": Column(str, nullable=True),              # RENAMED from dob
-            "member_timezone": Column(str, nullable=False),        # RENAMED from customer_timezone
+            "member_dob": Column(str, nullable=True),  # RENAMED from dob
+            "member_timezone": Column(str, nullable=False),  # RENAMED from customer_timezone
             "language_pref": Column(str, nullable=True),
-
             # Device info
             "device_udi": Column(str, nullable=False),
             "device_name": Column(str, nullable=True),
-            "member_brand": Column(str, nullable=True),            # RENAMED from brand
+            "member_brand": Column(str, nullable=True),  # RENAMED from brand
             # NOTE: is_device_callable NOT in CSV - inferred from device_phone_number during validation
             "device_phone_number": Column(str, nullable=True),
-
             # Device status (NEW format: numeric 1/0 instead of text)
-            "fall_detection": Column(str, nullable=True),          # CHANGED from fall_detection_status
-            "powersaver_mode": Column(str, nullable=True),         # CHANGED from battery_status
-
+            "fall_detection": Column(str, nullable=True),  # CHANGED from fall_detection_status
+            "powersaver_mode": Column(str, nullable=True),  # CHANGED from battery_status
             # Campaign tracking
-            "campaign_parameters": Column(str, nullable=True),     # NEW
-            "monitoring_system_id": Column(str, nullable=True),    # NEW
+            "campaign_parameters": Column(str, nullable=True),  # NEW
+            "monitoring_system_id": Column(str, nullable=True),  # NEW
             "enrollment_status": Column(str, nullable=True),
-            "unenrollment_reason": Column(str, nullable=True),     # NEW
+            "unenrollment_reason": Column(str, nullable=True),  # NEW
         },
         strict=False,  # Allow extra columns
-        coerce=True,   # Coerce types
+        coerce=True,  # Coerce types
     )
 
 
@@ -456,9 +465,9 @@ def get_device_activation_schema() -> Optional[DataFrameSchema]:
 # ROW-LEVEL VALIDATION
 # ============================================================================
 
+
 def validate_and_cleanse_data_before_insert(
-    df: pd.DataFrame,
-    context: ProcessingContext
+    df: pd.DataFrame, context: ProcessingContext
 ) -> pd.DataFrame:
     """
     Validate and cleanse data row-by-row before insertion to staging
@@ -488,23 +497,23 @@ def validate_and_cleanse_data_before_insert(
     logger.info(f"📋 [VALIDATION] Starting row-by-row validation for {len(df)} rows")
 
     # Add validation columns
-    df['validation_status'] = 'PENDING'
-    df['error_message'] = ''
-    df['error_details'] = ''
+    df["validation_status"] = "PENDING"
+    df["error_message"] = ""
+    df["error_details"] = ""
 
     # Add clean columns
-    df['first_name_clean'] = ''
-    df['last_name_clean'] = ''
-    df['primary_phone_clean'] = ''
-    df['device_phone_clean'] = ''
-    df['is_device_callable_clean'] = None
-    df['dob_clean'] = None
-    df['language_pref_clean'] = ''
-    df['timezone_clean'] = ''
-    df['service_address_clean'] = ''
-    df['brand_clean'] = ''
-    df['fall_detection_status_clean'] = ''
-    df['battery_status_clean'] = ''
+    df["first_name_clean"] = ""
+    df["last_name_clean"] = ""
+    df["primary_phone_clean"] = ""
+    df["device_phone_clean"] = ""
+    df["is_device_callable_clean"] = None
+    df["dob_clean"] = None
+    df["language_pref_clean"] = ""
+    df["timezone_clean"] = ""
+    df["service_address_clean"] = ""
+    df["brand_clean"] = ""
+    df["fall_detection_status_clean"] = ""
+    df["battery_status_clean"] = ""
 
     validation_errors_count = 0
 
@@ -514,102 +523,108 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # 1. Partner Name Validation
         # ===================================================================
-        partner_name = str(row.get('partner_name', '')).strip()
+        partner_name = str(row.get("partner_name", "")).strip()
         if partner_name != "Medical Guardian":
-            row_errors.append(f"Invalid partner_name: '{partner_name}' (expected 'Medical Guardian')")
+            row_errors.append(
+                f"Invalid partner_name: '{partner_name}' (expected 'Medical Guardian')"
+            )
 
         # ===================================================================
         # 2. Salesforce Account ID Validation (REQUIRED - NEW FIELD)
         # ===================================================================
-        salesforce_account_id = str(row.get('salesforce_account_id', '')).strip()
-        if not salesforce_account_id or salesforce_account_id == '':
+        salesforce_account_id = str(row.get("salesforce_account_id", "")).strip()
+        if not salesforce_account_id or salesforce_account_id == "":
             row_errors.append("salesforce_account_id is required")
 
-        salesforce_account_number = str(row.get('salesforce_account_number', '')).strip()
+        str(row.get("salesforce_account_number", "")).strip()
         # Account number is optional but useful for matching
 
         # ===================================================================
         # 3. Phone Number Validation and Standardization
         # ===================================================================
         # Support both column names (pre and post column mapping)
-        member_phone = row.get('primary_phone', '') or row.get('member_phone_number', '')
+        member_phone = row.get("primary_phone", "") or row.get("member_phone_number", "")
         standardized_phone = standardize_phone(member_phone)
         if not standardized_phone:
             row_errors.append(f"Invalid member_phone_number: '{member_phone}'")
         else:
-            df.at[idx, 'primary_phone_clean'] = standardized_phone
+            df.at[idx, "primary_phone_clean"] = standardized_phone
 
         # Device phone (optional)
-        device_phone = row.get('device_phone', '') or row.get('device_phone_number', '')
+        device_phone = row.get("device_phone", "") or row.get("device_phone_number", "")
         if device_phone and str(device_phone).strip():
             standardized_device_phone = standardize_phone(device_phone)
             if standardized_device_phone:
-                df.at[idx, 'device_phone_clean'] = standardized_device_phone
+                df.at[idx, "device_phone_clean"] = standardized_device_phone
 
         # ===================================================================
         # 4. Name Validation and Proper Casing
         # ===================================================================
         # Support both column names (pre and post column mapping)
-        first_name = row.get('first_name', '') or row.get('member_first_name', '')
-        last_name = row.get('last_name', '') or row.get('member_last_name', '')
+        first_name = row.get("first_name", "") or row.get("member_first_name", "")
+        last_name = row.get("last_name", "") or row.get("member_last_name", "")
 
-        if not first_name or str(first_name).strip() == '':
+        if not first_name or str(first_name).strip() == "":
             row_errors.append("member_first_name is required")
         else:
-            df.at[idx, 'first_name_clean'] = proper_case(first_name)
+            df.at[idx, "first_name_clean"] = proper_case(first_name)
 
-        if not last_name or str(last_name).strip() == '':
+        if not last_name or str(last_name).strip() == "":
             row_errors.append("member_last_name is required")
         else:
-            df.at[idx, 'last_name_clean'] = proper_case(last_name)
+            df.at[idx, "last_name_clean"] = proper_case(last_name)
 
         # ===================================================================
         # 5. Timezone Validation and Mapping
         # ===================================================================
         # Support both column names (pre and post column mapping)
-        timezone_val = row.get('timezone', '') or row.get('member_timezone', '')  # CHANGED from customer_timezone
+        timezone_val = row.get("timezone", "") or row.get(
+            "member_timezone", ""
+        )  # CHANGED from customer_timezone
         # Map abbreviations (EST, CST, etc.) to IANA format
         mapped_timezone = map_timezone_to_iana(timezone_val)
 
         # Validate the mapped timezone
         if not validate_timezone(mapped_timezone):
-            row_errors.append(f"Invalid member_timezone: '{timezone_val}' (mapped to '{mapped_timezone}')")
+            row_errors.append(
+                f"Invalid member_timezone: '{timezone_val}' (mapped to '{mapped_timezone}')"
+            )
         else:
             # Store mapped timezone for later use
-            df.at[idx, 'timezone_clean'] = mapped_timezone
+            df.at[idx, "timezone_clean"] = mapped_timezone
 
         # ===================================================================
         # 6. Language Preference Mapping
         # ===================================================================
-        language_pref = row.get('language_pref', '')
+        language_pref = row.get("language_pref", "")
         try:
             mapped_language = map_language_code(language_pref)
-            df.at[idx, 'language_pref_clean'] = mapped_language
-        except Exception as e:
-            df.at[idx, 'language_pref_clean'] = 'EN'  # Default to English
+            df.at[idx, "language_pref_clean"] = mapped_language
+        except Exception:
+            df.at[idx, "language_pref_clean"] = "EN"  # Default to English
 
         # ===================================================================
         # 7. Date of Birth Validation (Auto-detect format, convert to YYYY-MM-DD)
         # ===================================================================
         # Support both column names (pre and post column mapping)
-        dob = row.get('dob', '') or row.get('member_dob', '')
+        dob = row.get("dob", "") or row.get("member_dob", "")
         if dob and str(dob).strip():
             dob_parsed = None
             # Try multiple date formats (most common first)
             date_formats = [
-                "%m/%d/%Y",    # 12/16/1935 (US format - most common)
-                "%Y-%m-%d",    # 1935-12-16 (ISO format)
-                "%m-%d-%Y",    # 12-16-1935
-                "%d/%m/%Y",    # 16/12/1935 (EU format)
-                "%Y/%m/%d",    # 1935/12/16
-                "%m/%d/%y",    # 12/16/35 (2-digit year)
-                "%d-%m-%Y",    # 16-12-1935
+                "%m/%d/%Y",  # 12/16/1935 (US format - most common)
+                "%Y-%m-%d",  # 1935-12-16 (ISO format)
+                "%m-%d-%Y",  # 12-16-1935
+                "%d/%m/%Y",  # 16/12/1935 (EU format)
+                "%Y/%m/%d",  # 1935/12/16
+                "%m/%d/%y",  # 12/16/35 (2-digit year)
+                "%d-%m-%Y",  # 16-12-1935
             ]
 
             for date_format in date_formats:
                 try:
                     dob_parsed = datetime.strptime(str(dob), date_format).date()
-                    df.at[idx, 'dob_clean'] = dob_parsed  # Stored as date object (auto YYYY-MM-DD)
+                    df.at[idx, "dob_clean"] = dob_parsed  # Stored as date object (auto YYYY-MM-DD)
                     break  # Success - stop trying other formats
                 except ValueError:
                     continue  # Try next format
@@ -624,25 +639,25 @@ def validate_and_cleanse_data_before_insert(
         # 7.5. Address Combination (NEW - Combine 5 fields into 1)
         # ===================================================================
         # Support both column names (pre and post column mapping)
-        street = str(row.get('service_address', '') or row.get('member_address_street', '')).strip()
-        city = str(row.get('city', '') or row.get('member_address_city', '')).strip()
-        state = str(row.get('state', '') or row.get('member_address_state', '')).strip()
-        zip_code = str(row.get('zip', '') or row.get('member_address_zip', '')).strip()
+        street = str(row.get("service_address", "") or row.get("member_address_street", "")).strip()
+        city = str(row.get("city", "") or row.get("member_address_city", "")).strip()
+        state = str(row.get("state", "") or row.get("member_address_state", "")).strip()
+        zip_code = str(row.get("zip", "") or row.get("member_address_zip", "")).strip()
 
         # Combine address fields
         if street and city and state and zip_code:
             service_address = f"{street}, {city}, {state} {zip_code}"
-            df.at[idx, 'service_address_clean'] = service_address
+            df.at[idx, "service_address_clean"] = service_address
         elif street or city:
             # Partial address - combine what we have
             parts = [p for p in [street, city, state, zip_code] if p]
-            df.at[idx, 'service_address_clean'] = ", ".join(parts)
+            df.at[idx, "service_address_clean"] = ", ".join(parts)
 
         # ===================================================================
         # 8. Email Validation (optional)
         # ===================================================================
         # Support both column names (pre and post column mapping)
-        email = row.get('email', '') or row.get('member_email', '')
+        email = row.get("email", "") or row.get("member_email", "")
         if email and str(email).strip():
             if not validate_email(email):
                 row_errors.append(f"Invalid email format: '{email}'")
@@ -650,8 +665,8 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # 9. Device UDI Validation (REQUIRED)
         # ===================================================================
-        device_udi = str(row.get('device_udi', '')).strip()
-        if not device_udi or device_udi == '':
+        device_udi = str(row.get("device_udi", "")).strip()
+        if not device_udi or device_udi == "":
             row_errors.append("device_udi is required")
         elif len(device_udi) < 5 or len(device_udi) > 50:
             row_errors.append(f"device_udi length must be 5-50 characters: '{device_udi}'")
@@ -661,44 +676,46 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # Fall Detection: Convert 1/0 to Active/Inactive
         # Support both column names (pre and post column mapping)
-        fall_detection = row.get('fall_detection_status', '') or row.get('fall_detection', '')
+        fall_detection = row.get("fall_detection_status", "") or row.get("fall_detection", "")
         if fall_detection and str(fall_detection).strip():
             fall_str = str(fall_detection).strip()
-            if fall_str in ['1', '1.0', 'True', 'true', 'Y', 'Yes']:
-                df.at[idx, 'fall_detection_status_clean'] = 'Active'
-            elif fall_str in ['0', '0.0', 'False', 'false', 'N', 'No']:
-                df.at[idx, 'fall_detection_status_clean'] = 'Inactive'
+            if fall_str in ["1", "1.0", "True", "true", "Y", "Yes"]:
+                df.at[idx, "fall_detection_status_clean"] = "Active"
+            elif fall_str in ["0", "0.0", "False", "false", "N", "No"]:
+                df.at[idx, "fall_detection_status_clean"] = "Inactive"
             else:
                 # Try to use the existing validation if it's already text
-                is_valid, normalized = validate_device_status(fall_detection, 'fall_detection_status')
+                is_valid, normalized = validate_device_status(
+                    fall_detection, "fall_detection_status"
+                )
                 if is_valid:
-                    df.at[idx, 'fall_detection_status_clean'] = normalized
+                    df.at[idx, "fall_detection_status_clean"] = normalized
                 else:
-                    df.at[idx, 'fall_detection_status_clean'] = 'Unknown'
+                    df.at[idx, "fall_detection_status_clean"] = "Unknown"
 
         # Battery Mode: Map "Standard" and "Powersaver" to "Good"
         # Support both column names (pre and post column mapping)
-        battery = row.get('battery_status', '') or row.get('powersaver_mode', '')
+        battery = row.get("battery_status", "") or row.get("powersaver_mode", "")
         if battery and str(battery).strip():
             battery_str = str(battery).strip().title()
-            if battery_str in ['Standard', 'Powersaver']:
-                df.at[idx, 'battery_status_clean'] = 'Good'
+            if battery_str in ["Standard", "Powersaver"]:
+                df.at[idx, "battery_status_clean"] = "Good"
             else:
                 # Validate against known battery statuses
-                is_valid, normalized = validate_device_status(battery, 'battery_status')
+                is_valid, normalized = validate_device_status(battery, "battery_status")
                 if is_valid:
-                    df.at[idx, 'battery_status_clean'] = normalized
+                    df.at[idx, "battery_status_clean"] = normalized
                 else:
-                    df.at[idx, 'battery_status_clean'] = 'Unknown'
+                    df.at[idx, "battery_status_clean"] = "Unknown"
         else:
             # Default to Unknown if not provided
-            df.at[idx, 'battery_status_clean'] = 'Unknown'
+            df.at[idx, "battery_status_clean"] = "Unknown"
 
         # Brand: Map member_brand to brand (no validation needed)
         # Support both column names (pre and post column mapping)
-        member_brand = row.get('brand', '') or row.get('member_brand', '')
+        member_brand = row.get("brand", "") or row.get("member_brand", "")
         if member_brand and str(member_brand).strip():
-            df.at[idx, 'brand_clean'] = str(member_brand).strip()
+            df.at[idx, "brand_clean"] = str(member_brand).strip()
 
         # ===================================================================
         # 11. Delivery Date Validation - REMOVED (no longer required)
@@ -716,34 +733,36 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # 13. is_device_callable Boolean Conversion (with inference)
         # ===================================================================
-        is_callable = row.get('is_device_callable', '')
-        device_phone = row.get('device_phone_number', '')
+        is_callable = row.get("is_device_callable", "")
+        device_phone = row.get("device_phone_number", "")
 
         if is_callable and str(is_callable).strip():
             # Explicit value provided - use it
             callable_str = str(is_callable).strip().upper()
-            if callable_str in ['Y', 'YES', '1', 'TRUE']:
-                df.at[idx, 'is_device_callable_clean'] = 1
-            elif callable_str in ['N', 'NO', '0', 'FALSE']:
-                df.at[idx, 'is_device_callable_clean'] = 0
+            if callable_str in ["Y", "YES", "1", "TRUE"]:
+                df.at[idx, "is_device_callable_clean"] = 1
+            elif callable_str in ["N", "NO", "0", "FALSE"]:
+                df.at[idx, "is_device_callable_clean"] = 0
             else:
                 row_errors.append(f"Invalid is_device_callable: '{is_callable}' (must be Y/N)")
         else:
             # No explicit value - infer from device_phone_number
             if device_phone and str(device_phone).strip():
-                df.at[idx, 'is_device_callable_clean'] = 1  # TRUE if phone exists
-                logger.debug(f"Row {idx}: Inferred is_device_callable=TRUE (device has phone number)")
+                df.at[idx, "is_device_callable_clean"] = 1  # TRUE if phone exists
+                logger.debug(
+                    f"Row {idx}: Inferred is_device_callable=TRUE (device has phone number)"
+                )
             else:
-                df.at[idx, 'is_device_callable_clean'] = 0  # FALSE if no phone
+                df.at[idx, "is_device_callable_clean"] = 0  # FALSE if no phone
                 logger.debug(f"Row {idx}: Inferred is_device_callable=FALSE (no device phone)")
 
         # ===================================================================
         # Set Validation Status
         # ===================================================================
         if row_errors:
-            df.at[idx, 'validation_status'] = 'VALIDATION_ERROR'
-            df.at[idx, 'error_message'] = '; '.join(row_errors)
-            df.at[idx, 'error_details'] = '\n'.join(row_errors)
+            df.at[idx, "validation_status"] = "VALIDATION_ERROR"
+            df.at[idx, "error_message"] = "; ".join(row_errors)
+            df.at[idx, "error_details"] = "\n".join(row_errors)
             validation_errors_count += 1
 
             # Log detailed error for this row
@@ -751,8 +770,8 @@ def validate_and_cleanse_data_before_insert(
             for error in row_errors:
                 logger.warning(f"  - {error}")
         else:
-            df.at[idx, 'validation_status'] = 'VALIDATED'
-            df.at[idx, 'error_message'] = ''
+            df.at[idx, "validation_status"] = "VALIDATED"
+            df.at[idx, "error_message"] = ""
 
     # ===================================================================
     # Calculate Error Rate and Check Threshold
@@ -767,8 +786,8 @@ def validate_and_cleanse_data_before_insert(
 
     # Log summary of all errors if any exist
     if validation_errors_count > 0:
-        logger.warning(f"📋 [VALIDATION] Summary of all validation errors:")
-        error_rows = df[df['validation_status'] == 'VALIDATION_ERROR']
+        logger.warning("📋 [VALIDATION] Summary of all validation errors:")
+        error_rows = df[df["validation_status"] == "VALIDATION_ERROR"]
         for idx, row in error_rows.iterrows():
             logger.warning(f"  Row {idx + 1}: {row['error_message']}")
 
@@ -784,6 +803,7 @@ def validate_and_cleanse_data_before_insert(
 # ============================================================================
 # PHASE 1: EXTRACT
 # ============================================================================
+
 
 def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], ProcessingResult]:
     """
@@ -805,14 +825,26 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
     logger.info(f"📥 [EXTRACT] Starting Phase 1: Extract for {context.source_filename}")
 
     try:
-        # Download blob
-        logger.info(f"📥 [EXTRACT] Downloading from {context.container_name}/landing/")
-        df = download_blob_as_dataframe(
-            blob_name=f"landing/{context.source_filename}",
-            container_name=context.container_name
-        )
+        # Load CSV data
+        if context.blob_content:
+            # Operations flow: Load from blob content bytes
+            logger.info(
+                f"📥 [EXTRACT] Loading CSV from blob content ({len(context.blob_content)} bytes)"
+            )
+            import io
 
-        logger.info(f"📥 [EXTRACT] Downloaded {len(df)} rows, {len(df.columns)} columns")
+            df = pd.read_csv(io.BytesIO(context.blob_content))
+            logger.info(
+                f"✅ [EXTRACT] CSV loaded from blob content: {len(df)} rows, {len(df.columns)} columns"
+            )
+        else:
+            # Legacy flow: Download from blob storage
+            logger.info(f"📥 [EXTRACT] Downloading from {context.container_name}/landing/")
+            df = download_blob_as_dataframe(
+                blob_name=f"landing/{context.source_filename}",
+                container_name=context.container_name,
+            )
+            logger.info(f"✅ [EXTRACT] Blob downloaded: {len(df)} rows, {len(df.columns)} columns")
 
         # ===================================================================
         # STEP 1: Pandera validation (on ORIGINAL columns before mapping)
@@ -820,7 +852,7 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
         schema = get_device_activation_schema()
         if schema is not None:
             try:
-                validated_df = schema.validate(df, lazy=True)
+                schema.validate(df, lazy=True)
                 logger.info("✅ [EXTRACT] Pandera schema validation passed")
             except Exception as e:
                 logger.warning(f"⚠️ [EXTRACT] Pandera validation errors (continuing): {e}")
@@ -831,68 +863,69 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
         # Map CSV columns with 'member_' prefix to staging table column names
         # This supports Operations campaigns (Medicaid, DTC/MA) that use different column naming
         column_mapping = {
-            'member_first_name': 'first_name',
-            'member_last_name': 'last_name',
-            'member_phone_number': 'primary_phone',
-            'member_timezone': 'timezone',
-            'member_dob': 'dob',
-            'member_email': 'email',
-            'member_address_street': 'service_address',
-            'member_address_city': 'city',
-            'member_address_state': 'state',
-            'member_address_zip': 'zip',
-            'member_brand': 'brand',
+            "member_first_name": "first_name",
+            "member_last_name": "last_name",
+            "member_phone_number": "primary_phone",
+            "member_timezone": "timezone",
+            "member_dob": "dob",
+            "member_email": "email",
+            "member_address_street": "service_address",
+            "member_address_city": "city",
+            "member_address_state": "state",
+            "member_address_zip": "zip",
+            "member_brand": "brand",
         }
 
         # Check if any member_ columns exist (indicates Operations campaign CSV)
         has_member_prefix = any(col in df.columns for col in column_mapping.keys())
 
         if has_member_prefix:
-            logger.info(f"📋 [EXTRACT] Operations campaign CSV detected (member_ prefix columns)")
+            logger.info("📋 [EXTRACT] Operations campaign CSV detected (member_ prefix columns)")
 
             # Rename columns if they exist in CSV
-            columns_to_rename = {old: new for old, new in column_mapping.items() if old in df.columns}
+            columns_to_rename = {
+                old: new for old, new in column_mapping.items() if old in df.columns
+            }
             if columns_to_rename:
                 df.rename(columns=columns_to_rename, inplace=True)
-                logger.info(f"✅ [EXTRACT] Mapped {len(columns_to_rename)} member_ columns to staging columns")
+                logger.info(
+                    f"✅ [EXTRACT] Mapped {len(columns_to_rename)} member_ columns to staging columns"
+                )
 
             # Special handling for powersaver_mode → battery_status
-            if 'powersaver_mode' in df.columns:
-                df['battery_status'] = df['powersaver_mode']
-                df.drop(columns=['powersaver_mode'], inplace=True)
-                logger.info(f"✅ [EXTRACT] Mapped powersaver_mode → battery_status")
+            if "powersaver_mode" in df.columns:
+                df["battery_status"] = df["powersaver_mode"]
+                df.drop(columns=["powersaver_mode"], inplace=True)
+                logger.info("✅ [EXTRACT] Mapped powersaver_mode → battery_status")
 
             # Special handling for fall_detection → fall_detection_status
-            if 'fall_detection' in df.columns:
-                df['fall_detection_status'] = df['fall_detection']
-                df.drop(columns=['fall_detection'], inplace=True)
-                logger.info(f"✅ [EXTRACT] Mapped fall_detection → fall_detection_status")
+            if "fall_detection" in df.columns:
+                df["fall_detection_status"] = df["fall_detection"]
+                df.drop(columns=["fall_detection"], inplace=True)
+                logger.info("✅ [EXTRACT] Mapped fall_detection → fall_detection_status")
 
             # Add member_address_country if not present (default to 'US')
-            if 'member_address_country' in df.columns:
-                df['address_country'] = df['member_address_country']
-                logger.info(f"✅ [EXTRACT] Mapped member_address_country → address_country")
-            elif 'address_country' not in df.columns:
-                df['address_country'] = 'US'
-                logger.info(f"✅ [EXTRACT] Added default address_country = 'US'")
+            if "member_address_country" in df.columns:
+                df["address_country"] = df["member_address_country"]
+                logger.info("✅ [EXTRACT] Mapped member_address_country → address_country")
+            elif "address_country" not in df.columns:
+                df["address_country"] = "US"
+                logger.info("✅ [EXTRACT] Added default address_country = 'US'")
 
-            logger.info(f"📋 [EXTRACT] Column mapping complete - final column count: {len(df.columns)}")
+            logger.info(
+                f"📋 [EXTRACT] Column mapping complete - final column count: {len(df.columns)}"
+            )
 
         # Add metadata columns
-        df['file_batch_id'] = context.file_batch_id
-        df['row_number_in_file'] = range(1, len(df) + 1)
-        df['uploaded_by_user'] = context.uploaded_by_user
-        df['uploaded_ts'] = datetime.now(timezone.utc)
-        df['processing_status'] = 'PENDING'
+        df["file_batch_id"] = context.file_batch_id
+        df["row_number_in_file"] = range(1, len(df) + 1)
+        df["uploaded_by_user"] = context.uploaded_by_user
+        df["uploaded_ts"] = datetime.now(timezone.utc)
+        df["processing_status"] = "PENDING"
 
         # Move file to staging
         try:
-            move_blob(
-                context.source_filename,
-                "landing",
-                "staging",
-                context.container_name
-            )
+            move_blob(context.source_filename, "landing", "staging", context.container_name)
             logger.info(f"✅ [EXTRACT] Moved {context.source_filename} to staging/")
         except Exception as e:
             logger.warning(f"⚠️ [EXTRACT] Could not move file to staging: {e}")
@@ -902,33 +935,21 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
             ProcessingResult(
                 success=True,
                 message=f"Extracted {len(df)} rows",
-                details={
-                    "row_count": len(df),
-                    "column_count": len(df.columns)
-                }
-            )
+                details={"row_count": len(df), "column_count": len(df.columns)},
+            ),
         )
 
     except Exception as e:
         logger.error(f"❌ [EXTRACT] Error in extract phase: {e}", exc_info=True)
-        return (
-            None,
-            ProcessingResult(
-                success=False,
-                message=f"Extract failed: {str(e)}",
-                error=e
-            )
-        )
+        return (None, ProcessingResult(success=False, message=f"Extract failed: {str(e)}", error=e))
 
 
 # ============================================================================
 # PHASE 2: LOAD TO STAGING
 # ============================================================================
 
-def load_to_staging(
-    df: pd.DataFrame,
-    context: ProcessingContext
-) -> ProcessingResult:
+
+def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingResult:
     """
     Phase 2: Load data to staging table
 
@@ -945,7 +966,7 @@ def load_to_staging(
     Returns:
         ProcessingResult
     """
-    logger.info(f"💾 [LOAD-STAGING] Starting Phase 2: Load to Staging")
+    logger.info("💾 [LOAD-STAGING] Starting Phase 2: Load to Staging")
 
     try:
         # Step 1: Validate and cleanse
@@ -954,7 +975,7 @@ def load_to_staging(
 
         # Step 2: Check error threshold
         total_rows = len(df_validated)
-        error_rows = len(df_validated[df_validated['validation_status'] == 'VALIDATION_ERROR'])
+        error_rows = len(df_validated[df_validated["validation_status"] == "VALIDATION_ERROR"])
         error_rate = (error_rows / total_rows * 100) if total_rows > 0 else 0
 
         if error_rate > context.error_threshold_pct:
@@ -964,8 +985,8 @@ def load_to_staging(
                 details={
                     "total_rows": total_rows,
                     "error_rows": error_rows,
-                    "error_rate": error_rate
-                }
+                    "error_rate": error_rate,
+                },
             )
 
         # Step 3: Get database connection
@@ -1009,46 +1030,46 @@ def load_to_staging(
                     insert_query,
                     (
                         context.file_batch_id,
-                        row['row_number_in_file'],
+                        row["row_number_in_file"],
                         context.uploaded_by_user,
                         datetime.now(timezone.utc),
-                        row['processing_status'],
-                        row['validation_status'],
-                        row.get('error_message', ''),
+                        row["processing_status"],
+                        row["validation_status"],
+                        row.get("error_message", ""),
                         # Campaign metadata
-                        row.get('partner_name', 'Medical Guardian'),
-                        row.get('campaign_name_source', ''),
+                        row.get("partner_name", "Medical Guardian"),
+                        row.get("campaign_name_source", ""),
                         # Member identity
-                        row.get('salesforce_account_id', ''),
-                        row.get('salesforce_account_number', ''),
-                        row.get('first_name_clean', ''),
-                        row.get('last_name_clean', ''),
-                        row.get('primary_phone_clean', ''),
-                        row.get('member_email', ''),
+                        row.get("salesforce_account_id", ""),
+                        row.get("salesforce_account_number", ""),
+                        row.get("first_name_clean", ""),
+                        row.get("last_name_clean", ""),
+                        row.get("primary_phone_clean", ""),
+                        row.get("member_email", ""),
                         # Address (combined)
-                        row.get('service_address_clean', ''),
-                        row.get('member_address_city', ''),
-                        row.get('member_address_state', ''),
-                        row.get('member_address_zip', ''),
+                        row.get("service_address_clean", ""),
+                        row.get("member_address_city", ""),
+                        row.get("member_address_state", ""),
+                        row.get("member_address_zip", ""),
                         # Demographics
-                        row.get('dob_clean', None),
-                        row.get('timezone_clean', ''),
-                        row.get('language_pref_clean', 'EN'),
+                        row.get("dob_clean", None),
+                        row.get("timezone_clean", ""),
+                        row.get("language_pref_clean", "EN"),
                         # Device info
-                        row.get('device_udi', ''),
-                        row.get('device_name', ''),
-                        row.get('brand_clean', ''),
-                        row.get('device_phone_clean', ''),
-                        row.get('is_device_callable_clean', None),
+                        row.get("device_udi", ""),
+                        row.get("device_name", ""),
+                        row.get("brand_clean", ""),
+                        row.get("device_phone_clean", ""),
+                        row.get("is_device_callable_clean", None),
                         # Device status (converted values)
-                        row.get('fall_detection_status_clean', ''),
-                        row.get('battery_status_clean', ''),
+                        row.get("fall_detection_status_clean", ""),
+                        row.get("battery_status_clean", ""),
                         # Campaign tracking
-                        row.get('campaign_parameters', ''),
-                        row.get('monitoring_system_id', ''),
-                        row.get('enrollment_status', 'ENROLL'),
-                        row.get('unenrollment_reason', '')
-                    )
+                        row.get("campaign_parameters", ""),
+                        row.get("monitoring_system_id", ""),
+                        row.get("enrollment_status", "ENROLL"),
+                        row.get("unenrollment_reason", ""),
+                    ),
                 )
                 inserted_count += 1
             except Exception as e:
@@ -1068,22 +1089,19 @@ def load_to_staging(
                 "inserted_rows": inserted_count,
                 "validated_rows": total_rows - error_rows,
                 "error_rows": error_rows,
-                "error_rate": error_rate
-            }
+                "error_rate": error_rate,
+            },
         )
 
     except Exception as e:
         logger.error(f"❌ [LOAD-STAGING] Error in load_to_staging: {e}", exc_info=True)
-        return ProcessingResult(
-            success=False,
-            message=f"Load to staging failed: {str(e)}",
-            error=e
-        )
+        return ProcessingResult(success=False, message=f"Load to staging failed: {str(e)}", error=e)
 
 
 # ============================================================================
 # PHASE 3: VALIDATE DATA (SQL CLEANSING)
 # ============================================================================
+
 
 def validate_data(context: ProcessingContext) -> ProcessingResult:
     """
@@ -1101,7 +1119,7 @@ def validate_data(context: ProcessingContext) -> ProcessingResult:
     Returns:
         ProcessingResult
     """
-    logger.info(f"🔍 [VALIDATE] Starting Phase 3: SQL Validation")
+    logger.info("🔍 [VALIDATE] Starting Phase 3: SQL Validation")
 
     try:
         conn = get_db_connection()
@@ -1116,29 +1134,23 @@ def validate_data(context: ProcessingContext) -> ProcessingResult:
         WHERE stg.file_batch_id = %s
         """
         cursor.execute(update_org_query, (context.file_batch_id,))
-        logger.info(f"✅ [VALIDATE] Updated org_id from partner_name")
+        logger.info("✅ [VALIDATE] Updated org_id from partner_name")
 
         conn.commit()
         cursor.close()
         conn.close()
 
-        return ProcessingResult(
-            success=True,
-            message="SQL validation complete"
-        )
+        return ProcessingResult(success=True, message="SQL validation complete")
 
     except Exception as e:
         logger.error(f"❌ [VALIDATE] Error in validate_data: {e}", exc_info=True)
-        return ProcessingResult(
-            success=False,
-            message=f"Validation failed: {str(e)}",
-            error=e
-        )
+        return ProcessingResult(success=False, message=f"Validation failed: {str(e)}", error=e)
 
 
 # ============================================================================
 # PHASE 4: TRANSFORM & LOAD CORE TABLES
 # ============================================================================
+
 
 def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
     """
@@ -1159,28 +1171,78 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
     Returns:
         ProcessingResult
     """
-    logger.info(f"🔄 [TRANSFORM] Starting Phase 4: Transform & Load Core Tables")
+    logger.info("🔄 [TRANSFORM] Starting Phase 4: Transform & Load Core Tables")
 
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        # Step 1: Get campaign_id for device_activation
-        campaign_query = """
-        SELECT campaign_id FROM engage360.campaigns_enhanced
-        WHERE campaign_type = 'DeviceActivation' AND status = 'Active'
-        """
-        cursor.execute(campaign_query)
-        campaign_result = cursor.fetchone()
+        # Step 1: Get or validate campaign_id
+        if context.campaign_id:
+            # Operations flow: Use explicit campaign_id
+            campaign_id = context.campaign_id
+            logger.info(f"✅ [TRANSFORM] Using explicit campaign_id: {campaign_id}")
+            if context.campaign_name:
+                logger.info(f"   Campaign name: {context.campaign_name}")
 
-        if not campaign_result:
-            return ProcessingResult(
-                success=False,
-                message="No active DeviceActivation campaign found"
-            )
+            # Validate campaign exists and is Active
+            validation_query = """
+            SELECT campaign_id, name, campaign_type, status
+            FROM engage360.campaigns_enhanced
+            WHERE campaign_id = %s
+            """
+            cursor.execute(validation_query, (campaign_id,))
+            campaign_result = cursor.fetchone()
 
-        campaign_id = campaign_result[0]
-        logger.info(f"✅ [TRANSFORM] Found campaign_id: {campaign_id}")
+            if not campaign_result:
+                return ProcessingResult(
+                    success=False, message=f"Campaign {campaign_id} not found in database"
+                )
+
+            db_name, db_type, db_status = campaign_result[1], campaign_result[2], campaign_result[3]
+            if db_status != "Active":
+                return ProcessingResult(
+                    success=False,
+                    message=f"Campaign {campaign_id} is not Active (status: {db_status})",
+                )
+
+            logger.info("✅ [TRANSFORM] Campaign validation passed")
+            logger.info(f"   Database name: {db_name}")
+            logger.info(f"   Campaign type: {db_type}")
+            logger.info(f"   Status: {db_status}")
+
+        else:
+            # Legacy flow: Auto-discover campaign by type
+            logger.info("🔍 [TRANSFORM] Auto-discovering Device Activation campaign")
+            legacy_query = """
+            SELECT campaign_id, name, campaign_type
+            FROM engage360.campaigns_enhanced
+            WHERE campaign_type IN ('Operations', 'Device Activation', 'DeviceActivation')
+            AND status = 'Active'
+            """
+            cursor.execute(legacy_query)
+            campaign_results = cursor.fetchall()
+
+            if not campaign_results:
+                return ProcessingResult(
+                    success=False,
+                    message="No active Device Activation campaign found (searched campaign_type: 'Operations', 'Device Activation', 'DeviceActivation')",
+                )
+
+            if len(campaign_results) > 1:
+                logger.warning(
+                    f"⚠️ [TRANSFORM] Multiple Device Activation campaigns found ({len(campaign_results)})"
+                )
+                logger.warning(
+                    "   Using first campaign. Consider using explicit campaign_id parameter."
+                )
+                for idx, row in enumerate(campaign_results):
+                    logger.warning(f"   Campaign {idx+1}: {row[0]} - {row[1]} (type: {row[2]})")
+
+            campaign_id = campaign_results[0][0]
+            logger.info(f"✅ [TRANSFORM] Auto-discovered campaign_id: {campaign_id}")
+            logger.info(f"   Campaign name: {campaign_results[0][1]}")
+            logger.info(f"   Campaign type: {campaign_results[0][2]}")
 
         # Step 2: MERGE INTO members
         merge_members_query = """
@@ -1239,7 +1301,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             );
         """
         cursor.execute(merge_members_query, (context.file_batch_id,))
-        logger.info(f"✅ [TRANSFORM] MERGE INTO members complete")
+        logger.info("✅ [TRANSFORM] MERGE INTO members complete")
 
         # Step 3: MERGE INTO member_devices
         # NOTE: delivery_date removed (no longer in CSV)
@@ -1287,7 +1349,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             );
         """
         cursor.execute(merge_devices_query, (context.file_batch_id,))
-        logger.info(f"✅ [TRANSFORM] MERGE INTO member_devices complete")
+        logger.info("✅ [TRANSFORM] MERGE INTO member_devices complete")
 
         # Step 4: INSERT INTO member_campaign_enrollments_enhanced
         # Note: activation_start_date and campaign_end_date calculated in Python
@@ -1336,7 +1398,9 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 enrollment_date = enrollment_ts.date()
 
                 if is_business_day(enrollment_ts):
-                    activation_start_date = enrollment_date  # Already a business day (Day 0 = same day)
+                    activation_start_date = (
+                        enrollment_date  # Already a business day (Day 0 = same day)
+                    )
                 else:
                     # Weekend or holiday - get next business day
                     activation_start_date = add_business_days(enrollment_ts, 1).date()
@@ -1357,14 +1421,14 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                     insert_enrollment_query,
                     (
                         str(uuid.uuid4()),  # enrollment_id
-                        str(member_id),     # member_id
-                        str(campaign_id),   # campaign_id
-                        enrollment_ts,      # enrollment_ts (use same timestamp for all enrollments in this batch)
-                        'ENROLLED',         # current_status
+                        str(member_id),  # member_id
+                        str(campaign_id),  # campaign_id
+                        enrollment_ts,  # enrollment_ts (use same timestamp for all enrollments in this batch)
+                        "ENROLLED",  # current_status
                         activation_start_date,  # activation_start_date
-                        campaign_end_date,      # campaign_end_date
-                        0                   # device_activated (not yet activated)
-                    )
+                        campaign_end_date,  # campaign_end_date
+                        0,  # device_activated (not yet activated)
+                    ),
                 )
                 enrolled_count += 1
 
@@ -1388,23 +1452,18 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         return ProcessingResult(
             success=True,
             message=f"Transformed and loaded {enrolled_count} enrollments",
-            details={
-                "enrolled_count": enrolled_count
-            }
+            details={"enrolled_count": enrolled_count},
         )
 
     except Exception as e:
         logger.error(f"❌ [TRANSFORM] Error in transform_and_load_core: {e}", exc_info=True)
-        return ProcessingResult(
-            success=False,
-            message=f"Transform failed: {str(e)}",
-            error=e
-        )
+        return ProcessingResult(success=False, message=f"Transform failed: {str(e)}", error=e)
 
 
 # ============================================================================
 # PHASE 5: AUDIT & LOG
 # ============================================================================
+
 
 def audit_and_log(context: ProcessingContext, details: Dict[str, Any]) -> ProcessingResult:
     """
@@ -1422,7 +1481,7 @@ def audit_and_log(context: ProcessingContext, details: Dict[str, Any]) -> Proces
     Returns:
         ProcessingResult
     """
-    logger.info(f"📝 [AUDIT] Starting Phase 5: Audit & Log")
+    logger.info("📝 [AUDIT] Starting Phase 5: Audit & Log")
 
     try:
         conn = get_db_connection()
@@ -1445,19 +1504,19 @@ def audit_and_log(context: ProcessingContext, details: Dict[str, Any]) -> Proces
             (
                 context.file_batch_id,
                 context.source_filename,
-                'DEVICE_ACTIVATION',
+                "DEVICE_ACTIVATION",
                 context.uploaded_by_user,
                 datetime.now(timezone.utc),
                 datetime.now(timezone.utc),
                 datetime.now(timezone.utc),
-                'COMPLETED',
-                details.get('total_rows', 0),
-                details.get('validated_rows', 0),
-                details.get('error_rows', 0),
-                details.get('enrolled_count', 0),
-                details.get('error_rate', 0),
-                str(details)
-            )
+                "COMPLETED",
+                details.get("total_rows", 0),
+                details.get("validated_rows", 0),
+                details.get("error_rows", 0),
+                details.get("enrolled_count", 0),
+                details.get("error_rate", 0),
+                str(details),
+            ),
         )
 
         conn.commit()
@@ -1467,39 +1526,33 @@ def audit_and_log(context: ProcessingContext, details: Dict[str, Any]) -> Proces
         # Move file to processed folder
         try:
             handle_blob_movement_with_error_handling(
-                context.source_filename,
-                "staging",
-                "processed",
-                context.container_name,
-                logger
+                context.source_filename, "staging", "processed", context.container_name, logger
             )
         except Exception as e:
             logger.warning(f"⚠️ [AUDIT] Could not move file to processed: {e}")
 
-        return ProcessingResult(
-            success=True,
-            message="Audit complete"
-        )
+        return ProcessingResult(success=True, message="Audit complete")
 
     except Exception as e:
         logger.error(f"❌ [AUDIT] Error in audit_and_log: {e}", exc_info=True)
-        return ProcessingResult(
-            success=False,
-            message=f"Audit failed: {str(e)}",
-            error=e
-        )
+        return ProcessingResult(success=False, message=f"Audit failed: {str(e)}", error=e)
 
 
 # ============================================================================
 # MAIN ENTRY POINT
 # ============================================================================
 
+
 def process_device_activation_file_complete(
-    file_path: str,
+    file_path: str = None,
+    blob_name: str = None,
+    blob_content: bytes = None,
+    campaign_id: str = None,
+    campaign_name: str = None,
     connection_string: Optional[str] = None,
     uploaded_by_user: str = "AzureFunction",
     error_threshold_pct: float = 10.0,
-    log_level: str = "INFO"
+    log_level: str = "INFO",
 ) -> Tuple[bool, str, Dict[str, Any]]:
     """
     Complete processing workflow for Device Activation CSV files
@@ -1512,7 +1565,11 @@ def process_device_activation_file_complete(
     5. Audit & Log: File processing log, move to processed
 
     Args:
-        file_path: Path to CSV file (e.g., "landing/MedicalGuardian_DeviceActivation_20251207_Delta.csv")
+        file_path: Path to CSV file (legacy flow - for file-based processing)
+        blob_name: Blob path from Azure trigger (Operations flow)
+        blob_content: Raw CSV bytes from blob (Operations flow)
+        campaign_id: Explicit campaign UUID (Operations flow)
+        campaign_name: Campaign display name (Operations flow)
         connection_string: Database connection string (optional, uses Key Vault if None)
         uploaded_by_user: User who uploaded the file
         error_threshold_pct: Error threshold percentage (default 10%)
@@ -1524,14 +1581,34 @@ def process_device_activation_file_complete(
     # Setup logging
     logging.basicConfig(level=getattr(logging, log_level.upper()))
 
-    # Extract filename
-    source_filename = Path(file_path).name
-    file_batch_id = str(uuid.uuid4())
+    # Validate input: Either (blob_name + blob_content + campaign_id) OR (file_path)
+    if blob_name and blob_content:
+        # Operations flow - explicit campaign
+        if not campaign_id:
+            raise ValueError("campaign_id required when using blob_name/blob_content")
+        source_filename = blob_name.split("/")[-1]
+        file_batch_id = str(uuid.uuid4())
+        logger.info(f"🔄 [INIT] Operations flow: blob_name={blob_name}, campaign_id={campaign_id}")
+    elif file_path:
+        # Legacy flow - auto-discover campaign
+        source_filename = Path(file_path).name
+        file_batch_id = str(uuid.uuid4())
+        campaign_id = None  # Will be looked up in transform phase
+        logger.info(f"🔄 [INIT] Legacy flow: file_path={file_path}")
+    else:
+        raise ValueError(
+            "Must provide either (blob_name + blob_content + campaign_id) "
+            "or (file_path) parameters"
+        )
 
     logger.info("=" * 80)
-    logger.info(f"🚀 [MAIN] Starting Device Activation File Processing")
+    logger.info("🚀 [MAIN] Starting Device Activation File Processing")
     logger.info(f"📄 [MAIN] File: {source_filename}")
     logger.info(f"🆔 [MAIN] Batch ID: {file_batch_id}")
+    if campaign_id:
+        logger.info(f"🎯 [MAIN] Campaign ID: {campaign_id}")
+        if campaign_name:
+            logger.info(f"📝 [MAIN] Campaign Name: {campaign_name}")
     logger.info("=" * 80)
 
     # Create processing context
@@ -1541,7 +1618,10 @@ def process_device_activation_file_complete(
         container_name="fs-ops",
         uploaded_by_user=uploaded_by_user,
         error_threshold_pct=error_threshold_pct,
-        log_level=log_level
+        log_level=log_level,
+        campaign_id=campaign_id,
+        campaign_name=campaign_name,
+        blob_content=blob_content,
     )
 
     processing_details = {}
@@ -1593,13 +1673,15 @@ def process_device_activation_file_complete(
         # ====================================================================
         audit_result = audit_and_log(context, processing_details)
         if not audit_result.success:
-            logger.warning(f"⚠️ [MAIN] Audit failed but processing completed: {audit_result.message}")
+            logger.warning(
+                f"⚠️ [MAIN] Audit failed but processing completed: {audit_result.message}"
+            )
 
         # ====================================================================
         # SUCCESS
         # ====================================================================
         logger.info("=" * 80)
-        logger.info(f"✅ [MAIN] Device Activation File Processing Complete")
+        logger.info("✅ [MAIN] Device Activation File Processing Complete")
         logger.info(f"📊 [MAIN] Total Rows: {processing_details.get('total_rows', 0)}")
         logger.info(f"✅ [MAIN] Validated: {processing_details.get('validated_rows', 0)}")
         logger.info(f"❌ [MAIN] Errors: {processing_details.get('error_rows', 0)}")
@@ -1609,7 +1691,7 @@ def process_device_activation_file_complete(
         return (
             True,
             f"Successfully processed {source_filename}: {processing_details.get('enrolled_count', 0)} members enrolled",
-            processing_details
+            processing_details,
         )
 
     except Exception as e:
@@ -1623,11 +1705,7 @@ def process_device_activation_file_complete(
         except Exception:
             pass
 
-        return (
-            False,
-            f"Processing failed: {str(e)}",
-            {"error": str(e)}
-        )
+        return (False, f"Processing failed: {str(e)}", {"error": str(e)})
 
 
 # ============================================================================
@@ -1635,7 +1713,7 @@ def process_device_activation_file_complete(
 # ============================================================================
 
 __all__ = [
-    'process_device_activation_file_complete',
-    'ProcessingContext',
-    'ProcessingResult',
+    "process_device_activation_file_complete",
+    "ProcessingContext",
+    "ProcessingResult",
 ]
