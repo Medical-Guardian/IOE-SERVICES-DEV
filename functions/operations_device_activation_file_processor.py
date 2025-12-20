@@ -54,7 +54,7 @@ def operations_device_activation_file_processor(blob: func.InputStream):
     """
     logging.info(f"🔔 [OPS-DEVICE-ACTIVATION] Blob trigger fired for file: {blob.name}")
     logging.info(f"   📦 Blob size: {blob.length} bytes")
-    logging.info(f"   📂 Container: fs-ops/landing")
+    logging.info("   📂 Container: fs-ops/landing")
 
     # ===================================================================
     # STEP 1: Validate File Naming Pattern
@@ -64,48 +64,50 @@ def operations_device_activation_file_processor(blob: func.InputStream):
         r"MedicalGuardian_DeviceActivationDTCMA_\d{8}_DELTA\.csv",
     ]
 
-    filename_match = any(re.match(pattern, blob.name) for pattern in filename_patterns)
+    # Extract just the filename from the full blob path
+    filename = blob.name.split("/")[-1]
+    filename_match = any(re.match(pattern, filename) for pattern in filename_patterns)
 
     if not filename_match:
         logging.warning(
             f"⚠️ [OPS-DEVICE-ACTIVATION] Skipping file with unexpected name format: {blob.name}"
         )
-        logging.info(f"   Expected patterns:")
-        logging.info(f"   - MedicalGuardian_DeviceActivationMedicaid_YYYYMMDD_DELTA.csv")
-        logging.info(f"   - MedicalGuardian_DeviceActivationDTCMA_YYYYMMDD_DELTA.csv")
+        logging.info("   Expected patterns:")
+        logging.info("   - MedicalGuardian_DeviceActivationMedicaid_YYYYMMDD_DELTA.csv")
+        logging.info("   - MedicalGuardian_DeviceActivationDTCMA_YYYYMMDD_DELTA.csv")
         return
 
-    logging.info(f"✅ [OPS-DEVICE-ACTIVATION] Filename pattern validated successfully")
+    logging.info("✅ [OPS-DEVICE-ACTIVATION] Filename pattern validated successfully")
 
     # ===================================================================
     # STEP 2: Extract Campaign Information from Filename
     # ===================================================================
-    if "Medicaid" in blob.name:
+    if "Medicaid" in filename:
         campaign_name = "Device Activation - Medicaid"
         campaign_id = "0F69659B-491B-40E2-88C3-ABC7D87385B2"
         logging.info(f"📋 [OPS-DEVICE-ACTIVATION] Campaign: {campaign_name}")
         logging.info(f"   🆔 Campaign ID: {campaign_id}")
-    elif "DTCMA" in blob.name:
+    elif "DTCMA" in filename:
         campaign_name = "Device Activation - DTC/MA"
         campaign_id = "BA865458-60F9-4EBB-9FB5-D195B532CF5A"
         logging.info(f"📋 [OPS-DEVICE-ACTIVATION] Campaign: {campaign_name}")
         logging.info(f"   🆔 Campaign ID: {campaign_id}")
     else:
         logging.error(
-            f"❌ [OPS-DEVICE-ACTIVATION] Unable to determine campaign from filename: {blob.name}"
+            f"❌ [OPS-DEVICE-ACTIVATION] Unable to determine campaign from filename: {filename}"
         )
-        logging.error(f"   Filename must contain 'Medicaid' or 'DTCMA'")
+        logging.error("   Filename must contain 'Medicaid' or 'DTCMA'")
         return
 
     # ===================================================================
     # STEP 3: Process File Using Existing Device Activation Logic
     # ===================================================================
-    logging.info(f"🚀 [OPS-DEVICE-ACTIVATION] Starting file processing...")
+    logging.info("🚀 [OPS-DEVICE-ACTIVATION] Starting file processing...")
 
     try:
         # Read blob content
         blob_content = blob.read()
-        logging.info(f"📖 [OPS-DEVICE-ACTIVATION] File content read successfully")
+        logging.info("📖 [OPS-DEVICE-ACTIVATION] File content read successfully")
 
         # Call existing device activation processing logic
         # This will handle:
@@ -121,19 +123,19 @@ def operations_device_activation_file_processor(blob: func.InputStream):
             campaign_name=campaign_name,
         )
 
-        logging.info(f"✅ [OPS-DEVICE-ACTIVATION] File processing completed successfully")
+        logging.info("✅ [OPS-DEVICE-ACTIVATION] File processing completed successfully")
         logging.info(f"   📊 Processing result: {result}")
-        logging.info(f"   ✨ File will be moved to fs-ops/processed/")
+        logging.info("   ✨ File will be moved to fs-ops/processed/")
 
         # Log success metrics for Application Insights
-        logging.info(f"📈 [OPS-DEVICE-ACTIVATION] SUCCESS METRICS:")
+        logging.info("📈 [OPS-DEVICE-ACTIVATION] SUCCESS METRICS:")
         logging.info(f"   - Campaign: {campaign_name}")
         logging.info(f"   - File: {blob.name}")
         logging.info(f"   - Size: {blob.length} bytes")
-        logging.info(f"   - Status: COMPLETED")
+        logging.info("   - Status: COMPLETED")
 
     except Exception as e:
-        logging.error(f"❌ [OPS-DEVICE-ACTIVATION] File processing failed")
+        logging.error("❌ [OPS-DEVICE-ACTIVATION] File processing failed")
         logging.error(f"   📄 File: {blob.name}")
         logging.error(f"   🎯 Campaign: {campaign_name}")
         logging.error(f"   ⚠️ Error: {str(e)}")
@@ -142,17 +144,17 @@ def operations_device_activation_file_processor(blob: func.InputStream):
         # Log full traceback for debugging
         import traceback
 
-        logging.error(f"   📚 Traceback:")
+        logging.error("   📚 Traceback:")
         for line in traceback.format_exc().split("\n"):
             if line.strip():
                 logging.error(f"      {line}")
 
         # Log failure metrics for Application Insights
-        logging.error(f"📉 [OPS-DEVICE-ACTIVATION] FAILURE METRICS:")
+        logging.error("📉 [OPS-DEVICE-ACTIVATION] FAILURE METRICS:")
         logging.error(f"   - Campaign: {campaign_name}")
         logging.error(f"   - File: {blob.name}")
         logging.error(f"   - Size: {blob.length} bytes")
-        logging.error(f"   - Status: FAILED")
+        logging.error("   - Status: FAILED")
         logging.error(f"   - Error: {str(e)}")
 
         # Re-raise exception to trigger retry logic

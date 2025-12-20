@@ -1274,7 +1274,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 salesforce_account_id = ISNULL(src.salesforce_account_id, tgt.salesforce_account_id),
                 first_name = ISNULL(src.first_name, tgt.first_name),
                 last_name = ISNULL(src.last_name, tgt.last_name),
-                phone_number = ISNULL(src.primary_phone, tgt.phone_number),
+                primary_phone = ISNULL(src.primary_phone, tgt.primary_phone),
                 email = ISNULL(src.email, tgt.email),
                 address_street = ISNULL(src.service_address, tgt.address_street),
                 city = ISNULL(src.city, tgt.city),
@@ -1287,7 +1287,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         WHEN NOT MATCHED THEN
             INSERT (
                 member_id, org_id, salesforce_account_id, salesforce_account_number,
-                first_name, last_name, phone_number, email,
+                first_name, last_name, primary_phone, email,
                 address_street, city, state, zip,
                 dob, timezone, language_pref,
                 created_ts, updated_ts
