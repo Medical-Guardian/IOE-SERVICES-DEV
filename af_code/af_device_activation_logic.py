@@ -1522,69 +1522,116 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
 
         logger.info(f"📊 [TRANSFORM] Processing {len(staging_rows)} enrollments")
 
-        # Insert enrollments with calculated dates
-        insert_enrollment_query = """
-        INSERT INTO engage360.member_campaign_enrollments_enhanced (
-            enrollment_id, member_id, campaign_id, enrollment_ts, current_status,
-            activation_start_date, campaign_end_date, device_activated
-        ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s
-        )
-        """
-
-        enrolled_count = 0
         # Get current timestamp as enrollment_ts
         enrollment_ts = datetime.now(timezone.utc)
 
-        for row in staging_rows:
-            member_id = row[0]
-            # enrollment_status = row[1]  # Not used
+        # CORRECTED LOGIC (2025-12-16): activation_start_date = first business day on or after enrollment_ts
+        # Files can arrive ANY day (including weekends/holidays)
+        # Process data immediately, but delay calls until first business day (Day 0)
+        enrollment_date = enrollment_ts.date()
 
-            try:
-                # CORRECTED LOGIC (2025-12-16): activation_start_date = first business day on or after enrollment_ts
-                # Files can arrive ANY day (including weekends/holidays)
-                # Process data immediately, but delay calls until first business day (Day 0)
-                enrollment_date = enrollment_ts.date()
+        if is_business_day(enrollment_ts):
+            activation_start_date = enrollment_date  # Already a business day (Day 0 = same day)
+        else:
+            # Weekend or holiday - get next business day
+            activation_start_date = add_business_days(enrollment_ts, 1).date()
 
-                if is_business_day(enrollment_ts):
-                    activation_start_date = (
-                        enrollment_date  # Already a business day (Day 0 = same day)
-                    )
-                else:
-                    # Weekend or holiday - get next business day
-                    activation_start_date = add_business_days(enrollment_ts, 1).date()
+        # Calculate campaign_end_date = activation_start_date + 90 days
+        campaign_end_date = activation_start_date + timedelta(days=90)
 
-                # Calculate campaign_end_date = activation_start_date + 90 days
-                campaign_end_date = activation_start_date + timedelta(days=90)
+        logger.info(
+            f"📅 [TRANSFORM] Activation dates for this batch: "
+            f"enrollment_ts={enrollment_ts.date()} ({enrollment_ts.strftime('%A')}), "
+            f"activation_start={activation_start_date} "
+            f"({'SAME DAY' if enrollment_date == activation_start_date else 'NEXT BUSINESS DAY'}), "
+            f"campaign_end={campaign_end_date} (activation + 90 days)"
+        )
 
-                logger.debug(
-                    f"📅 [TRANSFORM] Member {member_id}: "
-                    f"enrollment_ts={enrollment_ts.date()} ({enrollment_ts.strftime('%A')}), "
-                    f"activation_start={activation_start_date} "
-                    f"({'SAME DAY' if enrollment_date == activation_start_date else 'NEXT BUSINESS DAY'}), "
-                    f"campaign_end={campaign_end_date} (activation + 90 days)"
-                )
+        # MERGE enrollments (UPSERT pattern - handles both INSERT and UPDATE)
+        # This allows safe re-processing of files without duplicate key errors
+        merge_enrollment_query = """
+        MERGE engage360.member_campaign_enrollments_enhanced AS tgt
+        USING (
+            SELECT
+                m.member_id,
+                %s AS campaign_id,
+                %s AS activation_start_date,
+                %s AS campaign_end_date
+            FROM engage360_stg.stg_device_activation_delta stg
+            JOIN engage360.members m
+                ON m.org_id = stg.org_id
+                AND m.salesforce_account_number = stg.salesforce_account_number
+            WHERE stg.file_batch_id = %s
+              AND stg.processing_status = 'TRANSFORMING'
+        ) AS src
+        ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
 
-                # Insert enrollment
-                cursor.execute(
-                    insert_enrollment_query,
-                    (
-                        str(uuid.uuid4()),  # enrollment_id
-                        str(member_id),  # member_id
-                        str(campaign_id),  # campaign_id
-                        enrollment_ts,  # enrollment_ts (use same timestamp for all enrollments in this batch)
-                        "ENROLLED",  # current_status
-                        activation_start_date,  # activation_start_date
-                        campaign_end_date,  # campaign_end_date
-                        0,  # device_activated (not yet activated)
-                    ),
-                )
-                enrolled_count += 1
+        WHEN MATCHED THEN
+            UPDATE SET
+                -- Update activation dates (re-calculated from file upload date)
+                activation_start_date = src.activation_start_date,
+                campaign_end_date = src.campaign_end_date,
 
-            except Exception as e:
-                logger.error(f"❌ [TRANSFORM] Error enrolling member {member_id}: {e}")
+                -- Re-enroll if previously UNENROLLED
+                current_status = CASE
+                    WHEN tgt.current_status = 'UNENROLLED' THEN 'ENROLLED'
+                    ELSE tgt.current_status
+                END,
 
-        logger.info(f"✅ [TRANSFORM] Enrolled {enrolled_count} members")
+                -- Update enrollment timestamp if re-enrolling
+                enrollment_ts = CASE
+                    WHEN tgt.current_status = 'UNENROLLED' THEN SYSDATETIMEOFFSET()
+                    ELSE tgt.enrollment_ts
+                END,
+
+                -- Clear unenrollment reason if re-enrolling
+                unenrollment_reason = CASE
+                    WHEN tgt.current_status = 'UNENROLLED' THEN NULL
+                    ELSE tgt.unenrollment_reason
+                END,
+
+                -- Keep existing device_activated status (don't reset to 0)
+                -- device_activated stays as is (1 = activated, 0 = not activated)
+
+                updated_ts = SYSDATETIMEOFFSET()
+
+        WHEN NOT MATCHED THEN
+            INSERT (
+                enrollment_id, member_id, campaign_id, enrollment_ts, current_status,
+                activation_start_date, campaign_end_date, device_activated
+            )
+            VALUES (
+                NEWID(),                    -- New UUID only for NEW enrollments
+                src.member_id,
+                src.campaign_id,
+                SYSDATETIMEOFFSET(),        -- enrollment_ts
+                'ENROLLED',                 -- current_status
+                src.activation_start_date,
+                src.campaign_end_date,
+                0                           -- device_activated (default: not activated)
+            );
+        """
+
+        try:
+            # Execute MERGE once for ALL members in the batch
+            cursor.execute(
+                merge_enrollment_query,
+                (
+                    str(campaign_id),           # Campaign ID
+                    activation_start_date,      # activation_start_date
+                    campaign_end_date,          # campaign_end_date
+                    context.file_batch_id,      # file_batch_id (for WHERE clause)
+                ),
+            )
+
+            # Get row count (how many enrollments were inserted or updated)
+            enrolled_count = cursor.rowcount
+
+            logger.info(f"✅ [TRANSFORM] Enrolled/Updated {enrolled_count} members")
+
+        except Exception as e:
+            logger.error(f"❌ [TRANSFORM] Error in enrollment MERGE: {e}")
+            raise
 
         # Step 5: Mark staging as PROCESSED
         update_staging_query = """
