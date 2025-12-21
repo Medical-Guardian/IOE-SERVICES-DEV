@@ -11,7 +11,7 @@ This service determines which members are eligible for Device Activation calls b
 5. 90-day campaign limit
 
 Call Sequence Logic:
-- Call 1: activation_start_date (delivery_date + 2 business days)
+- Call 1: activation_start_date (first business day on or after enrollment)
 - Call 2: Call 1 + 2 business days (if no success)
 - Call 3: Call 2 + 2 business days (if no success)
 - Call 4: Call 3 + 5 business days (if no success)
@@ -52,12 +52,12 @@ class EligibilityService:
         m.dob,
         m.member_brand,
         md.device_id,
-        md.device_udi,
+        md.device_id AS device_udi,
         md.device_name,
         md.brand AS device_brand,
         md.device_phone_number,
         md.is_device_callable,
-        md.delivery_date,
+        e.activation_start_date AS delivery_date,
         md.fall_detection_status,
         md.battery_status,
         e.activation_start_date,
