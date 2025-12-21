@@ -78,7 +78,7 @@ class EligibilityService:
 
         -- Get last attempt date
         (
-            SELECT MAX(oa.call_start_ts)
+            SELECT MAX(oa.attempt_ts)
             FROM engage360.outreach_attempts oa
             WHERE oa.enrollment_id = e.enrollment_id
         ) AS last_attempt_date,
@@ -88,7 +88,7 @@ class EligibilityService:
             SELECT TOP 1 oa.disposition
             FROM engage360.outreach_attempts oa
             WHERE oa.enrollment_id = e.enrollment_id
-            ORDER BY oa.call_start_ts DESC
+            ORDER BY oa.attempt_ts DESC
         ) AS last_disposition
 
     FROM engage360.member_campaign_enrollments_enhanced e
@@ -120,19 +120,19 @@ class EligibilityService:
             -- Call 2-3: 2 business days since last attempt
             (
                 (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) BETWEEN 1 AND 2
-                AND DATEDIFF(day, (SELECT MAX(call_start_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) >= 2
+                AND DATEDIFF(day, (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) >= 2
             )
             OR
             -- Call 4: 5 business days since Call 3
             (
                 (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) = 3
-                AND DATEDIFF(day, (SELECT MAX(call_start_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) >= 5
+                AND DATEDIFF(day, (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) >= 5
             )
             OR
             -- Call 5+: 7 calendar days since last attempt
             (
                 (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) >= 4
-                AND DATEDIFF(day, (SELECT MAX(call_start_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) >= 7
+                AND DATEDIFF(day, (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) >= 7
             )
         )
 
