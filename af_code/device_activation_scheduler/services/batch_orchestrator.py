@@ -574,14 +574,14 @@ class BatchOrchestrator:
 
         insert_batch_sql = """
         INSERT INTO engage360.outreach_batches (
-            batch_id, campaign_id, batch_type, status,
-            total_calls, created_ts
-        ) VALUES (%s, %s, %s, %s, %s, SYSDATETIMEOFFSET())
+            batch_id, campaign_id, batch_status,
+            total_calls_intended, created_ts
+        ) VALUES (%s, %s, %s, %s, SYSDATETIMEOFFSET())
         """
 
         self.db_service.execute_query(
             insert_batch_sql,
-            (batch_id, str(campaign_id), "DEVICE_ACTIVATION", "Pending", total_calls),
+            (batch_id, str(campaign_id), "Pending", total_calls),
             fetch_results=False,
         )
 
@@ -604,19 +604,18 @@ class BatchOrchestrator:
 
         insert_attempt_sql = """
         INSERT INTO engage360.outreach_attempts (
-            attempt_id, enrollment_id, batch_id, call_attempt_number,
-            disposition, status, created_ts
-        ) VALUES (%s, %s, %s, %s, %s, %s, SYSDATETIMEOFFSET())
+            attempt_id, enrollment_id, batch_id, channel,
+            disposition, attempt_ts
+        ) VALUES (%s, %s, %s, %s, %s, SYSDATETIMEOFFSET())
         """
 
         for member in members:
             enrollment_id = str(member.get("enrollment_id"))
-            call_attempt_number = member.get("call_attempt_number", 1)
             attempt_id = str(uuid.uuid4())
 
             self.db_service.execute_query(
                 insert_attempt_sql,
-                (attempt_id, enrollment_id, batch_id, call_attempt_number, "Pending", "Pending"),
+                (attempt_id, enrollment_id, batch_id, "Voice", "Pending"),
                 fetch_results=False,
             )
 
@@ -636,7 +635,7 @@ class BatchOrchestrator:
         """
         update_batch_sql = """
         UPDATE engage360.outreach_batches
-        SET vendor_batch_id = %s, status = %s, updated_ts = SYSDATETIMEOFFSET()
+        SET vendor_batch_id = %s, batch_status = %s, updated_ts = SYSDATETIMEOFFSET()
         WHERE batch_id = %s
         """
 
@@ -656,7 +655,7 @@ class BatchOrchestrator:
         """
         update_batch_sql = """
         UPDATE engage360.outreach_batches
-        SET status = %s, error_message = %s, updated_ts = SYSDATETIMEOFFSET()
+        SET batch_status = %s, error_message = %s, updated_ts = SYSDATETIMEOFFSET()
         WHERE batch_id = %s
         """
 
