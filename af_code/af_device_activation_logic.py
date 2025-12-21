@@ -833,7 +833,7 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
             )
             import io
 
-            df = pd.read_csv(io.BytesIO(context.blob_content))
+            df = pd.read_csv(io.BytesIO(context.blob_content), dtype=str, keep_default_na=False)
             logger.info(
                 f"✅ [EXTRACT] CSV loaded from blob content: {len(df)} rows, {len(df.columns)} columns"
             )
@@ -1303,7 +1303,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         logger.info("✅ [TRANSFORM] MERGE INTO members complete")
 
         # Step 3: MERGE INTO member_devices
-        # NOTE: delivery_date removed (no longer in CSV)
+        # NOTE: brand, battery_status, fall_detection_status, updated_ts columns
+        # NOTE: added via migration: database/add_device_activation_columns_to_member_devices.sql
         merge_devices_query = """
         MERGE engage360.member_devices AS tgt
         USING (
@@ -1332,6 +1333,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 battery_status = ISNULL(src.battery_status, tgt.battery_status),
                 device_phone_number = ISNULL(src.device_phone_number, tgt.device_phone_number),
                 is_device_callable = ISNULL(src.is_device_callable, tgt.is_device_callable),
+                device_name = ISNULL(src.device_name, tgt.device_name),
                 updated_ts = SYSDATETIMEOFFSET()
         WHEN NOT MATCHED THEN
             INSERT (
@@ -1489,12 +1491,12 @@ def audit_and_log(context: ProcessingContext, details: Dict[str, Any]) -> Proces
         # Insert file processing log
         insert_log_query = """
         INSERT INTO engage360_stg.file_processing_log (
-            file_batch_id, source_filename, workflow_type, uploaded_by_user,
-            upload_ts, processing_start_ts, processing_end_ts, processing_status,
-            total_rows, validated_rows, error_rows, enrolled_rows,
-            error_rate_pct, processing_details
+            file_batch_id, source_filename, file_type, uploaded_by_user,
+            upload_started_ts, completed_ts, current_status,
+            total_records_processed, successful_records, failed_records, enrollments_created,
+            error_percentage
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
         )
         """
 
@@ -1503,18 +1505,16 @@ def audit_and_log(context: ProcessingContext, details: Dict[str, Any]) -> Proces
             (
                 context.file_batch_id,
                 context.source_filename,
-                "DEVICE_ACTIVATION",
+                "DEVICE_ACTIVATION",                    # file_type (was workflow_type)
                 context.uploaded_by_user,
-                datetime.now(timezone.utc),
-                datetime.now(timezone.utc),
-                datetime.now(timezone.utc),
-                "COMPLETED",
-                details.get("total_rows", 0),
-                details.get("validated_rows", 0),
-                details.get("error_rows", 0),
-                details.get("enrolled_count", 0),
-                details.get("error_rate", 0),
-                str(details),
+                datetime.now(timezone.utc),             # upload_started_ts (was upload_ts)
+                datetime.now(timezone.utc),             # completed_ts (was processing_end_ts)
+                "COMPLETED",                             # current_status (was processing_status)
+                details.get("total_rows", 0),           # total_records_processed (was total_rows)
+                details.get("validated_rows", 0),       # successful_records (was validated_rows)
+                details.get("error_rows", 0),           # failed_records (was error_rows)
+                details.get("enrolled_count", 0),       # enrollments_created (was enrolled_rows)
+                details.get("error_rate", 0),           # error_percentage (was error_rate_pct)
             ),
         )
 
