@@ -815,25 +815,42 @@ def validate_and_cleanse_data_before_insert(
         # No delivery_date field in the CSV
 
         # ===================================================================
-        # 12. Enrollment Status Validation and Normalization (NEW)
+        # 12. Enrollment Status Validation and Normalization with Flexible Mapping
         # ===================================================================
-        # FIX ISSUE #7: Validate and normalize enrollment_status
-        # CSV may have lowercase values like "enrolled", but DB expects uppercase: ENROLL, UPDATE, UNENROLL
+        # FIX: Accept both present tense (ENROLL) and past tense (enrolled) forms
+        # CSV may have "enrolled", "ENROLL", "Enrolled", etc. - all should map to "ENROLL"
+        enrollment_status_mapping = {
+            # Present tense forms
+            "ENROLL": "ENROLL",
+            "UPDATE": "UPDATE",
+            "UNENROLL": "UNENROLL",
+
+            # Past tense forms (common in operational CSV files)
+            "ENROLLED": "ENROLL",
+            "UPDATED": "UPDATE",
+            "UNENROLLED": "UNENROLL"
+        }
+
         enrollment_status_raw = str(row.get("enrollment_status", "")).strip()
         if enrollment_status_raw:
-            enrollment_status = enrollment_status_raw.upper()
-            if enrollment_status not in ["ENROLL", "UPDATE", "UNENROLL"]:
+            enrollment_status_upper = enrollment_status_raw.upper()  # Case-insensitive
+
+            if enrollment_status_upper in enrollment_status_mapping:
+                # Valid input - use mapped normalized value
+                df.at[idx, "enrollment_status"] = enrollment_status_mapping[enrollment_status_upper]
+                logger.debug(
+                    f"[VALIDATION] Row {idx+1}: Mapped enrollment_status "
+                    f"'{enrollment_status_raw}' → '{enrollment_status_mapping[enrollment_status_upper]}'"
+                )
+            else:
+                # Invalid input - add error and default to ENROLL
                 row_errors.append(
                     f"Invalid enrollment_status: '{enrollment_status_raw}'. "
-                    f"Must be one of: ENROLL, UPDATE, UNENROLL (case-insensitive)"
+                    f"Must be one of: enrolled/ENROLL, updated/UPDATE, unenrolled/UNENROLL (case-insensitive)"
                 )
-                # Default to ENROLL on error
                 df.at[idx, "enrollment_status"] = "ENROLL"
-            else:
-                # Normalize to uppercase
-                df.at[idx, "enrollment_status"] = enrollment_status
         else:
-            # Default to ENROLL if blank
+            # Empty/blank - default to ENROLL
             df.at[idx, "enrollment_status"] = "ENROLL"
 
         # ===================================================================
