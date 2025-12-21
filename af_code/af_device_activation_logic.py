@@ -1257,9 +1257,9 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 stg.primary_phone,
                 stg.email,
                 stg.service_address,
-                stg.city,
-                stg.state,
-                stg.zip,
+                stg.city AS address_city,
+                stg.state AS address_state,
+                stg.zip AS address_zip,
                 stg.dob,
                 stg.timezone,
                 stg.language_pref
@@ -1277,9 +1277,9 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 primary_phone = ISNULL(src.primary_phone, tgt.primary_phone),
                 email = ISNULL(src.email, tgt.email),
                 address_street = ISNULL(src.service_address, tgt.address_street),
-                city = ISNULL(src.city, tgt.city),
-                state = ISNULL(src.state, tgt.state),
-                zip = ISNULL(src.zip, tgt.zip),
+                address_city = ISNULL(src.address_city, tgt.address_city),
+                address_state = ISNULL(src.address_state, tgt.address_state),
+                address_zip = ISNULL(src.address_zip, tgt.address_zip),
                 dob = ISNULL(src.dob, tgt.dob),
                 timezone = ISNULL(src.timezone, tgt.timezone),
                 language_pref = ISNULL(src.language_pref, tgt.language_pref),
@@ -1288,14 +1288,14 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             INSERT (
                 member_id, org_id, salesforce_account_id, salesforce_account_number,
                 first_name, last_name, primary_phone, email,
-                address_street, city, state, zip,
+                address_street, address_city, address_state, address_zip,
                 dob, timezone, language_pref,
                 created_ts, updated_ts
             )
             VALUES (
                 NEWID(), src.org_id, src.salesforce_account_id, src.salesforce_account_number,
                 src.first_name, src.last_name, src.primary_phone, src.email,
-                src.service_address, src.city, src.state, src.zip,
+                src.service_address, src.address_city, src.address_state, src.address_zip,
                 src.dob, src.timezone, src.language_pref,
                 SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET()
             );
