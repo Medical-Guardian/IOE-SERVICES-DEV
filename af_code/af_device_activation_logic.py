@@ -1282,22 +1282,21 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 address_zip = ISNULL(src.address_zip, tgt.address_zip),
                 dob = ISNULL(src.dob, tgt.dob),
                 timezone = ISNULL(src.timezone, tgt.timezone),
-                language_pref = ISNULL(src.language_pref, tgt.language_pref),
-                updated_ts = SYSDATETIMEOFFSET()
+                language_pref = ISNULL(src.language_pref, tgt.language_pref)
         WHEN NOT MATCHED THEN
             INSERT (
                 member_id, org_id, salesforce_account_id, salesforce_account_number,
                 first_name, last_name, primary_phone, email,
                 address_street, address_city, address_state, address_zip,
                 dob, timezone, language_pref,
-                created_ts, updated_ts
+                created_ts
             )
             VALUES (
                 NEWID(), src.org_id, src.salesforce_account_id, src.salesforce_account_number,
                 src.first_name, src.last_name, src.primary_phone, src.email,
                 src.service_address, src.address_city, src.address_state, src.address_zip,
                 src.dob, src.timezone, src.language_pref,
-                SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET()
+                SYSDATETIMEOFFSET()
             );
         """
         cursor.execute(merge_members_query, (context.file_batch_id,))
