@@ -1588,12 +1588,10 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 unenrollment_reason = CASE
                     WHEN tgt.current_status = 'UNENROLLED' THEN NULL
                     ELSE tgt.unenrollment_reason
-                END,
+                END
 
                 -- Keep existing device_activated status (don't reset to 0)
                 -- device_activated stays as is (1 = activated, 0 = not activated)
-
-                updated_ts = SYSDATETIMEOFFSET()
 
         WHEN NOT MATCHED THEN
             INSERT (
