@@ -242,6 +242,46 @@ class ProcessingContext:
 # ============================================================================
 
 
+def get_org_id_for_partner(partner_name: str) -> Optional[str]:
+    """
+    Look up org_id from engage360.orgs table based on partner name.
+    Specifically looks up DTC org_type for Device Activation operations.
+
+    Args:
+        partner_name: Partner organization name (e.g., "Medical Guardian")
+
+    Returns:
+        org_id as string UUID for DTC org, or None if not found
+    """
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        query = """
+        SELECT org_id
+        FROM engage360.orgs
+        WHERE org_name = %s
+          AND org_type = 'DTC'
+        """
+
+        cursor.execute(query, (partner_name,))
+        result = cursor.fetchone()
+
+        cursor.close()
+        conn.close()
+
+        if result:
+            org_id = str(result[0])  # Convert UUID to string
+            logger.info(f"✅ [ORG-LOOKUP] Found DTC org_id for '{partner_name}': {org_id}")
+            return org_id
+        else:
+            logger.error(f"❌ [ORG-LOOKUP] No DTC org_id found for partner: '{partner_name}'")
+            return None
+    except Exception as e:
+        logger.error(f"❌ [ORG-LOOKUP] Error looking up org_id: {e}")
+        return None
+
+
 def standardize_phone(phone: str) -> Optional[str]:
     """
     Standardize phone number to E.164 format (+1XXXXXXXXXX)
@@ -501,6 +541,9 @@ def validate_and_cleanse_data_before_insert(
     df["error_message"] = ""
     df["error_details"] = ""
 
+    # Add org_id column (will be populated during partner validation)
+    df["org_id"] = None
+
     # Add clean columns
     df["first_name_clean"] = ""
     df["last_name_clean"] = ""
@@ -521,13 +564,22 @@ def validate_and_cleanse_data_before_insert(
         row_errors = []
 
         # ===================================================================
-        # 1. Partner Name Validation
+        # 1. Partner Name Validation + org_id Lookup
         # ===================================================================
         partner_name = str(row.get("partner_name", "")).strip()
         if partner_name != "Medical Guardian":
             row_errors.append(
                 f"Invalid partner_name: '{partner_name}' (expected 'Medical Guardian')"
             )
+        else:
+            # NEW: Look up org_id for this partner (CRITICAL - Required for MERGE)
+            org_id = get_org_id_for_partner(partner_name)
+            if org_id:
+                df.at[idx, "org_id"] = org_id
+            else:
+                row_errors.append(
+                    f"Could not find org_id for partner: '{partner_name}'"
+                )
 
         # ===================================================================
         # 2. Salesforce Account ID Validation (REQUIRED - NEW FIELD)
@@ -594,13 +646,33 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, "timezone_clean"] = mapped_timezone
 
         # ===================================================================
-        # 6. Language Preference Mapping
+        # 6. Language Preference Mapping (FIX ISSUE #8)
         # ===================================================================
-        language_pref = row.get("language_pref", "")
+        # Support full language names like "English", "Spanish" in addition to ISO codes
+        language_pref_raw = str(row.get("language_pref", "EN")).strip()
+
+        # Map common full names to ISO codes before passing to map_language_code()
+        language_name_mapping = {
+            "ENGLISH": "EN",
+            "SPANISH": "ES",
+            "EN": "EN",
+            "ES": "ES",
+            "OTHER": "Other"
+        }
+
+        language_pref_normalized = language_name_mapping.get(language_pref_raw.upper(), language_pref_raw)
+
         try:
-            mapped_language = map_language_code(language_pref)
+            mapped_language = map_language_code(language_pref_normalized)
             df.at[idx, "language_pref_clean"] = mapped_language
-        except Exception:
+            # Log warning for unmapped full names
+            if language_pref_raw.upper() not in language_name_mapping and language_pref_raw:
+                logger.warning(
+                    f"[VALIDATION] Row {idx+1}: Unmapped language_pref '{language_pref_raw}' "
+                    f"defaulted to EN"
+                )
+        except Exception as e:
+            logger.error(f"[VALIDATION] Row {idx+1}: Error mapping language_pref: {e}")
             df.at[idx, "language_pref_clean"] = "EN"  # Default to English
 
         # ===================================================================
@@ -663,13 +735,31 @@ def validate_and_cleanse_data_before_insert(
                 row_errors.append(f"Invalid email format: '{email}'")
 
         # ===================================================================
-        # 9. Device UDI Validation (REQUIRED)
+        # 9. Device UDI Validation (REQUIRED) + Scientific Notation Conversion
         # ===================================================================
         device_udi = str(row.get("device_udi", "")).strip()
         if not device_udi or device_udi == "":
             row_errors.append("device_udi is required")
-        elif len(device_udi) < 5 or len(device_udi) > 50:
-            row_errors.append(f"device_udi length must be 5-50 characters: '{device_udi}'")
+        else:
+            # FIX ISSUE #2: Convert scientific notation to full number string
+            # Example: "9.17E+11" → "917000000000"
+            try:
+                if "E" in device_udi.upper():
+                    original_udi = device_udi
+                    device_udi = str(int(float(device_udi)))
+                    logger.info(
+                        f"[VALIDATION] Row {idx+1}: Converted scientific notation device_udi "
+                        f"from '{original_udi}' to '{device_udi}'"
+                    )
+                    # Update the dataframe with converted value
+                    df.at[idx, "device_udi"] = device_udi
+            except (ValueError, OverflowError) as e:
+                row_errors.append(f"Invalid device_udi format: '{row.get('device_udi')}' - {e}")
+                device_udi = ""
+
+            # Validate length after conversion
+            if device_udi and (len(device_udi) < 5 or len(device_udi) > 50):
+                row_errors.append(f"device_udi length must be 5-50 characters: '{device_udi}'")
 
         # ===================================================================
         # 10. Device Status Validation and Conversion (UPDATED FORMAT)
@@ -725,13 +815,35 @@ def validate_and_cleanse_data_before_insert(
         # No delivery_date field in the CSV
 
         # ===================================================================
-        # 12. Customer Type Validation - REMOVED (not in actual CSV)
+        # 12. Enrollment Status Validation and Normalization (NEW)
+        # ===================================================================
+        # FIX ISSUE #7: Validate and normalize enrollment_status
+        # CSV may have lowercase values like "enrolled", but DB expects uppercase: ENROLL, UPDATE, UNENROLL
+        enrollment_status_raw = str(row.get("enrollment_status", "")).strip()
+        if enrollment_status_raw:
+            enrollment_status = enrollment_status_raw.upper()
+            if enrollment_status not in ["ENROLL", "UPDATE", "UNENROLL"]:
+                row_errors.append(
+                    f"Invalid enrollment_status: '{enrollment_status_raw}'. "
+                    f"Must be one of: ENROLL, UPDATE, UNENROLL (case-insensitive)"
+                )
+                # Default to ENROLL on error
+                df.at[idx, "enrollment_status"] = "ENROLL"
+            else:
+                # Normalize to uppercase
+                df.at[idx, "enrollment_status"] = enrollment_status
+        else:
+            # Default to ENROLL if blank
+            df.at[idx, "enrollment_status"] = "ENROLL"
+
+        # ===================================================================
+        # 13. Customer Type Validation - REMOVED (not in actual CSV)
         # ===================================================================
         # NOTE: customer_type field does not exist in the actual CSV format
         # All members are treated as DTC by default
 
         # ===================================================================
-        # 13. is_device_callable Boolean Conversion (with inference)
+        # 14. is_device_callable Boolean Conversion (with inference)
         # ===================================================================
         is_callable = row.get("is_device_callable", "")
         device_phone = row.get("device_phone_number", "")
@@ -1000,9 +1112,9 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
             file_batch_id, row_number_in_file, uploaded_by_user, uploaded_ts,
             processing_status, validation_status, error_message,
             partner_name, campaign_name_source,
-            salesforce_account_id, salesforce_account_number,
+            salesforce_account_id, salesforce_account_number, org_id,
             first_name, last_name, primary_phone, email,
-            service_address, city, state, zip,
+            service_address, city, state, zip, address_country,
             dob, timezone, language_pref,
             device_udi, device_name, brand,
             device_phone_number, is_device_callable,
@@ -1012,8 +1124,9 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
         ) VALUES (
             %s, %s, %s, %s, %s, %s, %s,
             %s, %s,
-            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s,
             %s, %s, %s, %s,
+            %s, %s, %s, %s, %s,
             %s, %s, %s,
             %s, %s, %s,
             %s, %s,
@@ -1042,15 +1155,17 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
                         # Member identity
                         row.get("salesforce_account_id", ""),
                         row.get("salesforce_account_number", ""),
+                        row.get("org_id"),  # NEW: org_id from partner lookup
                         row.get("first_name_clean", ""),
                         row.get("last_name_clean", ""),
                         row.get("primary_phone_clean", ""),
-                        row.get("member_email", ""),
+                        row.get("email", ""),  # Fixed: was "member_email"
                         # Address (combined)
                         row.get("service_address_clean", ""),
-                        row.get("member_address_city", ""),
-                        row.get("member_address_state", ""),
-                        row.get("member_address_zip", ""),
+                        row.get("city", ""),  # Fixed: was "member_address_city"
+                        row.get("state", ""),  # Fixed: was "member_address_state"
+                        row.get("zip", ""),  # Fixed: was "member_address_zip"
+                        row.get("address_country", "US"),  # FIX ISSUE #11: Add address_country
                         # Demographics
                         row.get("dob_clean", None),
                         row.get("timezone_clean", ""),
@@ -1064,11 +1179,11 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
                         # Device status (converted values)
                         row.get("fall_detection_status_clean", ""),
                         row.get("battery_status_clean", ""),
-                        # Campaign tracking
-                        row.get("campaign_parameters", ""),
-                        row.get("monitoring_system_id", ""),
+                        # Campaign tracking (FIX ISSUE #4: Convert empty strings to NULL)
+                        row.get("campaign_parameters", "") or None,
+                        row.get("monitoring_system_id", "") or None,
                         row.get("enrollment_status", "ENROLL"),
-                        row.get("unenrollment_reason", ""),
+                        row.get("unenrollment_reason", "") or None,
                     ),
                 )
                 inserted_count += 1
@@ -1260,6 +1375,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 stg.city AS address_city,
                 stg.state AS address_state,
                 stg.zip AS address_zip,
+                ISNULL(stg.address_country, 'US') AS address_country,
                 stg.dob,
                 stg.timezone,
                 stg.language_pref
@@ -1280,6 +1396,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 address_city = ISNULL(src.address_city, tgt.address_city),
                 address_state = ISNULL(src.address_state, tgt.address_state),
                 address_zip = ISNULL(src.address_zip, tgt.address_zip),
+                address_country = ISNULL(src.address_country, tgt.address_country),
                 dob = ISNULL(src.dob, tgt.dob),
                 timezone = ISNULL(src.timezone, tgt.timezone),
                 language_pref = ISNULL(src.language_pref, tgt.language_pref)
@@ -1287,14 +1404,14 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             INSERT (
                 member_id, org_id, salesforce_account_id, salesforce_account_number,
                 first_name, last_name, primary_phone, email,
-                address_street, address_city, address_state, address_zip,
+                address_street, address_city, address_state, address_zip, address_country,
                 dob, timezone, language_pref,
                 created_ts
             )
             VALUES (
                 NEWID(), src.org_id, src.salesforce_account_id, src.salesforce_account_number,
                 src.first_name, src.last_name, src.primary_phone, src.email,
-                src.service_address, src.address_city, src.address_state, src.address_zip,
+                src.service_address, src.address_city, src.address_state, src.address_zip, src.address_country,
                 src.dob, src.timezone, src.language_pref,
                 SYSDATETIMEOFFSET()
             );
