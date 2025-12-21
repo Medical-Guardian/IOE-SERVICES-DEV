@@ -50,10 +50,11 @@ class EligibilityService:
         m.address_state,
         m.address_zip,
         m.dob,
+        m.member_brand,
         md.device_id,
         md.device_udi,
         md.device_name,
-        md.brand,
+        md.brand AS device_brand,
         md.device_phone_number,
         md.is_device_callable,
         md.delivery_date,
@@ -169,7 +170,15 @@ class EligibilityService:
 
         BusinessCaseID: BC-TBD (Device Activation System)
         """
-        logger.info("🔍 [ELIGIBILITY-SERVICE] Starting member eligibility query...")
+        logger.info("🔍 [ELIGIBILITY-SERVICE] ============================================")
+        logger.info("🔍 [ELIGIBILITY-SERVICE] MEMBER QUALIFICATION - DATABASE QUERY")
+        logger.info("🔍 [ELIGIBILITY-SERVICE] ============================================")
+        logger.info("🔍 [ELIGIBILITY-SERVICE] Executing SQL eligibility query...")
+        logger.info("🔍 [ELIGIBILITY-SERVICE] Query joins:")
+        logger.info("   ✓ member_campaign_enrollments_enhanced (active enrollments)")
+        logger.info("   ✓ members (member demographics, member_brand)")
+        logger.info("   ✓ member_devices (device info, device brand)")
+        logger.info("   ✓ campaigns_enhanced (campaign configuration)")
 
         try:
             # Execute eligibility query
@@ -178,34 +187,115 @@ class EligibilityService:
             )
 
             if not potential_members:
-                logger.info("ℹ️ [ELIGIBILITY-SERVICE] No potential members found in database")
-                logger.info("ℹ️ [ELIGIBILITY-SERVICE] Possible reasons:")
-                logger.info("   - No members enrolled in Device Activation campaign")
-                logger.info("   - All members have recent attempts within frequency window")
-                logger.info("   - All members are in callback queue")
-                logger.info("   - All members outside 90-day campaign window")
+                logger.info("")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] ============================================")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] NO POTENTIAL MEMBERS FOUND IN DATABASE")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] ============================================")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] Diagnostic checklist:")
+                logger.info("   □ No members enrolled in Device Activation campaign")
+                logger.info("   □ All members have recent attempts within frequency window")
+                logger.info("   □ All members are in callback queue (higher priority)")
+                logger.info("   □ All members outside 90-day campaign window (activation_start_date to campaign_end_date)")
+                logger.info("   □ Campaign status is not 'Active'")
+                logger.info("   □ No member_devices records linked to enrolled members")
                 return []
 
-            logger.info(
-                f"📊 [ELIGIBILITY-SERVICE] Found {len(potential_members)} potential members from database"
-            )
+            logger.info("")
+            logger.info(f"✅ [ELIGIBILITY-SERVICE] Found {len(potential_members)} potential members from database")
+            logger.info("")
 
-            # Log summary by call attempt number
+            # Log detailed statistics for potential members
             call_attempt_summary = {}
+            timezone_summary = {}
+            customer_type_summary = {}
+            last_disposition_summary = {}
+
             for member in potential_members:
+                # Call attempt distribution
                 attempt_num = member.get("call_attempt_number", 1)
                 call_attempt_summary[attempt_num] = call_attempt_summary.get(attempt_num, 0) + 1
 
-            logger.info("📊 [ELIGIBILITY-SERVICE] Potential members by call attempt:")
+                # Timezone distribution
+                tz = member.get("timezone", "Unknown")
+                timezone_summary[tz] = timezone_summary.get(tz, 0) + 1
+
+                # Customer type distribution
+                cust_type = member.get("customer_type", "Unknown")
+                customer_type_summary[cust_type] = customer_type_summary.get(cust_type, 0) + 1
+
+                # Last disposition distribution
+                last_disp = member.get("last_disposition", "No previous attempts")
+                if last_disp:
+                    last_disposition_summary[last_disp] = last_disposition_summary.get(last_disp, 0) + 1
+
+            logger.info("📊 [ELIGIBILITY-SERVICE] POTENTIAL MEMBER STATISTICS (Before Business Hours Filter)")
+            logger.info("📊 [ELIGIBILITY-SERVICE] ============================================")
+
+            logger.info("📊 [ELIGIBILITY-SERVICE] Call Attempt Distribution:")
             for attempt_num in sorted(call_attempt_summary.keys()):
-                logger.info(f"   Call {attempt_num}: {call_attempt_summary[attempt_num]} members")
+                logger.info(f"   📞 Call #{attempt_num}: {call_attempt_summary[attempt_num]} members")
+
+            logger.info("")
+            logger.info("📊 [ELIGIBILITY-SERVICE] Timezone Distribution:")
+            for tz in sorted(timezone_summary.keys()):
+                logger.info(f"   🕒 {tz}: {timezone_summary[tz]} members")
+
+            logger.info("")
+            logger.info("📊 [ELIGIBILITY-SERVICE] Customer Type Distribution:")
+            for cust_type in sorted(customer_type_summary.keys()):
+                logger.info(f"   👥 {cust_type}: {customer_type_summary[cust_type]} members")
+
+            logger.info("")
+            logger.info("📊 [ELIGIBILITY-SERVICE] Last Disposition Distribution:")
+            for disp in sorted(last_disposition_summary.keys()):
+                count = last_disposition_summary[disp]
+                logger.info(f"   📋 {disp}: {count} members")
+
+            logger.info("📊 [ELIGIBILITY-SERVICE] ============================================")
 
             # Filter by business hours
+            logger.info("")
+            logger.info("🕐 [ELIGIBILITY-SERVICE] ============================================")
+            logger.info("🕐 [ELIGIBILITY-SERVICE] BUSINESS HOURS VALIDATION")
+            logger.info("🕐 [ELIGIBILITY-SERVICE] ============================================")
+            logger.info("🕐 [ELIGIBILITY-SERVICE] Filtering members by business hours...")
+            logger.info("🕐 [ELIGIBILITY-SERVICE] Campaign operating hours: Check campaign.operating_start_time to campaign.operating_end_time")
+            logger.info("🕐 [ELIGIBILITY-SERVICE] Member timezone: Using member.timezone for time calculations")
+
             eligible_members = self._filter_by_business_hours(potential_members)
 
-            logger.info(
-                f"✅ [ELIGIBILITY-SERVICE] {len(eligible_members)} members eligible after business hours validation"
-            )
+            filtered_out_count = len(potential_members) - len(eligible_members)
+            logger.info("")
+            logger.info(f"✅ [ELIGIBILITY-SERVICE] Business hours validation complete")
+            logger.info(f"   ✓ Eligible members: {len(eligible_members)}")
+            logger.info(f"   ✗ Filtered out (outside business hours): {filtered_out_count}")
+
+            # Final summary
+            if len(eligible_members) > 0:
+                logger.info("")
+                logger.info("📊 [ELIGIBILITY-SERVICE] ============================================")
+                logger.info("📊 [ELIGIBILITY-SERVICE] FINAL ELIGIBILITY SUMMARY")
+                logger.info("📊 [ELIGIBILITY-SERVICE] ============================================")
+                logger.info(f"📊 [ELIGIBILITY-SERVICE] ✅ Total Eligible Members: {len(eligible_members)}")
+                logger.info(f"📊 [ELIGIBILITY-SERVICE] 📋 Total Potential Members: {len(potential_members)}")
+                logger.info(f"📊 [ELIGIBILITY-SERVICE] 🕐 Filtered by Business Hours: {filtered_out_count}")
+                logger.info(f"📊 [ELIGIBILITY-SERVICE] 📈 Qualification Rate: {(len(eligible_members)/len(potential_members)*100):.1f}%")
+                logger.info("")
+                logger.info("📊 [ELIGIBILITY-SERVICE] Qualification Funnel:")
+                logger.info(f"   1. Database Query → {len(potential_members)} potential members")
+                logger.info(f"   2. Business Hours Filter → {len(eligible_members)} eligible members")
+                logger.info(f"   3. Ready for Bland AI Submission → {len(eligible_members)} calls")
+                logger.info("📊 [ELIGIBILITY-SERVICE] ============================================")
+            else:
+                logger.info("")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] ============================================")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] NO ELIGIBLE MEMBERS AFTER FILTERING")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] ============================================")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] All potential members were outside business hours")
+                logger.info(f"⚠️ [ELIGIBILITY-SERVICE] Potential members found: {len(potential_members)}")
+                logger.info(f"⚠️ [ELIGIBILITY-SERVICE] Filtered out: {filtered_out_count}")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] Next scheduler run may find eligible members during operating hours")
+                logger.info("⚠️ [ELIGIBILITY-SERVICE] ============================================")
 
             return eligible_members
 

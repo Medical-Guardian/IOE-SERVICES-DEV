@@ -48,15 +48,49 @@ def create_device_activation_batch(
 
     BusinessCaseID: BC-TBD (Device Activation System)
     """
-    logger.info("🚀 [MAIN-LOGIC] Starting Device Activation batch creation")
+    logger.info("=" * 80)
+    logger.info("🚀 [MAIN-LOGIC] DEVICE ACTIVATION SCHEDULER - BATCH CREATION START")
+    logger.info("=" * 80)
 
     try:
-        # Step 1: Get eligible members
-        logger.info("📋 [MAIN-LOGIC] Step 1: Querying eligible members...")
+        # ========================================================================
+        # STEP 1: CAMPAIGN QUALIFICATION
+        # ========================================================================
+        logger.info("")
+        logger.info("🔍 [MAIN-LOGIC] ============================================")
+        logger.info("🔍 [MAIN-LOGIC] STEP 1: CAMPAIGN QUALIFICATION")
+        logger.info("🔍 [MAIN-LOGIC] ============================================")
+        logger.info("🔍 [MAIN-LOGIC] Campaign Type: Device Activation / Operations")
+        logger.info("🔍 [MAIN-LOGIC] Qualification Criteria:")
+        logger.info("   ✓ Status = 'Active'")
+        logger.info("   ✓ Campaign Type IN ('Operations', 'Device Activation', 'DeviceActivation')")
+        logger.info("   ✓ Within 90-day activation window (activation_start_date to campaign_end_date)")
+        logger.info("   ✓ Not in callback queue (priority)")
+        logger.info("   ✓ Frequency rules (Call 1-3: 2 biz days, Call 4: 5 biz days, Call 5+: 7 calendar days)")
+
+        # ========================================================================
+        # STEP 2: MEMBER QUALIFICATION & ELIGIBILITY
+        # ========================================================================
+        logger.info("")
+        logger.info("📋 [MAIN-LOGIC] ============================================")
+        logger.info("📋 [MAIN-LOGIC] STEP 2: MEMBER QUALIFICATION & ELIGIBILITY")
+        logger.info("📋 [MAIN-LOGIC] ============================================")
+        logger.info("📋 [MAIN-LOGIC] Querying database for potential members...")
+
         eligible_members = eligibility_service.get_eligible_members()
 
         if not eligible_members:
-            logger.info("ℹ️ [MAIN-LOGIC] No eligible members found for calling")
+            logger.info("")
+            logger.info("⚠️ [MAIN-LOGIC] ============================================")
+            logger.info("⚠️ [MAIN-LOGIC] NO ELIGIBLE MEMBERS FOUND")
+            logger.info("⚠️ [MAIN-LOGIC] ============================================")
+            logger.info("⚠️ [MAIN-LOGIC] Possible reasons:")
+            logger.info("   - No active Device Activation campaigns")
+            logger.info("   - All members outside business hours")
+            logger.info("   - All members have recent attempts (frequency protection)")
+            logger.info("   - All members in callback queue (higher priority)")
+            logger.info("   - All members outside 90-day campaign window")
+            logger.info("=" * 80)
             return {
                 "success": True,
                 "message": "No eligible members found for calling at this time",
@@ -65,36 +99,97 @@ def create_device_activation_batch(
                 "calls_submitted": 0,
             }
 
-        logger.info(f"✅ [MAIN-LOGIC] Found {len(eligible_members)} eligible members")
+        logger.info(f"✅ [MAIN-LOGIC] Total Qualified Members: {len(eligible_members)}")
+        logger.info("")
 
-        # Log summary by call attempt number
+        # Log detailed statistics
         call_attempt_summary = {}
+        timezone_summary = {}
+        customer_type_summary = {}
+        device_brand_summary = {}
+
         for member in eligible_members:
+            # Call attempt distribution
             attempt_num = member.get("call_attempt_number", 1)
             call_attempt_summary[attempt_num] = call_attempt_summary.get(attempt_num, 0) + 1
 
-        logger.info("📊 [MAIN-LOGIC] Eligible members by call attempt:")
-        for attempt_num in sorted(call_attempt_summary.keys()):
-            logger.info(f"   Call {attempt_num}: {call_attempt_summary[attempt_num]} members")
+            # Timezone distribution
+            tz = member.get("timezone", "Unknown")
+            timezone_summary[tz] = timezone_summary.get(tz, 0) + 1
 
-        # Step 2: Create and submit batches
-        logger.info(
-            f"📦 [MAIN-LOGIC] Step 2: Creating batches for {len(eligible_members)} members..."
-        )
+            # Customer type distribution
+            cust_type = member.get("customer_type", "Unknown")
+            customer_type_summary[cust_type] = customer_type_summary.get(cust_type, 0) + 1
+
+            # Device brand distribution
+            device_brand = member.get("device_brand", "Unknown")
+            device_brand_summary[device_brand] = device_brand_summary.get(device_brand, 0) + 1
+
+        logger.info("📊 [MAIN-LOGIC] ============================================")
+        logger.info("📊 [MAIN-LOGIC] QUALIFICATION STATISTICS")
+        logger.info("📊 [MAIN-LOGIC] ============================================")
+
+        logger.info("📊 [MAIN-LOGIC] Call Attempt Distribution:")
+        for attempt_num in sorted(call_attempt_summary.keys()):
+            logger.info(f"   📞 Call #{attempt_num}: {call_attempt_summary[attempt_num]} members")
+
+        logger.info("")
+        logger.info("📊 [MAIN-LOGIC] Timezone Distribution:")
+        for tz in sorted(timezone_summary.keys()):
+            logger.info(f"   🕒 {tz}: {timezone_summary[tz]} members")
+
+        logger.info("")
+        logger.info("📊 [MAIN-LOGIC] Customer Type Distribution:")
+        for cust_type in sorted(customer_type_summary.keys()):
+            logger.info(f"   👥 {cust_type}: {customer_type_summary[cust_type]} members")
+
+        logger.info("")
+        logger.info("📊 [MAIN-LOGIC] Device Brand Distribution:")
+        for brand in sorted(device_brand_summary.keys()):
+            logger.info(f"   📱 {brand}: {device_brand_summary[brand]} devices")
+
+        logger.info("📊 [MAIN-LOGIC] ============================================")
+
+        # ========================================================================
+        # STEP 3: BATCH CREATION & SUBMISSION
+        # ========================================================================
+        logger.info("")
+        logger.info("📦 [MAIN-LOGIC] ============================================")
+        logger.info("📦 [MAIN-LOGIC] STEP 3: BATCH CREATION & BLAND AI SUBMISSION")
+        logger.info("📦 [MAIN-LOGIC] ============================================")
+        logger.info(f"📦 [MAIN-LOGIC] Total members to batch: {len(eligible_members)}")
+        logger.info("📦 [MAIN-LOGIC] Batch size limit: 100 members per batch (Bland AI limit)")
+        logger.info("📦 [MAIN-LOGIC] Creating batches and submitting to Bland AI...")
 
         batch_results = batch_orchestrator.create_and_submit_batches(eligible_members)
 
-        # Step 3: Log results
+        # ========================================================================
+        # STEP 4: RESULTS SUMMARY
+        # ========================================================================
         success = batch_results.get("success", False)
         batches_created = batch_results.get("batches_created", 0)
         calls_submitted = batch_results.get("calls_submitted", 0)
 
+        logger.info("")
+        logger.info("=" * 80)
+        logger.info("📊 [MAIN-LOGIC] FINAL RESULTS SUMMARY")
+        logger.info("=" * 80)
+
         if success:
-            logger.info("✅ [MAIN-LOGIC] Batch creation completed successfully")
-            logger.info("📊 [MAIN-LOGIC] Summary:")
-            logger.info(f"   Total eligible members: {len(eligible_members)}")
-            logger.info(f"   Batches created: {batches_created}")
-            logger.info(f"   Calls submitted to Bland AI: {calls_submitted}")
+            logger.info("✅ [MAIN-LOGIC] Status: SUCCESS")
+            logger.info("")
+            logger.info("📊 [MAIN-LOGIC] Campaign Metrics:")
+            logger.info(f"   ✓ Total Qualified Members: {len(eligible_members)}")
+            logger.info(f"   ✓ Batches Created: {batches_created}")
+            logger.info(f"   ✓ Calls Submitted to Bland AI: {calls_submitted}")
+            logger.info(f"   ✓ Success Rate: {(calls_submitted/len(eligible_members)*100):.1f}%")
+            logger.info("")
+            logger.info("📊 [MAIN-LOGIC] Next Steps:")
+            logger.info("   1. Bland AI will process calls asynchronously")
+            logger.info("   2. Webhook will receive call results")
+            logger.info("   3. Database will be updated with dispositions")
+            logger.info("   4. Next scheduler run will handle remaining members")
+            logger.info("=" * 80)
 
             return {
                 "success": True,
@@ -105,7 +200,15 @@ def create_device_activation_batch(
             }
         else:
             error_message = batch_results.get("error", "Unknown error occurred")
-            logger.error(f"❌ [MAIN-LOGIC] Batch creation failed: {error_message}")
+            logger.error("❌ [MAIN-LOGIC] Status: FAILED")
+            logger.error(f"❌ [MAIN-LOGIC] Error: {error_message}")
+            logger.error("")
+            logger.error("📊 [MAIN-LOGIC] Partial Results:")
+            logger.error(f"   ✗ Total Qualified Members: {len(eligible_members)}")
+            logger.error(f"   ✗ Batches Created: {batches_created}")
+            logger.error(f"   ✗ Calls Submitted: {calls_submitted}")
+            logger.error(f"   ✗ Calls Failed: {len(eligible_members) - calls_submitted}")
+            logger.error("=" * 80)
 
             return {
                 "success": False,

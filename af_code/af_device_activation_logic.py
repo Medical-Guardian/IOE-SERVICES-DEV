@@ -554,7 +554,8 @@ def validate_and_cleanse_data_before_insert(
     df["language_pref_clean"] = ""
     df["timezone_clean"] = ""
     df["service_address_clean"] = ""
-    df["brand_clean"] = ""
+    df["brand_clean"] = ""  # For member brand (members.member_brand)
+    df["device_name_clean"] = ""  # For device brand (member_devices.brand)
     df["fall_detection_status_clean"] = ""
     df["battery_status_clean"] = ""
 
@@ -801,11 +802,16 @@ def validate_and_cleanse_data_before_insert(
             # Default to Unknown if not provided
             df.at[idx, "battery_status_clean"] = "Unknown"
 
-        # Brand: Map member_brand to brand (no validation needed)
+        # Member Brand: Map member_brand to brand_clean (for members.member_brand)
         # Support both column names (pre and post column mapping)
         member_brand = row.get("brand", "") or row.get("member_brand", "")
         if member_brand and str(member_brand).strip():
             df.at[idx, "brand_clean"] = str(member_brand).strip()
+
+        # Device Brand: Map device_name to device_name_clean (for member_devices.brand)
+        device_name = row.get("device_name", "")
+        if device_name and str(device_name).strip():
+            df.at[idx, "device_name_clean"] = str(device_name).strip()
 
         # ===================================================================
         # 11. Delivery Date Validation - REMOVED (no longer required)
@@ -1133,6 +1139,7 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
             first_name, last_name, primary_phone, email,
             service_address, city, state, zip, address_country,
             dob, timezone, language_pref,
+            member_brand,
             device_udi, device_name, brand,
             device_phone_number, is_device_callable,
             fall_detection_status, battery_status,
@@ -1145,6 +1152,7 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
             %s, %s, %s, %s,
             %s, %s, %s, %s, %s,
             %s, %s, %s,
+            %s,
             %s, %s, %s,
             %s, %s,
             %s, %s,
@@ -1187,10 +1195,12 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
                         row.get("dob_clean", None),
                         row.get("timezone_clean", ""),
                         row.get("language_pref_clean", "EN"),
+                        # Member brand
+                        row.get("brand_clean", ""),  # member_brand for staging.member_brand
                         # Device info
                         row.get("device_udi", ""),
                         row.get("device_name", ""),
-                        row.get("brand_clean", ""),
+                        row.get("device_name_clean", ""),  # device brand for staging.brand
                         row.get("device_phone_clean", ""),
                         row.get("is_device_callable_clean", None),
                         # Device status (converted values)
@@ -1395,7 +1405,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 ISNULL(stg.address_country, 'US') AS address_country,
                 stg.dob,
                 stg.timezone,
-                stg.language_pref
+                stg.language_pref,
+                stg.member_brand
             FROM engage360_stg.stg_device_activation_delta stg
             WHERE stg.file_batch_id = %s
               AND stg.validation_status = 'VALIDATED'
@@ -1416,13 +1427,15 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 address_country = ISNULL(src.address_country, tgt.address_country),
                 dob = ISNULL(src.dob, tgt.dob),
                 timezone = ISNULL(src.timezone, tgt.timezone),
-                language_pref = ISNULL(src.language_pref, tgt.language_pref)
+                language_pref = ISNULL(src.language_pref, tgt.language_pref),
+                member_brand = ISNULL(src.member_brand, tgt.member_brand)
         WHEN NOT MATCHED THEN
             INSERT (
                 member_id, org_id, salesforce_account_id, salesforce_account_number,
                 first_name, last_name, primary_phone, email,
                 address_street, address_city, address_state, address_zip, address_country,
                 dob, timezone, language_pref,
+                member_brand,
                 created_ts
             )
             VALUES (
@@ -1430,6 +1443,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 src.first_name, src.last_name, src.primary_phone, src.email,
                 src.service_address, src.address_city, src.address_state, src.address_zip, src.address_country,
                 src.dob, src.timezone, src.language_pref,
+                src.member_brand,
                 SYSDATETIMEOFFSET()
             );
         """
