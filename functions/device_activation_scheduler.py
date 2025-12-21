@@ -88,7 +88,6 @@ def timer_device_activation(timer: func.TimerRequest) -> None:
     logging.info("⏰ [TIMER] Device Activation Scheduler COMPLETED")
 
 
-@device_activation_bp.function_name(name="http_device_activation")
 @device_activation_bp.route(route="create_device_activation_batch", methods=["POST"])
 def http_device_activation(req: func.HttpRequest) -> func.HttpResponse:
     """
