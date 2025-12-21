@@ -109,13 +109,6 @@ class EligibilityService:
         AND SYSDATETIMEOFFSET() >= e.activation_start_date  -- Past Day 2
         AND SYSDATETIMEOFFSET() <= e.campaign_end_date      -- Within 90-day window
 
-        -- Not in callback queue (priority to callbacks)
-        AND NOT EXISTS (
-            SELECT 1 FROM engage360.outreach_callback_queue cq
-            WHERE cq.enrollment_id = e.enrollment_id
-            AND cq.status = 'PENDING'
-        )
-
         -- Call frequency logic
         AND (
             -- No previous attempts (Call 1)
