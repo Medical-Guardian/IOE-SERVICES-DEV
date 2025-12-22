@@ -1177,7 +1177,7 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
             member_brand,
             device_udi, device_name, brand,
             device_phone_number, is_device_callable,
-            fall_detection_status, battery_status,
+            fall_detection_status, powersaver_mode,
             campaign_parameters, monitoring_system_id,
             enrollment_status, unenrollment_reason
         ) VALUES (
@@ -1500,7 +1500,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 stg.device_name,
                 stg.brand,
                 stg.fall_detection_status,
-                stg.battery_status
+                stg.powersaver_mode
             FROM engage360_stg.stg_device_activation_delta stg
             INNER JOIN engage360.members m
                 ON m.org_id = stg.org_id
@@ -1514,7 +1514,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             UPDATE SET
                 brand = ISNULL(src.brand, tgt.brand),
                 fall_detection_status = ISNULL(src.fall_detection_status, tgt.fall_detection_status),
-                battery_status = ISNULL(src.battery_status, tgt.battery_status),
+                powersaver_mode = ISNULL(src.powersaver_mode, tgt.powersaver_mode),
                 device_phone_number = ISNULL(src.device_phone_number, tgt.device_phone_number),
                 is_device_callable = ISNULL(src.is_device_callable, tgt.is_device_callable),
                 device_name = ISNULL(src.device_name, tgt.device_name),
@@ -1522,13 +1522,13 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         WHEN NOT MATCHED THEN
             INSERT (
                 device_id, member_id, device_name, brand,
-                fall_detection_status, battery_status,
+                fall_detection_status, powersaver_mode,
                 device_phone_number, is_device_callable,
                 created_ts
             )
             VALUES (
                 src.device_udi, src.member_id, src.device_name, src.brand,
-                src.fall_detection_status, src.battery_status,
+                src.fall_detection_status, src.powersaver_mode,
                 src.device_phone_number, src.is_device_callable,
                 SYSDATETIMEOFFSET()
             );
