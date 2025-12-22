@@ -155,6 +155,7 @@ def process_blob(myblob: func.InputStream):
     # Phase 5: Audit & Log (file processing log, move to processed folder)
     success, msg, details = process_device_activation_file_complete(
         file_path=filename,
+        blob_content=blob_content,  # Pass blob content for extract phase
         campaign_id=campaign_id,  # NEW: Pass explicit campaign_id
         connection_string=None,  # Retrieved from Key Vault via ConfigManager
         uploaded_by_user="AzureFunction",
