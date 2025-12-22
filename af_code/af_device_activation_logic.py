@@ -1482,11 +1482,12 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 stg.is_device_callable,
                 stg.device_name,
                 stg.brand,
-                -- Convert fall_detection string to BIT (0/1)
+                -- Convert fall_detection string to BIT (0/1) with trimming
                 CASE
-                    WHEN LOWER(stg.fall_detection) IN ('true', '1', 'yes', 'y') THEN 1
-                    WHEN LOWER(stg.fall_detection) IN ('false', '0', 'no', 'n') THEN 0
-                    ELSE NULL
+                    WHEN LOWER(RTRIM(LTRIM(stg.fall_detection))) IN ('true', '1', 'yes', 'y') THEN 1
+                    WHEN LOWER(RTRIM(LTRIM(stg.fall_detection))) IN ('false', '0', 'no', 'n') THEN 0
+                    WHEN stg.fall_detection IS NULL OR stg.fall_detection = '' THEN NULL
+                    ELSE 0  -- Default to FALSE (0) for any unexpected value
                 END AS fall_detection,
                 -- Keep powersaver_mode original value
                 stg.powersaver_mode
@@ -1523,7 +1524,29 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             );
         """
         cursor.execute(merge_devices_query, (context.file_batch_id,))
-        logger.info("✅ [TRANSFORM] MERGE INTO member_devices complete")
+        rows_affected = cursor.rowcount
+        logger.info(f"✅ [TRANSFORM] MERGE INTO member_devices complete - {rows_affected} rows affected")
+
+        # Debug: Verify fall_detection values were inserted correctly
+        debug_query = """
+        SELECT TOP 5 device_id, fall_detection, powersaver_mode
+        FROM engage360.member_devices md
+        WHERE EXISTS (
+            SELECT 1 FROM engage360_stg.stg_device_activation_delta stg
+            WHERE stg.file_batch_id = %s
+              AND md.device_id = stg.device_udi
+        )
+        ORDER BY md.updated_ts DESC
+        """
+        cursor.execute(debug_query, (context.file_batch_id,))
+        debug_results = cursor.fetchall()
+
+        if debug_results:
+            logger.info("🔍 [TRANSFORM] Sample member_devices data (after MERGE):")
+            for row in debug_results:
+                logger.info(f"   device_id={row[0]}, fall_detection={row[1]}, powersaver_mode='{row[2]}'")
+        else:
+            logger.warning("⚠️ [TRANSFORM] No member_devices records found for this batch")
 
         # Step 4: INSERT INTO member_campaign_enrollments_enhanced
         # Note: activation_start_date and campaign_end_date calculated in Python
@@ -1751,6 +1774,30 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         except Exception as e:
             logger.error(f"❌ [TRANSFORM] Error processing enrollment actions: {e}")
             raise
+
+        # Verify campaign enrollment
+        logger.info("🔍 [TRANSFORM] Verifying campaign enrollment...")
+        verify_query = """
+        SELECT TOP 5
+            e.enrollment_id,
+            e.member_id,
+            e.campaign_id,
+            c.name AS campaign_name,
+            e.current_status
+        FROM engage360.member_campaign_enrollments_enhanced e
+        JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+        WHERE e.campaign_id = %s
+        ORDER BY e.created_ts DESC
+        """
+        cursor.execute(verify_query, (str(campaign_id),))
+        verify_results = cursor.fetchall()
+
+        if verify_results:
+            logger.info(f"✅ [TRANSFORM] Campaign enrollment verified - {len(verify_results)} recent enrollments:")
+            for row in verify_results:
+                logger.info(f"   enrollment_id={row[0]}, member_id={row[1]}, campaign={row[3]}, status={row[4]}")
+        else:
+            logger.error(f"❌ [TRANSFORM] No enrollments found for campaign_id: {campaign_id}")
 
         # Step 5: Mark staging as PROCESSED
         update_staging_query = """

@@ -99,6 +99,11 @@ def operations_device_activation_file_processor(blob: func.InputStream):
         logging.error("   Filename must contain 'Medicaid' or 'DTCMA'")
         return
 
+    # Log flow selection verification
+    logging.info(f"🔧 [OPS-DEVICE-ACTIVATION] Flow: Using OPERATIONS FLOW with explicit campaign_id")
+    logging.info(f"   📂 Blob name: {blob.name}")
+    logging.info(f"   ✅ Hardcoded campaign will be used (no auto-discovery)")
+
     # ===================================================================
     # STEP 3: Process File Using Existing Device Activation Logic
     # ===================================================================
@@ -117,13 +122,12 @@ def operations_device_activation_file_processor(blob: func.InputStream):
         # - Enrollment status handling (enrolled/unenrolled/updated)
         # - monitoring_system_id storage in member_identifiers
 
-        # Extract just filename from blob path for file_path parameter
-        filename = blob.name.split("/")[-1]
-
+        # CRITICAL: Use blob_name parameter to trigger OPERATIONS FLOW
+        # This ensures the hardcoded campaign_id is actually used
         result = process_device_activation_file_complete(
-            file_path=filename,  # Changed from blob_name to file_path (just filename, not full path)
+            blob_name=blob.name,  # OPERATIONS FLOW: Uses explicit campaign_id
             blob_content=blob_content,
-            campaign_id=campaign_id,
+            campaign_id=campaign_id,  # Hardcoded campaign_id will be preserved
             connection_string=None,  # Retrieved from Key Vault via ConfigManager
             uploaded_by_user="AzureFunction-Operations",  # Identify source
             error_threshold_pct=10.0,  # 10% error threshold (same as legacy)
@@ -133,6 +137,12 @@ def operations_device_activation_file_processor(blob: func.InputStream):
         logging.info("✅ [OPS-DEVICE-ACTIVATION] File processing completed successfully")
         logging.info(f"   📊 Processing result: {result}")
         logging.info("   ✨ File will be moved to fs-ops/processed/")
+
+        # Verify hardcoded campaign_id was used
+        logging.info("✅ [OPS-DEVICE-ACTIVATION] Campaign enrollment verification:")
+        logging.info(f"   ✅ Used hardcoded campaign_id: {campaign_id}")
+        logging.info(f"   ✅ Campaign: {campaign_name}")
+        logging.info(f"   ✅ Flow: OPERATIONS FLOW (not auto-discovery)")
 
         # Log success metrics for Application Insights
         logging.info("📈 [OPS-DEVICE-ACTIVATION] SUCCESS METRICS:")

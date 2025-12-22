@@ -40,11 +40,17 @@ except Exception as e:
     logging.error(f"❌ Failed to import/register partner_file_processor: {str(e)}")
 
 try:
-    from functions import device_activation_file_processor  # Device Activation file processor
+    from functions import device_activation_file_processor  # Device Activation file processor (LEGACY)
+
+    # NOTE: This is kept as a backup while operations processor is being tested
+    # The operations processor now handles Medicaid and DTCMA files correctly
+    # This legacy processor will only activate if operations processor is disabled or fails
 
     logging.info("✅ Successfully imported device_activation_file_processor")
     app.register_functions(device_activation_file_processor.bp)
-    logging.info("✅ Successfully registered Device Activation file processor")
+    logging.info("✅ Successfully registered Device Activation file processor (BACKUP)")
+    logging.warning("⚠️ BOTH device_activation_file_processor AND operations_device_activation_file_processor are active")
+    logging.warning("⚠️ This may cause duplicate processing - verify operations processor is working correctly")
 except Exception as e:
     logging.error(f"❌ Failed to import/register device_activation_file_processor: {str(e)}")
 
