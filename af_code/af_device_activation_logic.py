@@ -767,52 +767,35 @@ def validate_and_cleanse_data_before_insert(
                 row_errors.append(f"device_udi length must be 5-50 characters: '{device_udi}'")
 
         # ===================================================================
-        # 10. Device Status Validation and Conversion (UPDATED FORMAT)
+        # 10. Device Status Validation (NO CONVERSION - Keep Original Values)
         # ===================================================================
-        # Fall Detection: Convert 1/0 to Active/Inactive
-        # Support both column names (pre and post column mapping)
-        fall_detection = row.get("fall_detection_status", "") or row.get("fall_detection", "")
+        # Fall Detection: Normalize to 'true'/'false' strings (for BIT column conversion in MERGE)
+        fall_detection = row.get("fall_detection", "")
         if fall_detection and str(fall_detection).strip():
-            fall_str = str(fall_detection).strip()
-            fall_str_upper = (
-                fall_str.upper()
-            )  # Convert to uppercase for case-insensitive comparison
-
-            # Active values (case-insensitive)
-            if fall_str_upper in ["1", "1.0", "TRUE", "Y", "YES"]:
-                df.at[idx, "fall_detection_status_clean"] = "Active"
-            # Inactive values (case-insensitive)
-            elif fall_str_upper in ["0", "0.0", "FALSE", "F", "N", "NO"]:
-                df.at[idx, "fall_detection_status_clean"] = "Inactive"
+            fall_str = str(fall_detection).strip().lower()
+            # Validate format: accept true/false, 1/0, yes/no
+            if fall_str in ["true", "1", "1.0", "yes", "y"]:
+                df.at[idx, "fall_detection_clean"] = "true"
+            elif fall_str in ["false", "0", "0.0", "no", "n", "f"]:
+                df.at[idx, "fall_detection_clean"] = "false"
             else:
-                # Try to use the existing validation if it's already text
-                is_valid, normalized = validate_device_status(
-                    fall_detection, "fall_detection_status"
-                )
-                if is_valid:
-                    df.at[idx, "fall_detection_status_clean"] = normalized
-                else:
-                    df.at[idx, "fall_detection_status_clean"] = "Unknown"
-
-        # Battery Mode: Map "Standard", "Powersaver", and "Default" to "Good"
-        # Support both column names (pre and post column mapping)
-        battery = row.get("battery_status", "") or row.get("powersaver_mode", "")
-        if battery and str(battery).strip():
-            battery_str = str(battery).strip().title()
-            # Map powersaver modes to battery status "Good"
-            # Standard = normal mode, Powersaver = power saving mode, Default = default mode
-            if battery_str in ["Standard", "Powersaver", "Default"]:
-                df.at[idx, "battery_status_clean"] = "Good"
-            else:
-                # Validate against known battery statuses (Good, Low, Critical, Charging, Unknown)
-                is_valid, normalized = validate_device_status(battery, "battery_status")
-                if is_valid:
-                    df.at[idx, "battery_status_clean"] = normalized
-                else:
-                    df.at[idx, "battery_status_clean"] = "Unknown"
+                # Invalid value - keep NULL for error tracking
+                df.at[idx, "fall_detection_clean"] = None
         else:
-            # Default to Unknown if not provided
-            df.at[idx, "battery_status_clean"] = "Unknown"
+            df.at[idx, "fall_detection_clean"] = None
+
+        # PowerSaver Mode: Validate and keep original value (NO CONVERSION)
+        powersaver_mode = row.get("powersaver_mode", "") or row.get("battery_status", "")
+        if powersaver_mode and str(powersaver_mode).strip():
+            mode_str = str(powersaver_mode).strip().title()
+            # Validate format: accept Standard, Powersaver, Default
+            if mode_str in ["Standard", "Powersaver", "Default"]:
+                df.at[idx, "powersaver_mode_clean"] = mode_str  # Keep original value
+            else:
+                # Invalid value - keep NULL for error tracking
+                df.at[idx, "powersaver_mode_clean"] = None
+        else:
+            df.at[idx, "powersaver_mode_clean"] = None
 
         # Member Brand: Map member_brand to brand_clean (for members.member_brand)
         # Support both column names (pre and post column mapping)
@@ -1177,7 +1160,7 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
             member_brand,
             device_udi, device_name, brand,
             device_phone_number, is_device_callable,
-            fall_detection_status, powersaver_mode,
+            fall_detection, powersaver_mode,
             campaign_parameters, monitoring_system_id,
             enrollment_status, unenrollment_reason
         ) VALUES (
@@ -1238,9 +1221,9 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
                         row.get("device_name_clean", ""),  # device brand for staging.brand
                         row.get("device_phone_clean", ""),
                         row.get("is_device_callable_clean", None),
-                        # Device status (converted values)
-                        row.get("fall_detection_status_clean", ""),
-                        row.get("battery_status_clean", ""),
+                        # Device status (original values from CSV)
+                        row.get("fall_detection_clean", ""),
+                        row.get("powersaver_mode_clean", ""),
                         # Campaign tracking (FIX ISSUE #4: Convert empty strings to NULL)
                         row.get("campaign_parameters", "") or None,
                         row.get("monitoring_system_id", "") or None,
@@ -1499,7 +1482,13 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 stg.is_device_callable,
                 stg.device_name,
                 stg.brand,
-                stg.fall_detection_status,
+                -- Convert fall_detection string to BIT (0/1)
+                CASE
+                    WHEN LOWER(stg.fall_detection) IN ('true', '1', 'yes', 'y') THEN 1
+                    WHEN LOWER(stg.fall_detection) IN ('false', '0', 'no', 'n') THEN 0
+                    ELSE NULL
+                END AS fall_detection,
+                -- Keep powersaver_mode original value
                 stg.powersaver_mode
             FROM engage360_stg.stg_device_activation_delta stg
             INNER JOIN engage360.members m
@@ -1513,7 +1502,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         WHEN MATCHED THEN
             UPDATE SET
                 brand = ISNULL(src.brand, tgt.brand),
-                fall_detection_status = ISNULL(src.fall_detection_status, tgt.fall_detection_status),
+                fall_detection = ISNULL(src.fall_detection, tgt.fall_detection),
                 powersaver_mode = ISNULL(src.powersaver_mode, tgt.powersaver_mode),
                 device_phone_number = ISNULL(src.device_phone_number, tgt.device_phone_number),
                 is_device_callable = ISNULL(src.is_device_callable, tgt.is_device_callable),
@@ -1522,13 +1511,13 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         WHEN NOT MATCHED THEN
             INSERT (
                 device_id, member_id, device_name, brand,
-                fall_detection_status, powersaver_mode,
+                fall_detection, powersaver_mode,
                 device_phone_number, is_device_callable,
                 created_ts
             )
             VALUES (
                 src.device_udi, src.member_id, src.device_name, src.brand,
-                src.fall_detection_status, src.powersaver_mode,
+                src.fall_detection, src.powersaver_mode,
                 src.device_phone_number, src.is_device_callable,
                 SYSDATETIMEOFFSET()
             );
