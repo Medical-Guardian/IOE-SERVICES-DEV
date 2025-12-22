@@ -1045,17 +1045,17 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
                     f"✅ [EXTRACT] Mapped {len(columns_to_rename)} member_ columns to staging columns"
                 )
 
-            # Special handling for powersaver_mode → battery_status
-            if "powersaver_mode" in df.columns:
-                df["battery_status"] = df["powersaver_mode"]
-                df.drop(columns=["powersaver_mode"], inplace=True)
-                logger.info("✅ [EXTRACT] Mapped powersaver_mode → battery_status")
+            # Special handling: Map OLD column names to NEW column names
+            # (for backwards compatibility with old CSV format)
+            if "battery_status" in df.columns and "powersaver_mode" not in df.columns:
+                df["powersaver_mode"] = df["battery_status"]
+                df.drop(columns=["battery_status"], inplace=True)
+                logger.info("✅ [EXTRACT] Mapped battery_status → powersaver_mode (old CSV format)")
 
-            # Special handling for fall_detection → fall_detection_status
-            if "fall_detection" in df.columns:
-                df["fall_detection_status"] = df["fall_detection"]
-                df.drop(columns=["fall_detection"], inplace=True)
-                logger.info("✅ [EXTRACT] Mapped fall_detection → fall_detection_status")
+            if "fall_detection_status" in df.columns and "fall_detection" not in df.columns:
+                df["fall_detection"] = df["fall_detection_status"]
+                df.drop(columns=["fall_detection_status"], inplace=True)
+                logger.info("✅ [EXTRACT] Mapped fall_detection_status → fall_detection (old CSV format)")
 
             # Add member_address_country if not present (default to 'US')
             if "member_address_country" in df.columns:
