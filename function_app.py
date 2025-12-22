@@ -39,18 +39,14 @@ try:
 except Exception as e:
     logging.error(f"❌ Failed to import/register partner_file_processor: {str(e)}")
 
-# DISABLED: Legacy Device Activation file processor - replaced by operations_device_activation_file_processor
-# This function caused duplicate enrollments by watching the same blob path (fs-ops/landing/{name})
-# Date disabled: 2025-12-22
-# See: functions/operations_device_activation_file_processor.py for current implementation
-#
-# try:
-#     from functions import device_activation_file_processor  # Device Activation file processor
-#     logging.info("✅ Successfully imported device_activation_file_processor")
-#     app.register_functions(device_activation_file_processor.bp)
-#     logging.info("✅ Successfully registered Device Activation file processor")
-# except Exception as e:
-#     logging.error(f"❌ Failed to import/register device_activation_file_processor: {str(e)}")
+try:
+    from functions import device_activation_file_processor  # Device Activation file processor
+
+    logging.info("✅ Successfully imported device_activation_file_processor")
+    app.register_functions(device_activation_file_processor.bp)
+    logging.info("✅ Successfully registered Device Activation file processor")
+except Exception as e:
+    logging.error(f"❌ Failed to import/register device_activation_file_processor: {str(e)}")
 
 try:
     from functions.dtc_intro_call_scheduler import dtc_intro_call_bp  # DTC INTRO CALL
@@ -130,8 +126,8 @@ logging.info("Function registration process completed.")
 # Log total registered functions for deployment verification
 total_functions = len(app._function_builders) if hasattr(app, "_function_builders") else 0
 logging.info(f"📊 [FUNCTION-APP] Total functions registered: {total_functions}")
-logging.info("🎯 [FUNCTION-APP] Expected: 14 functions (11 base + 3 Device Activation)")
-if total_functions >= 14:
+logging.info("🎯 [FUNCTION-APP] Expected: 15 functions (11 existing + 4 Device Activation)")
+if total_functions >= 15:
     logging.info("✅ [FUNCTION-APP] Device Activation functions successfully registered!")
 else:
     logging.warning(
