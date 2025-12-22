@@ -15,11 +15,13 @@ Pattern: Follows partner_campaign_scheduler/services/batch_orchestrator.py struc
 
 import logging
 import uuid
+import json
 from typing import List, Dict, Any
 
 from af_code.bland_ai_webhook.services.config_manager import ConfigManager
 from af_code.bland_ai_webhook.services.database_service import DatabaseService
 from af_code.shared.bland_ai_client import BlandAIClient
+from af_code.shared.bland_parameters_validator import BlandParametersValidator
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +222,36 @@ class BatchOrchestrator:
             logger.info(f"🚀 [BATCH-ORCHESTRATOR] Batch submission mode: SYNCHRONOUS (wait for response)")
             logger.info(f"🚀 [BATCH-ORCHESTRATOR] Submitting to Bland AI API...")
 
+            # Display all batch data before submission (USER REQUIREMENT)
+            calls = batch_request.get('calls', [])
+            logger.info("")
+            logger.info("📦 [BATCH-ORCHESTRATOR] ============================================")
+            logger.info("📦 [BATCH-ORCHESTRATOR] BATCH REQUEST DATA (DETAILED)")
+            logger.info("📦 [BATCH-ORCHESTRATOR] ============================================")
+            logger.info(f"📦 [BATCH-ORCHESTRATOR] Batch ID: {batch_id}")
+            logger.info(f"📦 [BATCH-ORCHESTRATOR] Campaign: {members[0].get('campaign_name', 'Unknown')}")
+            logger.info(f"📦 [BATCH-ORCHESTRATOR] Number of Calls: {len(calls)}")
+            logger.info("")
+            logger.info("📦 [BATCH-ORCHESTRATOR] Call Details:")
+            for i, call in enumerate(calls, 1):
+                logger.info(f"   Call #{i}:")
+                logger.info(f"     • Member ID: {call.get('request_data', {}).get('member_id')}")
+                logger.info(f"     • Phone: {call.get('phone_number')}")
+                first_name = call.get('request_data', {}).get('first_name', '')
+                last_name = call.get('request_data', {}).get('last_name', '')
+                logger.info(f"     • Name: {first_name} {last_name}")
+                logger.info(f"     • Request Data Keys: {list(call.get('request_data', {}).keys())}")
+                logger.info(f"     • Metadata Keys: {list(call.get('metadata', {}).keys())}")
+
+            logger.info("")
+            if calls:
+                logger.info(f"📦 [BATCH-ORCHESTRATOR] Full Request Payload (First Call Sample):")
+                sample_call = calls[0]
+                logger.info(f"   Request Data: {json.dumps(sample_call.get('request_data', {}), indent=2)}")
+                logger.info(f"   Metadata: {json.dumps(sample_call.get('metadata', {}), indent=2)}")
+            logger.info("📦 [BATCH-ORCHESTRATOR] ============================================")
+            logger.info("")
+
             response = self.bland_client.submit_batch_calls(batch_request)
 
             if response.get("success"):
@@ -332,26 +364,53 @@ class BatchOrchestrator:
         campaign_name = members[0].get("campaign_name", "Device Activation")
         campaign_id = members[0].get("campaign_id")
 
-        # Get Bland AI configuration from environment variables
-        import os
+        # Get Bland AI configuration from database (DTC pattern - database only)
+        # Members from same campaign share the same bland_parameters_global
+        first_member = members[0]
+        campaign_config = first_member.get("bland_parameters_global")
 
-        pathway_id = os.environ.get("DEVICE_ACTIVATION_PATHWAY_ID")
-        voice_id = os.environ.get("DEVICE_ACTIVATION_VOICE_ID")
-
-        # Validate required environment variables
-        if not pathway_id:
-            raise ValueError(
-                "DEVICE_ACTIVATION_PATHWAY_ID environment variable is not set. "
-                "Please configure it in Azure Function App Configuration."
+        if not campaign_config:
+            error_msg = (
+                f"bland_parameters_global not found for campaign '{campaign_name}'. "
+                "Please configure in campaign_call_configs_enhanced table:\n"
+                "  INSERT INTO engage360.campaign_call_configs_enhanced\n"
+                "  (campaign_id, call_type, bland_parameters_global, config_status)\n"
+                "  VALUES ('{campaign_id}', 'DeviceActivation', '{{\"pathway_id\":\"...\"}}', 'active')"
             )
-        if not voice_id:
-            raise ValueError(
-                "DEVICE_ACTIVATION_VOICE_ID environment variable is not set. "
-                "Please configure it in Azure Function App Configuration."
-            )
+            logger.error(f"❌ [BATCH-ORCHESTRATOR] {error_msg}")
+            raise ValueError(error_msg)
 
-        logger.info(f"🔧 [BATCH-ORCHESTRATOR] Using pathway_id: {pathway_id[:20]}...")
-        logger.info(f"🔧 [BATCH-ORCHESTRATOR] Using voice_id: {voice_id[:20]}...")
+        # Parse JSON if it's a string
+        if isinstance(campaign_config, str):
+            campaign_config = json.loads(campaign_config)
+
+        logger.info(f"✅ [BATCH-ORCHESTRATOR] Using database configuration for campaign '{campaign_name}'")
+
+        # Display all configuration data (USER REQUIREMENT)
+        logger.info("📋 [BATCH-ORCHESTRATOR] ============================================")
+        logger.info("📋 [BATCH-ORCHESTRATOR] BLAND AI CONFIGURATION")
+        logger.info("📋 [BATCH-ORCHESTRATOR] ============================================")
+        logger.info(f"📋 [BATCH-ORCHESTRATOR] Campaign: {campaign_name}")
+        logger.info(f"📋 [BATCH-ORCHESTRATOR] Batch ID: {batch_id}")
+        logger.info(f"📋 [BATCH-ORCHESTRATOR] Member Count: {len(members)}")
+        logger.info(f"📋 [BATCH-ORCHESTRATOR] Global Parameters (bland_parameters_global):")
+        for key, value in campaign_config.items():
+            logger.info(f"   • {key}: {value}")
+        logger.info("📋 [BATCH-ORCHESTRATOR] ============================================")
+
+        # Validate and extract pathway_id using BlandParametersValidator
+        validator = BlandParametersValidator(campaign_config)
+        pathway_id = validator.get_pathway_id()  # Handles both 'pathway_id' and 'task' fields
+
+        # Extract voice_id (optional - Bland AI will use default if not provided)
+        voice_id = campaign_config.get("voice_id") or campaign_config.get("voice")
+
+        if voice_id:
+            logger.info(f"🎤 [BATCH-ORCHESTRATOR] Using voice_id: {voice_id}")
+        else:
+            logger.info(f"🎤 [BATCH-ORCHESTRATOR] No voice_id specified, Bland AI will use default")
+
+        logger.info(f"🛤️ [BATCH-ORCHESTRATOR] Using pathway_id: {pathway_id}")
 
         calls = []
         skipped_members = 0

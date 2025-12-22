@@ -67,6 +67,8 @@ class EligibilityService:
         c.operating_start_time,
         c.operating_end_time,
         c.timezone_flag,
+        cc.bland_parameters_global,  -- Bland AI configuration from database
+        cc.config_status,            -- Config status (active/draft/archived)
 
         -- Calculate which call attempt this is
         ISNULL((
@@ -94,6 +96,10 @@ class EligibilityService:
     JOIN engage360.members m ON e.member_id = m.member_id
     JOIN engage360.member_devices md ON m.member_id = md.member_id
     JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+    LEFT JOIN engage360.campaign_call_configs_enhanced cc
+        ON c.campaign_id = cc.campaign_id
+        AND cc.call_type = 'DeviceActivation'
+        AND cc.config_status = 'active'
 
     WHERE
         -- Campaign criteria (support both Device Activation and Operations campaigns)
