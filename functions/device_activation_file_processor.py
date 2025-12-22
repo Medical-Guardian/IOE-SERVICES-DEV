@@ -51,9 +51,10 @@ def get_campaign_id_from_csv(blob_content: bytes) -> tuple:
             )
             return None, None
 
-        campaign_id = str(results[0][0])
-        db_name = results[0][1]
-        status = results[0][2]
+        # DatabaseService returns list of dictionaries, not tuples
+        campaign_id = str(results[0]['campaign_id'])
+        db_name = results[0]['name']
+        status = results[0]['status']
 
         if status != 'Active':
             logging.warning(
