@@ -98,7 +98,7 @@ class EligibilityService:
     JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
     LEFT JOIN engage360.campaign_call_configs_enhanced cc
         ON c.campaign_id = cc.campaign_id
-        AND cc.call_type = 'DeviceActivation'
+        AND cc.call_type = 'Operations'
         AND cc.config_status = 'active'
 
     WHERE

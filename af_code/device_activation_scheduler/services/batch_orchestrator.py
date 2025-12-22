@@ -372,10 +372,7 @@ class BatchOrchestrator:
         if not campaign_config:
             error_msg = (
                 f"bland_parameters_global not found for campaign '{campaign_name}'. "
-                "Please configure in campaign_call_configs_enhanced table:\n"
-                "  INSERT INTO engage360.campaign_call_configs_enhanced\n"
-                "  (campaign_id, call_type, bland_parameters_global, config_status)\n"
-                "  VALUES ('{campaign_id}', 'DeviceActivation', '{{\"pathway_id\":\"...\"}}', 'active')"
+                "Please configure in campaign_call_configs_enhanced table"
             )
             logger.error(f"❌ [BATCH-ORCHESTRATOR] {error_msg}")
             raise ValueError(error_msg)
