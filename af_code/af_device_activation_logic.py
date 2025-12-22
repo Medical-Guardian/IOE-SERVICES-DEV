@@ -560,8 +560,8 @@ def validate_and_cleanse_data_before_insert(
     df["service_address_clean"] = ""
     df["brand_clean"] = ""  # For member brand (members.member_brand)
     df["device_name_clean"] = ""  # For device brand (member_devices.brand)
-    df["fall_detection_status_clean"] = ""
-    df["battery_status_clean"] = ""
+    df["fall_detection_clean"] = None  # Initialize with None (will be 'true'/'false' or None)
+    df["powersaver_mode_clean"] = None  # Initialize with None (will be 'Default'/'Standard'/'Powersaver' or None)
 
     validation_errors_count = 0
 
@@ -1222,8 +1222,8 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
                         row.get("device_phone_clean", ""),
                         row.get("is_device_callable_clean", None),
                         # Device status (original values from CSV)
-                        row.get("fall_detection_clean", ""),
-                        row.get("powersaver_mode_clean", ""),
+                        df.at[idx, "fall_detection_clean"],
+                        df.at[idx, "powersaver_mode_clean"],
                         # Campaign tracking (FIX ISSUE #4: Convert empty strings to NULL)
                         row.get("campaign_parameters", "") or None,
                         row.get("monitoring_system_id", "") or None,
