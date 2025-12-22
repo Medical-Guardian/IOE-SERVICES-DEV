@@ -27,7 +27,7 @@ from azure.identity import DefaultAzureCredential
 import logging
 import uuid
 import pandas as pd
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field
 import pymssql
@@ -578,9 +578,7 @@ def validate_and_cleanse_data_before_insert(
             if org_id:
                 df.at[idx, "org_id"] = org_id
             else:
-                row_errors.append(
-                    f"Could not find org_id for partner: '{partner_name}'"
-                )
+                row_errors.append(f"Could not find org_id for partner: '{partner_name}'")
 
         # ===================================================================
         # 2. Salesforce Account ID Validation (REQUIRED - NEW FIELD)
@@ -658,10 +656,12 @@ def validate_and_cleanse_data_before_insert(
             "SPANISH": "ES",
             "EN": "EN",
             "ES": "ES",
-            "OTHER": "Other"
+            "OTHER": "Other",
         }
 
-        language_pref_normalized = language_name_mapping.get(language_pref_raw.upper(), language_pref_raw)
+        language_pref_normalized = language_name_mapping.get(
+            language_pref_raw.upper(), language_pref_raw
+        )
 
         try:
             mapped_language = map_language_code(language_pref_normalized)
@@ -830,11 +830,10 @@ def validate_and_cleanse_data_before_insert(
             "ENROLL": "ENROLL",
             "UPDATE": "UPDATE",
             "UNENROLL": "UNENROLL",
-
             # Past tense forms (common in operational CSV files)
             "ENROLLED": "ENROLL",
             "UPDATED": "UPDATE",
-            "UNENROLLED": "UNENROLL"
+            "UNENROLLED": "UNENROLL",
         }
 
         enrollment_status_raw = str(row.get("enrollment_status", "")).strip()
@@ -977,7 +976,9 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
     try:
         # Add diagnostic logging
         logger.info(f"📥 [EXTRACT] context.blob_content is None: {context.blob_content is None}")
-        logger.info(f"📥 [EXTRACT] context.blob_content size: {len(context.blob_content) if context.blob_content else 'N/A'}")
+        logger.info(
+            f"📥 [EXTRACT] context.blob_content size: {len(context.blob_content) if context.blob_content else 'N/A'}"
+        )
 
         # Load CSV data
         if context.blob_content:
@@ -1339,7 +1340,9 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
 
     try:
         conn = get_db_connection()
-        conn.timeout = 300  # 5 minutes for file processing operations (MERGE queries on large tables)
+        conn.timeout = (
+            300  # 5 minutes for file processing operations (MERGE queries on large tables)
+        )
         cursor = conn.cursor(as_dict=True)
 
         # Step 1: Get or validate campaign_id
@@ -1554,9 +1557,11 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
           AND processing_status = 'PENDING'
         """
 
-        logger.info(f"🔄 [TRANSFORM] Updating rows to TRANSFORMING status for batch {context.file_batch_id}")
+        logger.info(
+            f"🔄 [TRANSFORM] Updating rows to TRANSFORMING status for batch {context.file_batch_id}"
+        )
         cursor.execute(status_update_query, (context.file_batch_id,))
-        logger.info(f"✅ [TRANSFORM] Status updated to TRANSFORMING")
+        logger.info("✅ [TRANSFORM] Status updated to TRANSFORMING")
 
         # Count actions by type
         enroll_count = 0
@@ -1564,12 +1569,12 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         unenroll_count = 0
 
         for row in staging_rows:
-            enrollment_status = row['enrollment_status']
-            if enrollment_status == 'ENROLL':
+            enrollment_status = row["enrollment_status"]
+            if enrollment_status == "ENROLL":
                 enroll_count += 1
-            elif enrollment_status == 'UPDATE':
+            elif enrollment_status == "UPDATE":
                 update_count += 1
-            elif enrollment_status == 'UNENROLL':
+            elif enrollment_status == "UNENROLL":
                 unenroll_count += 1
 
         logger.info(
@@ -1591,15 +1596,19 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             # Weekend or holiday - get next business day
             activation_start_date = add_business_days(enrollment_ts, 1).date()
 
-        # Calculate campaign_end_date = activation_start_date + 90 days
-        campaign_end_date = activation_start_date + timedelta(days=90)
+        # NEW LOGIC (2025-12-22): campaign_end_date is NOT set at enrollment
+        # It will be set dynamically after Call 5 is made
+        # For Calls 1-4: No 90-day limit (campaign_end_date stays NULL)
+        # For Call 5+: campaign_end_date = call_5_timestamp + 90 days (set by batch orchestrator)
+        campaign_end_date = None  # Set to NULL initially
+        call_5_timestamp = None  # Set to NULL initially (will be populated after Call 5)
 
         logger.info(
             f"📅 [TRANSFORM] Activation dates for this batch: "
             f"enrollment_ts={enrollment_ts.date()} ({enrollment_ts.strftime('%A')}), "
             f"activation_start={activation_start_date} "
             f"({'SAME DAY' if enrollment_date == activation_start_date else 'NEXT BUSINESS DAY'}), "
-            f"campaign_end={campaign_end_date} (activation + 90 days)"
+            f"campaign_end=NULL (will be set after Call 5)"
         )
 
         # Process enrollments using separate operations (following DTC pattern)
@@ -1614,7 +1623,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                         m.member_id,
                         %s AS campaign_id,
                         %s AS activation_start_date,
-                        %s AS campaign_end_date
+                        %s AS campaign_end_date,
+                        %s AS call_5_timestamp
                     FROM engage360_stg.stg_device_activation_delta stg
                     JOIN engage360.members m
                         ON m.org_id = stg.org_id
@@ -1629,7 +1639,18 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                     UPDATE SET
                         -- Update activation dates (re-calculated from file upload date)
                         activation_start_date = src.activation_start_date,
-                        campaign_end_date = src.campaign_end_date,
+
+                        -- NEW: Only reset campaign_end_date if re-enrolling from UNENROLLED
+                        campaign_end_date = CASE
+                            WHEN tgt.current_status = 'UNENROLLED' THEN NULL
+                            ELSE tgt.campaign_end_date
+                        END,
+
+                        -- NEW: Only reset call_5_timestamp if re-enrolling from UNENROLLED
+                        call_5_timestamp = CASE
+                            WHEN tgt.current_status = 'UNENROLLED' THEN NULL
+                            ELSE tgt.call_5_timestamp
+                        END,
 
                         -- Re-enroll if previously UNENROLLED
                         current_status = CASE
@@ -1652,7 +1673,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 WHEN NOT MATCHED THEN
                     INSERT (
                         enrollment_id, member_id, campaign_id, enrollment_ts, current_status,
-                        activation_start_date, campaign_end_date, device_activated
+                        activation_start_date, campaign_end_date, call_5_timestamp, device_activated
                     )
                     VALUES (
                         NEWID(),
@@ -1662,6 +1683,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                         'ENROLLED',
                         src.activation_start_date,
                         src.campaign_end_date,
+                        src.call_5_timestamp,
                         0
                     );
                 """
@@ -1671,6 +1693,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                         str(campaign_id),
                         activation_start_date,
                         campaign_end_date,
+                        call_5_timestamp,
                         context.file_batch_id,
                     ),
                 )
@@ -1802,16 +1825,16 @@ def audit_and_log(context: ProcessingContext, details: Dict[str, Any]) -> Proces
             (
                 context.file_batch_id,
                 context.source_filename,
-                "DEVICE_ACTIVATION",                    # file_type (was workflow_type)
+                "DEVICE_ACTIVATION",  # file_type (was workflow_type)
                 context.uploaded_by_user,
-                datetime.now(timezone.utc),             # upload_started_ts (was upload_ts)
-                datetime.now(timezone.utc),             # completed_ts (was processing_end_ts)
-                "COMPLETED",                             # current_status (was processing_status)
-                details.get("total_rows", 0),           # total_records_processed (was total_rows)
-                details.get("validated_rows", 0),       # successful_records (was validated_rows)
-                details.get("error_rows", 0),           # failed_records (was error_rows)
-                details.get("enrolled_count", 0),       # enrollments_created (was enrolled_rows)
-                details.get("error_rate", 0),           # error_percentage (was error_rate_pct)
+                datetime.now(timezone.utc),  # upload_started_ts (was upload_ts)
+                datetime.now(timezone.utc),  # completed_ts (was processing_end_ts)
+                "COMPLETED",  # current_status (was processing_status)
+                details.get("total_rows", 0),  # total_records_processed (was total_rows)
+                details.get("validated_rows", 0),  # successful_records (was validated_rows)
+                details.get("error_rows", 0),  # failed_records (was error_rows)
+                details.get("enrolled_count", 0),  # enrollments_created (was enrolled_rows)
+                details.get("error_rate", 0),  # error_percentage (was error_rate_pct)
             ),
         )
 
@@ -1986,9 +2009,9 @@ def process_device_activation_file_complete(
         logger.info(f"❌ [MAIN] Unenrolled: {processing_details.get('unenrolled_count', 0)}")
         logger.info("=" * 80)
 
-        enrolled = processing_details.get('enrolled_count', 0)
-        updated = processing_details.get('updated_count', 0)
-        unenrolled = processing_details.get('unenrolled_count', 0)
+        enrolled = processing_details.get("enrolled_count", 0)
+        updated = processing_details.get("updated_count", 0)
+        unenrolled = processing_details.get("unenrolled_count", 0)
         total_actions = enrolled + updated + unenrolled
 
         return (

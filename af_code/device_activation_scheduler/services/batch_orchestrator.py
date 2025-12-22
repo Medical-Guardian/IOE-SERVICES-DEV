@@ -187,11 +187,11 @@ class BatchOrchestrator:
             logger.info("📝 [BATCH-ORCHESTRATOR] PHASE 1: CREATE BATCH RECORD (PRE-SUBMISSION)")
             logger.info("📝 [BATCH-ORCHESTRATOR] ============================================")
             logger.info("📝 [BATCH-ORCHESTRATOR] Creating batch in engage360.outreach_batches...")
-            logger.info(f"📝 [BATCH-ORCHESTRATOR] Status: 'Pending' (awaiting Bland AI response)")
+            logger.info("📝 [BATCH-ORCHESTRATOR] Status: 'Pending' (awaiting Bland AI response)")
 
             batch_id = self._create_outreach_batch(campaign_id, len(members))
 
-            logger.info(f"✅ [BATCH-ORCHESTRATOR] Batch record created successfully")
+            logger.info("✅ [BATCH-ORCHESTRATOR] Batch record created successfully")
             logger.info(f"✅ [BATCH-ORCHESTRATOR] Internal Batch ID: {batch_id}")
             logger.info("")
 
@@ -201,13 +201,40 @@ class BatchOrchestrator:
             logger.info("📝 [BATCH-ORCHESTRATOR] ============================================")
             logger.info("📝 [BATCH-ORCHESTRATOR] PHASE 2: CREATE ATTEMPT RECORDS (PRE-SUBMISSION)")
             logger.info("📝 [BATCH-ORCHESTRATOR] ============================================")
-            logger.info("📝 [BATCH-ORCHESTRATOR] Creating attempts in engage360.outreach_attempts...")
+            logger.info(
+                "📝 [BATCH-ORCHESTRATOR] Creating attempts in engage360.outreach_attempts..."
+            )
             logger.info(f"📝 [BATCH-ORCHESTRATOR] Total attempts to create: {len(members)}")
-            logger.info(f"📝 [BATCH-ORCHESTRATOR] Disposition: 'Pending' (awaiting call completion)")
+            logger.info(
+                "📝 [BATCH-ORCHESTRATOR] Disposition: 'Pending' (awaiting call completion)"
+            )
 
             attempt_id_map = self._create_outreach_attempts(members, batch_id)
 
-            logger.info(f"✅ [BATCH-ORCHESTRATOR] {len(members)} attempt records created successfully")
+            logger.info(
+                f"✅ [BATCH-ORCHESTRATOR] {len(members)} attempt records created successfully"
+            )
+            logger.info("")
+
+            # ============================================================
+            # PHASE 2.5: Update enrollments reaching Call 5 (NEW: 2025-12-22)
+            # ============================================================
+            logger.info("🕐 [BATCH-ORCHESTRATOR] ============================================")
+            logger.info("🕐 [BATCH-ORCHESTRATOR] PHASE 2.5: TRACK CALL 5 TIMESTAMP")
+            logger.info("🕐 [BATCH-ORCHESTRATOR] ============================================")
+            logger.info("🕐 [BATCH-ORCHESTRATOR] Checking for enrollments reaching Call 5...")
+
+            updated_count = self._update_call_5_enrollments(campaign_id)
+
+            if updated_count > 0:
+                logger.info(f"✅ [BATCH-ORCHESTRATOR] Updated {updated_count} enrollments:")
+                logger.info("   • Set call_5_timestamp to current timestamp")
+                logger.info("   • Set campaign_end_date to call_5_timestamp + 90 days")
+                logger.info(
+                    "   • These members now have 90 days from Call 5 for remaining attempts"
+                )
+            else:
+                logger.info("   ℹ️  No enrollments reached Call 5 in this batch")
             logger.info("")
 
             # Build Bland AI batch request
@@ -219,17 +246,21 @@ class BatchOrchestrator:
             logger.info("🚀 [BATCH-ORCHESTRATOR] SUBMITTING BATCH TO BLAND AI")
             logger.info("🚀 [BATCH-ORCHESTRATOR] ============================================")
             logger.info(f"🚀 [BATCH-ORCHESTRATOR] Calls in batch: {len(batch_request['calls'])}")
-            logger.info(f"🚀 [BATCH-ORCHESTRATOR] Batch submission mode: SYNCHRONOUS (wait for response)")
-            logger.info(f"🚀 [BATCH-ORCHESTRATOR] Submitting to Bland AI API...")
+            logger.info(
+                "🚀 [BATCH-ORCHESTRATOR] Batch submission mode: SYNCHRONOUS (wait for response)"
+            )
+            logger.info("🚀 [BATCH-ORCHESTRATOR] Submitting to Bland AI API...")
 
             # Display all batch data before submission (USER REQUIREMENT)
-            calls = batch_request.get('calls', [])
+            calls = batch_request.get("calls", [])
             logger.info("")
             logger.info("📦 [BATCH-ORCHESTRATOR] ============================================")
             logger.info("📦 [BATCH-ORCHESTRATOR] BATCH REQUEST DATA (DETAILED)")
             logger.info("📦 [BATCH-ORCHESTRATOR] ============================================")
             logger.info(f"📦 [BATCH-ORCHESTRATOR] Batch ID: {batch_id}")
-            logger.info(f"📦 [BATCH-ORCHESTRATOR] Campaign: {members[0].get('campaign_name', 'Unknown')}")
+            logger.info(
+                f"📦 [BATCH-ORCHESTRATOR] Campaign: {members[0].get('campaign_name', 'Unknown')}"
+            )
             logger.info(f"📦 [BATCH-ORCHESTRATOR] Number of Calls: {len(calls)}")
             logger.info("")
             logger.info("📦 [BATCH-ORCHESTRATOR] Call Details:")
@@ -237,17 +268,21 @@ class BatchOrchestrator:
                 logger.info(f"   Call #{i}:")
                 logger.info(f"     • Member ID: {call.get('request_data', {}).get('member_id')}")
                 logger.info(f"     • Phone: {call.get('phone_number')}")
-                first_name = call.get('request_data', {}).get('first_name', '')
-                last_name = call.get('request_data', {}).get('last_name', '')
+                first_name = call.get("request_data", {}).get("first_name", "")
+                last_name = call.get("request_data", {}).get("last_name", "")
                 logger.info(f"     • Name: {first_name} {last_name}")
-                logger.info(f"     • Request Data Keys: {list(call.get('request_data', {}).keys())}")
+                logger.info(
+                    f"     • Request Data Keys: {list(call.get('request_data', {}).keys())}"
+                )
                 logger.info(f"     • Metadata Keys: {list(call.get('metadata', {}).keys())}")
 
             logger.info("")
             if calls:
-                logger.info(f"📦 [BATCH-ORCHESTRATOR] Full Request Payload (First Call Sample):")
+                logger.info("📦 [BATCH-ORCHESTRATOR] Full Request Payload (First Call Sample):")
                 sample_call = calls[0]
-                logger.info(f"   Request Data: {json.dumps(sample_call.get('request_data', {}), indent=2)}")
+                logger.info(
+                    f"   Request Data: {json.dumps(sample_call.get('request_data', {}), indent=2)}"
+                )
                 logger.info(f"   Metadata: {json.dumps(sample_call.get('metadata', {}), indent=2)}")
             logger.info("📦 [BATCH-ORCHESTRATOR] ============================================")
             logger.info("")
@@ -271,16 +306,18 @@ class BatchOrchestrator:
                 # PHASE 3: Update batch with vendor_batch_id AFTER Bland AI response
                 # ============================================================
                 logger.info("📝 [BATCH-ORCHESTRATOR] ============================================")
-                logger.info("📝 [BATCH-ORCHESTRATOR] PHASE 3: UPDATE BATCH WITH VENDOR ID (POST-SUBMISSION)")
+                logger.info(
+                    "📝 [BATCH-ORCHESTRATOR] PHASE 3: UPDATE BATCH WITH VENDOR ID (POST-SUBMISSION)"
+                )
                 logger.info("📝 [BATCH-ORCHESTRATOR] ============================================")
                 logger.info(f"📝 [BATCH-ORCHESTRATOR] Updating batch {batch_id}...")
-                logger.info(f"📝 [BATCH-ORCHESTRATOR] New Status: 'Submitted'")
+                logger.info("📝 [BATCH-ORCHESTRATOR] New Status: 'Submitted'")
                 logger.info(f"📝 [BATCH-ORCHESTRATOR] Vendor Batch ID: {vendor_batch_id}")
 
                 self._update_batch_with_vendor_id(batch_id, vendor_batch_id)
 
-                logger.info(f"✅ [BATCH-ORCHESTRATOR] Batch updated successfully")
-                logger.info(f"✅ [BATCH-ORCHESTRATOR] 3-Phase tracking complete")
+                logger.info("✅ [BATCH-ORCHESTRATOR] Batch updated successfully")
+                logger.info("✅ [BATCH-ORCHESTRATOR] 3-Phase tracking complete")
                 logger.info("")
                 logger.info("📊 [BATCH-ORCHESTRATOR] ============================================")
                 logger.info(f"📊 [BATCH-ORCHESTRATOR] BATCH #{batch_number} SUBMISSION COMPLETE")
@@ -288,7 +325,7 @@ class BatchOrchestrator:
                 logger.info(f"📊 [BATCH-ORCHESTRATOR] Total Calls: {calls_submitted}")
                 logger.info(f"📊 [BATCH-ORCHESTRATOR] Internal Batch ID: {batch_id}")
                 logger.info(f"📊 [BATCH-ORCHESTRATOR] Vendor Batch ID: {vendor_batch_id}")
-                logger.info(f"📊 [BATCH-ORCHESTRATOR] Status: Submitted ✅")
+                logger.info("📊 [BATCH-ORCHESTRATOR] Status: Submitted ✅")
                 logger.info("📊 [BATCH-ORCHESTRATOR] ============================================")
 
                 return {
@@ -309,12 +346,12 @@ class BatchOrchestrator:
                 logger.error(f"❌ [BATCH-ORCHESTRATOR] Internal Batch ID: {batch_id}")
                 logger.error(f"❌ [BATCH-ORCHESTRATOR] Calls Attempted: {len(members)}")
                 logger.error("")
-                logger.error(f"❌ [BATCH-ORCHESTRATOR] Marking batch as 'Failed' in database...")
+                logger.error("❌ [BATCH-ORCHESTRATOR] Marking batch as 'Failed' in database...")
 
                 # Mark batch as Failed in database
                 self._mark_batch_failed(batch_id, error_msg)
 
-                logger.error(f"❌ [BATCH-ORCHESTRATOR] Batch marked as Failed")
+                logger.error("❌ [BATCH-ORCHESTRATOR] Batch marked as Failed")
                 logger.error("❌ [BATCH-ORCHESTRATOR] ============================================")
 
                 return {
@@ -381,7 +418,9 @@ class BatchOrchestrator:
         if isinstance(campaign_config, str):
             campaign_config = json.loads(campaign_config)
 
-        logger.info(f"✅ [BATCH-ORCHESTRATOR] Using database configuration for campaign '{campaign_name}'")
+        logger.info(
+            f"✅ [BATCH-ORCHESTRATOR] Using database configuration for campaign '{campaign_name}'"
+        )
 
         # Display all configuration data (USER REQUIREMENT)
         logger.info("📋 [BATCH-ORCHESTRATOR] ============================================")
@@ -390,7 +429,7 @@ class BatchOrchestrator:
         logger.info(f"📋 [BATCH-ORCHESTRATOR] Campaign: {campaign_name}")
         logger.info(f"📋 [BATCH-ORCHESTRATOR] Batch ID: {batch_id}")
         logger.info(f"📋 [BATCH-ORCHESTRATOR] Member Count: {len(members)}")
-        logger.info(f"📋 [BATCH-ORCHESTRATOR] Global Parameters (bland_parameters_global):")
+        logger.info("📋 [BATCH-ORCHESTRATOR] Global Parameters (bland_parameters_global):")
         for key, value in campaign_config.items():
             logger.info(f"   • {key}: {value}")
         logger.info("📋 [BATCH-ORCHESTRATOR] ============================================")
@@ -530,30 +569,36 @@ class BatchOrchestrator:
 
             # Log detailed member data (following DTC/Partner campaign format)
             logger.info("")
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] ============================================")
+            logger.info("📞 [BATCH-ORCHESTRATOR] ============================================")
             logger.info(f"📞 [BATCH-ORCHESTRATOR] CALL #{len(calls)} - MEMBER DATA")
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] ============================================")
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] Member Identification:")
+            logger.info("📞 [BATCH-ORCHESTRATOR] ============================================")
+            logger.info("📞 [BATCH-ORCHESTRATOR] Member Identification:")
             logger.info(f"   👤 Member ID: {member.get('member_id')}")
             logger.info(f"   👤 Enrollment ID: {enrollment_id}")
             logger.info(f"   👤 Name: {member.get('first_name')} {member.get('last_name')}")
             logger.info(f"   📞 Phone: {phone_number}")
             logger.info(f"   📧 Email: {member.get('email', 'N/A')}")
             logger.info("")
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] Address & Demographics:")
+            logger.info("📞 [BATCH-ORCHESTRATOR] Address & Demographics:")
             logger.info(f"   🏠 Street: {member.get('address_street', 'N/A')}")
             logger.info(f"   🏠 City: {member.get('address_city', 'N/A')}")
             logger.info(f"   🏠 State: {member.get('address_state', 'N/A')}")
             logger.info(f"   🏠 Zip: {member.get('address_zip', 'N/A')}")
-            logger.info(f"   🎂 DOB: {member.get('dob').strftime('%m-%d-%Y') if member.get('dob') else 'N/A'}")
+            logger.info(
+                f"   🎂 DOB: {member.get('dob').strftime('%m-%d-%Y') if member.get('dob') else 'N/A'}"
+            )
             logger.info(f"   🌍 Timezone: {member.get('timezone', 'N/A')}")
             logger.info(f"   🗣️ Language: {member.get('language_pref', 'EN')}")
             logger.info("")
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] Brand Information:")
-            logger.info(f"   🏢 Member Brand: {member.get('member_brand', 'N/A')} (from members.member_brand)")
-            logger.info(f"   📱 Device Brand: {member.get('device_brand', 'N/A')} (from member_devices.brand)")
+            logger.info("📞 [BATCH-ORCHESTRATOR] Brand Information:")
+            logger.info(
+                f"   🏢 Member Brand: {member.get('member_brand', 'N/A')} (from members.member_brand)"
+            )
+            logger.info(
+                f"   📱 Device Brand: {member.get('device_brand', 'N/A')} (from member_devices.brand)"
+            )
             logger.info("")
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] Device Information:")
+            logger.info("📞 [BATCH-ORCHESTRATOR] Device Information:")
             logger.info(f"   📱 Device Name: {member.get('device_name', 'N/A')}")
             logger.info(f"   🔢 Device UDI: {member.get('device_udi', 'N/A')}")
             logger.info(f"   📞 Device Phone: {member.get('device_phone_number', 'N/A')}")
@@ -561,7 +606,7 @@ class BatchOrchestrator:
             logger.info(f"   🚨 Fall Detection: {member.get('fall_detection_status', 'N/A')}")
             logger.info(f"   🔋 Battery Status: {member.get('battery_status', 'N/A')}")
             logger.info("")
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] Campaign Context:")
+            logger.info("📞 [BATCH-ORCHESTRATOR] Campaign Context:")
             logger.info(f"   📋 Campaign ID: {campaign_id}")
             logger.info(f"   📋 Campaign Name: {campaign_name}")
             logger.info(f"   👥 Customer Type: {member.get('customer_type', 'N/A')}")
@@ -569,12 +614,12 @@ class BatchOrchestrator:
             logger.info(f"   📅 Activation Start: {member.get('activation_start_date', 'N/A')}")
             logger.info(f"   📦 Delivery Date: {member.get('delivery_date', 'N/A')}")
             logger.info("")
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] Tracking IDs:")
+            logger.info("📞 [BATCH-ORCHESTRATOR] Tracking IDs:")
             logger.info(f"   🆔 Attempt ID: {attempt_id}")
             logger.info(f"   📦 Batch ID: {batch_id}")
             logger.info("")
-            logger.info(f"📞 [BATCH-ORCHESTRATOR] request_data Payload (sent to Bland AI):")
-            logger.info(f"   {{")
+            logger.info("📞 [BATCH-ORCHESTRATOR] request_data Payload (sent to Bland AI):")
+            logger.info("   {")
             logger.info(f"     'first_name': '{request_data.get('first_name')}'")
             logger.info(f"     'last_name': '{request_data.get('last_name')}'")
             logger.info(f"     'primary_phone': '{request_data.get('primary_phone')}'")
@@ -585,8 +630,12 @@ class BatchOrchestrator:
             logger.info(f"     'address_state': '{request_data.get('address_state')}'")
             logger.info(f"     'address_zip': '{request_data.get('address_zip')}'")
             logger.info(f"     'dob': '{request_data.get('dob')}'")
-            logger.info(f"     'member_brand': '{request_data.get('member_brand')}' ← FROM members.member_brand")
-            logger.info(f"     'device_name': '{request_data.get('device_name')}' ← FROM member_devices.brand")
+            logger.info(
+                f"     'member_brand': '{request_data.get('member_brand')}' ← FROM members.member_brand"
+            )
+            logger.info(
+                f"     'device_name': '{request_data.get('device_name')}' ← FROM member_devices.brand"
+            )
             logger.info(f"     'device_udi': '{request_data.get('device_udi')}'")
             logger.info(f"     'device_phone_number': '{request_data.get('device_phone_number')}'")
             logger.info(f"     'is_device_callable': {request_data.get('is_device_callable')}")
@@ -594,9 +643,11 @@ class BatchOrchestrator:
             logger.info(f"     'battery_status': '{request_data.get('battery_status')}'")
             logger.info(f"     'customer_type': '{request_data.get('customer_type')}'")
             logger.info(f"     'call_attempt_number': {request_data.get('call_attempt_number')}")
-            logger.info(f"     'activation_start_date': '{request_data.get('activation_start_date')}'")
+            logger.info(
+                f"     'activation_start_date': '{request_data.get('activation_start_date')}'"
+            )
             logger.info(f"     'delivery_date': '{request_data.get('delivery_date')}'")
-            logger.info(f"   }}")
+            logger.info("   }")
             logger.info(f"✅ [BATCH-ORCHESTRATOR] Call #{len(calls)} added to batch")
 
         if skipped_members > 0:
@@ -622,15 +673,19 @@ class BatchOrchestrator:
         logger.info(f"📊 [BATCH-ORCHESTRATOR] Skipped Members: {skipped_members}")
         logger.info(f"📊 [BATCH-ORCHESTRATOR] Success Rate: {(len(calls)/(len(members))*100):.1f}%")
         logger.info("")
-        logger.info(f"📊 [BATCH-ORCHESTRATOR] Bland AI Configuration:")
+        logger.info("📊 [BATCH-ORCHESTRATOR] Bland AI Configuration:")
         logger.info(f"   🎯 Pathway ID: {pathway_id[:20]}...")
         logger.info(f"   🗣️ Voice ID: {voice_id[:20]}...")
-        logger.info(f"   ⏱️ Max Duration: {batch_request['bland_parameters_global']['max_duration']} minutes")
-        logger.info(f"   📞 Wait for Greeting: {batch_request['bland_parameters_global']['wait_for_greeting']}")
-        logger.info(f"   🎙️ Record Calls: {batch_request['bland_parameters_global']['record']}")
-        logger.info(f"   🤖 AMD Enabled: {batch_request['bland_parameters_global']['amd']}")
+        logger.info(
+            f"   ⏱️ Max Duration: {batch_request['bland_parameters_global']['max_duration']} minutes"  # type: ignore
+        )
+        logger.info(
+            f"   📞 Wait for Greeting: {batch_request['bland_parameters_global']['wait_for_greeting']}"  # type: ignore
+        )
+        logger.info(f"   🎙️ Record Calls: {batch_request['bland_parameters_global']['record']}")  # type: ignore
+        logger.info(f"   🤖 AMD Enabled: {batch_request['bland_parameters_global']['amd']}")  # type: ignore
         logger.info("")
-        logger.info(f"📊 [BATCH-ORCHESTRATOR] Batch ready for submission to Bland AI")
+        logger.info("📊 [BATCH-ORCHESTRATOR] Batch ready for submission to Bland AI")
         logger.info("📊 [BATCH-ORCHESTRATOR] ============================================")
 
         return batch_request
@@ -700,6 +755,70 @@ class BatchOrchestrator:
         logger.info(f"✅ [BATCH-ORCHESTRATOR] Created {len(attempt_id_map)} attempt records")
 
         return attempt_id_map
+
+    def _update_call_5_enrollments(self, campaign_id: str) -> int:
+        """
+        Update enrollments that just reached Call 5 (NEW: 2025-12-22)
+
+        Sets call_5_timestamp and campaign_end_date for enrollments where:
+        - call_5_timestamp is currently NULL
+        - Total outreach_attempts count = 5 (just created 5th attempt)
+
+        This starts the 90-day window for Calls 5+.
+
+        Args:
+            campaign_id: Device Activation campaign UUID
+
+        Returns:
+            Number of enrollments updated
+
+        BusinessCaseID: BC-TBD (Device Activation Call Frequency Change)
+        """
+        update_call_5_sql = """
+        UPDATE e
+        SET
+            e.call_5_timestamp = SYSDATETIMEOFFSET(),
+            e.campaign_end_date = CAST(DATEADD(DAY, 90, SYSDATETIMEOFFSET()) AS DATE)
+        FROM engage360.member_campaign_enrollments_enhanced e
+        WHERE
+            e.call_5_timestamp IS NULL  -- Haven't set Call 5 timestamp yet
+            AND e.campaign_id = %s      -- Device Activation campaign
+            AND (
+                -- Count total attempts for this enrollment = 5 (just reached Call 5)
+                SELECT COUNT(*)
+                FROM engage360.outreach_attempts oa
+                WHERE oa.enrollment_id = e.enrollment_id
+            ) = 5
+        """
+
+        # Execute update and get count of affected rows
+        self.db_service.execute_query(
+            update_call_5_sql,
+            params=(str(campaign_id),),
+            fetch_results=False,
+        )
+
+        # pymssql doesn't return rowcount directly from execute_query
+        # We need to check how many rows were affected
+        # For now, we'll query to get the count
+        count_query = """
+        SELECT COUNT(*) as updated_count
+        FROM engage360.member_campaign_enrollments_enhanced e
+        WHERE
+            e.call_5_timestamp IS NOT NULL
+            AND e.campaign_id = %s
+            AND DATEDIFF(second, e.call_5_timestamp, SYSDATETIMEOFFSET()) < 10  -- Updated in last 10 seconds
+        """
+
+        count_result = self.db_service.execute_query(
+            count_query,
+            params=(str(campaign_id),),
+            fetch_results=True,
+        )
+
+        updated_count = count_result[0]["updated_count"] if count_result else 0
+
+        return updated_count
 
     def _update_batch_with_vendor_id(self, batch_id: str, vendor_batch_id: str):
         """
