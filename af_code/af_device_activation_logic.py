@@ -1339,7 +1339,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
 
     try:
         conn = get_db_connection()
-        cursor = conn.cursor()
+        conn.timeout = 300  # 5 minutes for file processing operations (MERGE queries on large tables)
+        cursor = conn.cursor(as_dict=True)
 
         # Step 1: Get or validate campaign_id
         if context.campaign_id:
