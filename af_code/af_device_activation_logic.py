@@ -860,6 +860,21 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, "enrollment_status"] = "ENROLL"
 
         # ===================================================================
+        # 12.5 Unenrollment Reason Validation (Required for UNENROLL)
+        # ===================================================================
+        enrollment_status = df.at[idx, "enrollment_status"]
+        if enrollment_status == "UNENROLL":
+            unenrollment_reason = row.get("unenrollment_reason", "")
+            if unenrollment_reason and str(unenrollment_reason).strip():
+                # Valid reason provided
+                df.at[idx, "unenrollment_reason"] = str(unenrollment_reason).strip()
+            else:
+                # Missing reason - validation error
+                row_errors.append(
+                    "unenrollment_reason is required when enrollment_status is 'UNENROLL'"
+                )
+
+        # ===================================================================
         # 13. Customer Type Validation - REMOVED (not in actual CSV)
         # ===================================================================
         # NOTE: customer_type field does not exist in the actual CSV format
@@ -1512,17 +1527,18 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         # NEW LOGIC: activation_start_date = enrollment_ts + 2 business days
 
         # First, get staging data (NO delivery_date - using enrollment_ts instead)
+        # Process ALL enrollment statuses (ENROLL, UPDATE, UNENROLL)
         get_staging_query = """
         SELECT DISTINCT
             m.member_id,
-            stg.enrollment_status
+            stg.enrollment_status,
+            stg.unenrollment_reason
         FROM engage360_stg.stg_device_activation_delta stg
         INNER JOIN engage360.members m
             ON m.org_id = stg.org_id
             AND m.salesforce_account_number = stg.salesforce_account_number
         WHERE stg.file_batch_id = %s
           AND stg.validation_status = 'VALIDATED'
-          AND stg.enrollment_status = 'ENROLL'
         """
         cursor.execute(get_staging_query, (context.file_batch_id,))
         staging_rows = cursor.fetchall()
@@ -1541,7 +1557,24 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         cursor.execute(status_update_query, (context.file_batch_id,))
         logger.info(f"✅ [TRANSFORM] Status updated to TRANSFORMING")
 
-        logger.info(f"📊 [TRANSFORM] Processing {len(staging_rows)} enrollments")
+        # Count actions by type
+        enroll_count = 0
+        update_count = 0
+        unenroll_count = 0
+
+        for row in staging_rows:
+            enrollment_status = row['enrollment_status']
+            if enrollment_status == 'ENROLL':
+                enroll_count += 1
+            elif enrollment_status == 'UPDATE':
+                update_count += 1
+            elif enrollment_status == 'UNENROLL':
+                unenroll_count += 1
+
+        logger.info(
+            f"📊 [TRANSFORM] Processing actions: {enroll_count} ENROLL, "
+            f"{update_count} UPDATE, {unenroll_count} UNENROLL"
+        )
 
         # Get current timestamp as enrollment_ts
         enrollment_ts = datetime.now(timezone.utc)
@@ -1568,88 +1601,131 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             f"campaign_end={campaign_end_date} (activation + 90 days)"
         )
 
-        # MERGE enrollments (UPSERT pattern - handles both INSERT and UPDATE)
-        # This allows safe re-processing of files without duplicate key errors
-        merge_enrollment_query = """
-        MERGE engage360.member_campaign_enrollments_enhanced AS tgt
-        USING (
-            SELECT
-                m.member_id,
-                %s AS campaign_id,
-                %s AS activation_start_date,
-                %s AS campaign_end_date
-            FROM engage360_stg.stg_device_activation_delta stg
-            JOIN engage360.members m
-                ON m.org_id = stg.org_id
-                AND m.salesforce_account_number = stg.salesforce_account_number
-            WHERE stg.file_batch_id = %s
-              AND stg.processing_status = 'TRANSFORMING'
-        ) AS src
-        ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
-
-        WHEN MATCHED THEN
-            UPDATE SET
-                -- Update activation dates (re-calculated from file upload date)
-                activation_start_date = src.activation_start_date,
-                campaign_end_date = src.campaign_end_date,
-
-                -- Re-enroll if previously UNENROLLED
-                current_status = CASE
-                    WHEN tgt.current_status = 'UNENROLLED' THEN 'ENROLLED'
-                    ELSE tgt.current_status
-                END,
-
-                -- Update enrollment timestamp if re-enrolling
-                enrollment_ts = CASE
-                    WHEN tgt.current_status = 'UNENROLLED' THEN SYSDATETIMEOFFSET()
-                    ELSE tgt.enrollment_ts
-                END,
-
-                -- Clear unenrollment reason if re-enrolling
-                unenrollment_reason = CASE
-                    WHEN tgt.current_status = 'UNENROLLED' THEN NULL
-                    ELSE tgt.unenrollment_reason
-                END
-
-                -- Keep existing device_activated status (don't reset to 0)
-                -- device_activated stays as is (1 = activated, 0 = not activated)
-
-        WHEN NOT MATCHED THEN
-            INSERT (
-                enrollment_id, member_id, campaign_id, enrollment_ts, current_status,
-                activation_start_date, campaign_end_date, device_activated
-            )
-            VALUES (
-                NEWID(),                    -- New UUID only for NEW enrollments
-                src.member_id,
-                src.campaign_id,
-                SYSDATETIMEOFFSET(),        -- enrollment_ts
-                'ENROLLED',                 -- current_status
-                src.activation_start_date,
-                src.campaign_end_date,
-                0                           -- device_activated (default: not activated)
-            );
-        """
-
+        # Process enrollments using separate operations (following DTC pattern)
         try:
-            # Execute MERGE once for ALL members in the batch
-            cursor.execute(
-                merge_enrollment_query,
-                (
-                    str(campaign_id),           # Campaign ID
-                    activation_start_date,      # activation_start_date
-                    campaign_end_date,          # campaign_end_date
-                    context.file_batch_id,      # file_batch_id (for WHERE clause)
-                ),
-            )
+            # 1. Handle ENROLL (new enrollments)
+            if enroll_count > 0:
+                logger.info(f"📝 [TRANSFORM] Processing {enroll_count} ENROLL actions...")
+                enroll_merge_query = """
+                MERGE engage360.member_campaign_enrollments_enhanced AS tgt
+                USING (
+                    SELECT
+                        m.member_id,
+                        %s AS campaign_id,
+                        %s AS activation_start_date,
+                        %s AS campaign_end_date
+                    FROM engage360_stg.stg_device_activation_delta stg
+                    JOIN engage360.members m
+                        ON m.org_id = stg.org_id
+                        AND m.salesforce_account_number = stg.salesforce_account_number
+                    WHERE stg.file_batch_id = %s
+                      AND stg.processing_status = 'TRANSFORMING'
+                      AND stg.enrollment_status = 'ENROLL'
+                ) AS src
+                ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
 
-            # Get row count (how many enrollments were inserted or updated)
-            enrolled_count = cursor.rowcount
+                WHEN MATCHED THEN
+                    UPDATE SET
+                        -- Update activation dates (re-calculated from file upload date)
+                        activation_start_date = src.activation_start_date,
+                        campaign_end_date = src.campaign_end_date,
 
-            logger.info(f"✅ [TRANSFORM] Enrolled/Updated {enrolled_count} members")
+                        -- Re-enroll if previously UNENROLLED
+                        current_status = CASE
+                            WHEN tgt.current_status = 'UNENROLLED' THEN 'ENROLLED'
+                            ELSE tgt.current_status
+                        END,
+
+                        -- Update enrollment timestamp if re-enrolling
+                        enrollment_ts = CASE
+                            WHEN tgt.current_status = 'UNENROLLED' THEN SYSDATETIMEOFFSET()
+                            ELSE tgt.enrollment_ts
+                        END,
+
+                        -- Clear unenrollment reason if re-enrolling
+                        unenrollment_reason = CASE
+                            WHEN tgt.current_status = 'UNENROLLED' THEN NULL
+                            ELSE tgt.unenrollment_reason
+                        END
+
+                WHEN NOT MATCHED THEN
+                    INSERT (
+                        enrollment_id, member_id, campaign_id, enrollment_ts, current_status,
+                        activation_start_date, campaign_end_date, device_activated
+                    )
+                    VALUES (
+                        NEWID(),
+                        src.member_id,
+                        src.campaign_id,
+                        SYSDATETIMEOFFSET(),
+                        'ENROLLED',
+                        src.activation_start_date,
+                        src.campaign_end_date,
+                        0
+                    );
+                """
+                cursor.execute(
+                    enroll_merge_query,
+                    (
+                        str(campaign_id),
+                        activation_start_date,
+                        campaign_end_date,
+                        context.file_batch_id,
+                    ),
+                )
+                logger.info(f"✅ [TRANSFORM] Enrolled {enroll_count} members")
+
+            # 2. Handle UPDATE (existing enrollments)
+            if update_count > 0:
+                logger.info(f"🔄 [TRANSFORM] Processing {update_count} UPDATE actions...")
+                update_query = """
+                UPDATE e
+                SET e.activation_start_date = %s,
+                    e.campaign_end_date = %s,
+                    e.enrollment_ts = SYSDATETIMEOFFSET()
+                FROM engage360.member_campaign_enrollments_enhanced e
+                JOIN engage360.members m ON e.member_id = m.member_id
+                JOIN engage360_stg.stg_device_activation_delta stg
+                    ON m.org_id = stg.org_id
+                    AND m.salesforce_account_number = stg.salesforce_account_number
+                WHERE stg.file_batch_id = %s
+                  AND stg.processing_status = 'TRANSFORMING'
+                  AND stg.enrollment_status = 'UPDATE'
+                  AND e.campaign_id = %s
+                """
+                cursor.execute(
+                    update_query,
+                    (
+                        activation_start_date,
+                        campaign_end_date,
+                        context.file_batch_id,
+                        str(campaign_id),
+                    ),
+                )
+                logger.info(f"✅ [TRANSFORM] Updated {update_count} enrollments")
+
+            # 3. Handle UNENROLL (terminate enrollments)
+            if unenroll_count > 0:
+                logger.info(f"❌ [TRANSFORM] Processing {unenroll_count} UNENROLL actions...")
+                unenroll_query = """
+                UPDATE e
+                SET e.current_status = 'UNENROLLED',
+                    e.unenrollment_reason = COALESCE(stg.unenrollment_reason, 'Updated via file processing')
+                FROM engage360.member_campaign_enrollments_enhanced e
+                JOIN engage360.members m ON e.member_id = m.member_id
+                JOIN engage360_stg.stg_device_activation_delta stg
+                    ON m.org_id = stg.org_id
+                    AND m.salesforce_account_number = stg.salesforce_account_number
+                WHERE stg.file_batch_id = %s
+                  AND stg.processing_status = 'TRANSFORMING'
+                  AND stg.enrollment_status = 'UNENROLL'
+                  AND e.campaign_id = %s
+                """
+                cursor.execute(unenroll_query, (context.file_batch_id, str(campaign_id)))
+                logger.info(f"✅ [TRANSFORM] Unenrolled {unenroll_count} members")
 
         except Exception as e:
-            logger.error(f"❌ [TRANSFORM] Error in enrollment MERGE: {e}")
+            logger.error(f"❌ [TRANSFORM] Error processing enrollment actions: {e}")
             raise
 
         # Step 5: Mark staging as PROCESSED
@@ -1664,10 +1740,16 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         cursor.close()
         conn.close()
 
+        total_processed = enroll_count + update_count + unenroll_count
         return ProcessingResult(
             success=True,
-            message=f"Transformed and loaded {enrolled_count} enrollments",
-            details={"enrolled_count": enrolled_count},
+            message=f"Transformed and loaded {total_processed} actions ({enroll_count} enrolled, {update_count} updated, {unenroll_count} unenrolled)",
+            details={
+                "enrolled_count": enroll_count,
+                "updated_count": update_count,
+                "unenrolled_count": unenroll_count,
+                "total_processed": total_processed,
+            },
         )
 
     except Exception as e:
@@ -1899,11 +1981,18 @@ def process_device_activation_file_complete(
         logger.info(f"✅ [MAIN] Validated: {processing_details.get('validated_rows', 0)}")
         logger.info(f"❌ [MAIN] Errors: {processing_details.get('error_rows', 0)}")
         logger.info(f"👥 [MAIN] Enrolled: {processing_details.get('enrolled_count', 0)}")
+        logger.info(f"🔄 [MAIN] Updated: {processing_details.get('updated_count', 0)}")
+        logger.info(f"❌ [MAIN] Unenrolled: {processing_details.get('unenrolled_count', 0)}")
         logger.info("=" * 80)
+
+        enrolled = processing_details.get('enrolled_count', 0)
+        updated = processing_details.get('updated_count', 0)
+        unenrolled = processing_details.get('unenrolled_count', 0)
+        total_actions = enrolled + updated + unenrolled
 
         return (
             True,
-            f"Successfully processed {source_filename}: {processing_details.get('enrolled_count', 0)} members enrolled",
+            f"Successfully processed {source_filename}: {total_actions} actions ({enrolled} enrolled, {updated} updated, {unenrolled} unenrolled)",
             processing_details,
         )
 
