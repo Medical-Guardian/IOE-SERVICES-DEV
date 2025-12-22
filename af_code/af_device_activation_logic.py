@@ -774,9 +774,15 @@ def validate_and_cleanse_data_before_insert(
         fall_detection = row.get("fall_detection_status", "") or row.get("fall_detection", "")
         if fall_detection and str(fall_detection).strip():
             fall_str = str(fall_detection).strip()
-            if fall_str in ["1", "1.0", "True", "true", "Y", "Yes"]:
+            fall_str_upper = (
+                fall_str.upper()
+            )  # Convert to uppercase for case-insensitive comparison
+
+            # Active values (case-insensitive)
+            if fall_str_upper in ["1", "1.0", "TRUE", "Y", "YES"]:
                 df.at[idx, "fall_detection_status_clean"] = "Active"
-            elif fall_str in ["0", "0.0", "False", "false", "N", "No"]:
+            # Inactive values (case-insensitive)
+            elif fall_str_upper in ["0", "0.0", "FALSE", "F", "N", "NO"]:
                 df.at[idx, "fall_detection_status_clean"] = "Inactive"
             else:
                 # Try to use the existing validation if it's already text
@@ -788,15 +794,17 @@ def validate_and_cleanse_data_before_insert(
                 else:
                     df.at[idx, "fall_detection_status_clean"] = "Unknown"
 
-        # Battery Mode: Map "Standard" and "Powersaver" to "Good"
+        # Battery Mode: Map "Standard", "Powersaver", and "Default" to "Good"
         # Support both column names (pre and post column mapping)
         battery = row.get("battery_status", "") or row.get("powersaver_mode", "")
         if battery and str(battery).strip():
             battery_str = str(battery).strip().title()
-            if battery_str in ["Standard", "Powersaver"]:
+            # Map powersaver modes to battery status "Good"
+            # Standard = normal mode, Powersaver = power saving mode, Default = default mode
+            if battery_str in ["Standard", "Powersaver", "Default"]:
                 df.at[idx, "battery_status_clean"] = "Good"
             else:
-                # Validate against known battery statuses
+                # Validate against known battery statuses (Good, Low, Critical, Charging, Unknown)
                 is_valid, normalized = validate_device_status(battery, "battery_status")
                 if is_valid:
                     df.at[idx, "battery_status_clean"] = normalized
