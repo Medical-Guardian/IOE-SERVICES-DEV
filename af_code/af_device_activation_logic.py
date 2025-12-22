@@ -1520,6 +1520,20 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         cursor.execute(get_staging_query, (context.file_batch_id,))
         staging_rows = cursor.fetchall()
 
+        # Update processing status from PENDING to TRANSFORMING
+        # This is critical: The MERGE query at line 1565 filters for 'TRANSFORMING' status
+        # Without this update, MERGE finds 0 rows → 0 enrollments
+        status_update_query = """
+        UPDATE engage360_stg.stg_device_activation_delta
+        SET processing_status = 'TRANSFORMING'
+        WHERE file_batch_id = %s
+          AND processing_status = 'PENDING'
+        """
+
+        logger.info(f"🔄 [TRANSFORM] Updating rows to TRANSFORMING status for batch {context.file_batch_id}")
+        cursor.execute(status_update_query, (context.file_batch_id,))
+        logger.info(f"✅ [TRANSFORM] Status updated to TRANSFORMING")
+
         logger.info(f"📊 [TRANSFORM] Processing {len(staging_rows)} enrollments")
 
         # Get current timestamp as enrollment_ts
