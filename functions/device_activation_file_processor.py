@@ -26,11 +26,11 @@ def get_campaign_id_from_csv(blob_content: bytes) -> tuple:
         # Read first row of CSV to get campaign_name_source
         df = pd.read_csv(BytesIO(blob_content), nrows=1, dtype=str)
 
-        if 'campaign_name_source' not in df.columns:
+        if "campaign_name_source" not in df.columns:
             logging.warning("⚠️ [DEVICE-ACTIVATION] CSV missing 'campaign_name_source' column")
             return None, None
 
-        campaign_name = df['campaign_name_source'].iloc[0]
+        campaign_name = df["campaign_name_source"].iloc[0]
         logging.info(f"📋 [DEVICE-ACTIVATION] CSV campaign_name_source: {campaign_name}")
 
         # Query database for campaign_id
@@ -52,11 +52,11 @@ def get_campaign_id_from_csv(blob_content: bytes) -> tuple:
             return None, None
 
         # DatabaseService returns list of dictionaries, not tuples
-        campaign_id = str(results[0]['campaign_id'])
-        db_name = results[0]['name']
-        status = results[0]['status']
+        campaign_id = str(results[0]["campaign_id"])
+        db_name = results[0]["name"]
+        status = results[0]["status"]
 
-        if status != 'Active':
+        if status != "Active":
             logging.warning(
                 f"⚠️ [DEVICE-ACTIVATION] Campaign '{campaign_name}' is not Active (status: {status})"
             )
@@ -73,9 +73,7 @@ def get_campaign_id_from_csv(blob_content: bytes) -> tuple:
 
 
 @bp.function_name(name="ProcessDeviceActivationBlob")
-@bp.blob_trigger(
-    arg_name="myblob", path="fs-ops/landing/{name}", connection="AzureWebJobsStorage"
-)
+@bp.blob_trigger(arg_name="myblob", path="fs-ops/landing/{name}", connection="AzureWebJobsStorage")
 def process_blob(myblob: func.InputStream):
     """
     Azure Function blob trigger for Device Activation CSV files.
@@ -117,6 +115,7 @@ def process_blob(myblob: func.InputStream):
     # Expected: MedicalGuardian_DeviceActivation[suffix]_YYYYMMDD_DELTA.csv
     # Accepts: DeviceActivationMedicaid, DeviceActivationDTCMA, DeviceActivation<any suffix>
     import re
+
     pattern = r"^MedicalGuardian_DeviceActivation[A-Za-z]+_\d{8}_DELTA\.csv$"
     if not re.match(pattern, filename):
         logging.warning(f"⚠️ [DEVICE-ACTIVATION] File skipped due to invalid naming: {filename}")
@@ -130,18 +129,29 @@ def process_blob(myblob: func.InputStream):
 
     logging.info(f"✅ [DEVICE-ACTIVATION] Filename validation passed: {filename}")
 
+    # Skip Operations Device Activation files (Medicaid/DTCMA)
+    # These should be processed by operations_device_activation_file_processor
+    if "Medicaid" in filename or "DTCMA" in filename:
+        logging.info(
+            "⏭️ [DEVICE-ACTIVATION] Skipping file - handled by operations_device_activation_file_processor"
+        )
+        logging.info(f"   File: {filename}")
+        logging.info("   Reason: Matches Operations campaign pattern (Medicaid or DTCMA)")
+        logging.info(
+            "   This file will be processed by operations_device_activation_file_processor instead"
+        )
+        return
+
     # Read blob content to extract campaign from CSV (NEW)
     blob_content = myblob.read()
     logging.info(f"📥 [PROCESSOR] blob_content read: {len(blob_content)} bytes")
     campaign_id, campaign_name = get_campaign_id_from_csv(blob_content)
 
     if campaign_id:
-        logging.info(
-            f"🎯 [DEVICE-ACTIVATION] Using campaign: {campaign_name} ({campaign_id})"
-        )
+        logging.info(f"🎯 [DEVICE-ACTIVATION] Using campaign: {campaign_name} ({campaign_id})")
     else:
         logging.warning(
-            f"⚠️ [DEVICE-ACTIVATION] Could not determine campaign from CSV, will use auto-discovery"
+            "⚠️ [DEVICE-ACTIVATION] Could not determine campaign from CSV, will use auto-discovery"
         )
 
     logging.info("🔄 [DEVICE-ACTIVATION] Starting 5-phase ETL pipeline...")
