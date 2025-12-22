@@ -960,6 +960,10 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
     logger.info(f"📥 [EXTRACT] Starting Phase 1: Extract for {context.source_filename}")
 
     try:
+        # Add diagnostic logging
+        logger.info(f"📥 [EXTRACT] context.blob_content is None: {context.blob_content is None}")
+        logger.info(f"📥 [EXTRACT] context.blob_content size: {len(context.blob_content) if context.blob_content else 'N/A'}")
+
         # Load CSV data
         if context.blob_content:
             # Operations flow: Load from blob content bytes
@@ -973,13 +977,16 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
                 f"✅ [EXTRACT] CSV loaded from blob content: {len(df)} rows, {len(df.columns)} columns"
             )
         else:
-            # Legacy flow: Download from blob storage
-            logger.info(f"📥 [EXTRACT] Downloading from {context.container_name}/landing/")
-            df = download_blob_as_dataframe(
-                blob_name=f"landing/{context.source_filename}",
-                container_name=context.container_name,
+            # For Operations flow, blob_content should ALWAYS be provided
+            # The file has already been moved from landing/ to staging/ by this point
+            # Attempting to download from landing/ will cause BlobNotFound error
+            error_msg = (
+                "blob_content is required for Device Activation processing. "
+                "File has already been moved from landing folder. "
+                "Please ensure blob_content is passed from blob trigger."
             )
-            logger.info(f"✅ [EXTRACT] Blob downloaded: {len(df)} rows, {len(df.columns)} columns")
+            logger.error(f"❌ [EXTRACT] {error_msg}")
+            raise ValueError(error_msg)
 
         # ===================================================================
         # STEP 1: Pandera validation (on ORIGINAL columns before mapping)

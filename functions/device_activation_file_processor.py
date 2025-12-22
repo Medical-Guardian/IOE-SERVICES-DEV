@@ -132,6 +132,7 @@ def process_blob(myblob: func.InputStream):
 
     # Read blob content to extract campaign from CSV (NEW)
     blob_content = myblob.read()
+    logging.info(f"📥 [PROCESSOR] blob_content read: {len(blob_content)} bytes")
     campaign_id, campaign_name = get_campaign_id_from_csv(blob_content)
 
     if campaign_id:
