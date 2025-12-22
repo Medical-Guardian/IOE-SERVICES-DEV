@@ -116,11 +116,18 @@ def operations_device_activation_file_processor(blob: func.InputStream):
         # - Member/device upserts
         # - Enrollment status handling (enrolled/unenrolled/updated)
         # - monitoring_system_id storage in member_identifiers
+
+        # Extract just filename from blob path for file_path parameter
+        filename = blob.name.split("/")[-1]
+
         result = process_device_activation_file_complete(
-            blob_name=blob.name,
+            file_path=filename,  # Changed from blob_name to file_path (just filename, not full path)
             blob_content=blob_content,
             campaign_id=campaign_id,
-            campaign_name=campaign_name,
+            connection_string=None,  # Retrieved from Key Vault via ConfigManager
+            uploaded_by_user="AzureFunction-Operations",  # Identify source
+            error_threshold_pct=10.0,  # 10% error threshold (same as legacy)
+            log_level="INFO",
         )
 
         logging.info("✅ [OPS-DEVICE-ACTIVATION] File processing completed successfully")
