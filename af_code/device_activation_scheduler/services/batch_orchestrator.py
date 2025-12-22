@@ -395,19 +395,44 @@ class BatchOrchestrator:
             logger.info(f"   • {key}: {value}")
         logger.info("📋 [BATCH-ORCHESTRATOR] ============================================")
 
-        # Validate and extract pathway_id using BlandParametersValidator
-        validator = BlandParametersValidator(campaign_config)
-        pathway_id = validator.get_pathway_id()  # Handles both 'pathway_id' and 'task' fields
+        # Validate Bland AI parameters using BlandParametersValidator
+        validator = BlandParametersValidator()
+        validation_result = validator.validate(
+            campaign_config or {},
+            campaign_name,
+            strict=True,  # Fail on missing required params
+        )
 
-        # Extract voice_id (optional - Bland AI will use default if not provided)
-        voice_id = campaign_config.get("voice_id") or campaign_config.get("voice")
+        if not validation_result.is_valid:
+            error_msg = f"Invalid Bland AI configuration for campaign '{campaign_name}':\n"
+            for error in validation_result.errors:
+                error_msg += f"  - {error}\n"
+            error_msg += "\nPlease configure in campaign_call_configs_enhanced table"
+            logger.error(f"❌ [BATCH-ORCHESTRATOR] {error_msg}")
+            raise ValueError(error_msg)
 
-        if voice_id:
-            logger.info(f"🎤 [BATCH-ORCHESTRATOR] Using voice_id: {voice_id}")
-        else:
-            logger.info(f"🎤 [BATCH-ORCHESTRATOR] No voice_id specified, Bland AI will use default")
+        # Log deprecation warnings
+        for warning in validation_result.warnings:
+            logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] {warning}")
 
-        logger.info(f"🛤️ [BATCH-ORCHESTRATOR] Using pathway_id: {pathway_id}")
+        # Log unknown parameters (future additions)
+        for info in validation_result.info_messages:
+            logger.info(f"ℹ️ [BATCH-ORCHESTRATOR] {info}")
+
+        # Use validated and normalized parameters
+        bland_params = validation_result.normalized_params
+
+        # Extract pathway_id (or task) - one of these is required
+        pathway_id = bland_params.get("pathway_id") or bland_params.get("task")
+
+        # Extract voice_id if present (optional parameter)
+        voice_id = bland_params.get("voice_id") or bland_params.get("voice")
+
+        logger.info(
+            f"✅ [BATCH-ORCHESTRATOR] Validated {len(bland_params)} Bland AI parameters from database"
+        )
+        logger.info(f"🔧 [BATCH-ORCHESTRATOR] Available parameters: {list(bland_params.keys())}")
+        logger.info(f"   🎭 Using: pathway_id={pathway_id}, voice_id={voice_id}")
 
         calls = []
         skipped_members = 0
@@ -585,12 +610,7 @@ class BatchOrchestrator:
             "calls": calls,
             "pathway_id": pathway_id,
             "voice_id": voice_id,
-            "bland_parameters_global": {
-                "max_duration": 10,  # 10 minutes max per call
-                "wait_for_greeting": True,
-                "record": True,
-                "amd": True,  # Answering machine detection
-            },
+            "bland_parameters_global": bland_params,  # Use validated params from database
         }
 
         # Log final batch summary
