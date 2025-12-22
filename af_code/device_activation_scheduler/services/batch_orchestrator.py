@@ -246,14 +246,14 @@ class BatchOrchestrator:
             logger.info("🚀 [BATCH-ORCHESTRATOR] ============================================")
             logger.info("🚀 [BATCH-ORCHESTRATOR] SUBMITTING BATCH TO BLAND AI")
             logger.info("🚀 [BATCH-ORCHESTRATOR] ============================================")
-            logger.info(f"🚀 [BATCH-ORCHESTRATOR] Calls in batch: {len(batch_request['calls'])}")
+            logger.info(f"🚀 [BATCH-ORCHESTRATOR] Calls in batch: {len(batch_request.calls)}")
             logger.info(
                 "🚀 [BATCH-ORCHESTRATOR] Batch submission mode: SYNCHRONOUS (wait for response)"
             )
             logger.info("🚀 [BATCH-ORCHESTRATOR] Submitting to Bland AI API...")
 
             # Display all batch data before submission (USER REQUIREMENT)
-            calls = batch_request.get("calls", [])
+            calls = batch_request.calls
             logger.info("")
             logger.info("📦 [BATCH-ORCHESTRATOR] ============================================")
             logger.info("📦 [BATCH-ORCHESTRATOR] BATCH REQUEST DATA (DETAILED)")
