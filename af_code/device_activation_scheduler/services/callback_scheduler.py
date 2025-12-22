@@ -76,7 +76,7 @@ class CallbackScheduler:
         md.is_device_callable,
         md.delivery_date,
         md.fall_detection_status,
-        md.battery_status,
+        md.powersaver_mode,
         e.activation_start_date,
         e.campaign_end_date,
         e.customer_type

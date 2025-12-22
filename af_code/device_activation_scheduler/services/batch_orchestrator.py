@@ -596,7 +596,7 @@ class BatchOrchestrator:
             logger.info(f"   📞 Device Phone: {member.get('device_phone_number', 'N/A')}")
             logger.info(f"   📡 Device Callable: {member.get('is_device_callable', 0)}")
             logger.info(f"   🚨 Fall Detection: {member.get('fall_detection_status', 'N/A')}")
-            logger.info(f"   🔋 Battery Status: {member.get('battery_status', 'N/A')}")
+            logger.info(f"   🔋 PowerSaver Mode: {member.get('powersaver_mode', 'N/A')}")
             logger.info("")
             logger.info("📞 [BATCH-ORCHESTRATOR] Campaign Context:")
             logger.info(f"   📋 Campaign ID: {campaign_id}")
