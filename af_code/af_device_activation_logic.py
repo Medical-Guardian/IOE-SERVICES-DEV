@@ -184,8 +184,12 @@ def get_db_connection_string():
     wait=wait_exponential(multiplier=1, min=2, max=10),
     retry=retry_if_exception_type(pymssql.OperationalError),
 )
-def get_db_connection():
-    """Get database connection with retry logic"""
+def get_db_connection(timeout: int = 30):
+    """Get database connection with retry logic
+
+    Args:
+        timeout: Query execution timeout in seconds (default: 30)
+    """
     conn_str = get_db_connection_string()
 
     # Parse connection string
@@ -197,7 +201,7 @@ def get_db_connection():
         password=parts.get("Password", ""),
         database=parts.get("Initial Catalog", ""),
         port=int(parts.get("Server", "").split(",")[1]) if "," in parts.get("Server", "") else 1433,
-        timeout=30,
+        timeout=timeout,
         login_timeout=30,
     )
 
@@ -1339,10 +1343,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
     logger.info("🔄 [TRANSFORM] Starting Phase 4: Transform & Load Core Tables")
 
     try:
-        conn = get_db_connection()
-        conn.timeout = (
-            300  # 5 minutes for file processing operations (MERGE queries on large tables)
-        )
+        # 5 minutes timeout for file processing operations (MERGE queries on large tables)
+        conn = get_db_connection(timeout=300)
         cursor = conn.cursor(as_dict=True)
 
         # Step 1: Get or validate campaign_id
