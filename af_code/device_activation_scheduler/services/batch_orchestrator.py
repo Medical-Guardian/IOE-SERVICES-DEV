@@ -617,37 +617,6 @@ class BatchOrchestrator:
             logger.info("📞 [BATCH-ORCHESTRATOR] Tracking IDs:")
             logger.info(f"   🆔 Attempt ID: {attempt_id}")
             logger.info(f"   📦 Batch ID: {batch_id}")
-            logger.info("")
-            logger.info("📞 [BATCH-ORCHESTRATOR] request_data Payload (sent to Bland AI):")
-            logger.info("   {")
-            logger.info(f"     'first_name': '{request_data.get('first_name')}'")
-            logger.info(f"     'last_name': '{request_data.get('last_name')}'")
-            logger.info(f"     'primary_phone': '{request_data.get('primary_phone')}'")
-            logger.info(f"     'email': '{request_data.get('email')}'")
-            logger.info(f"     'language_pref': '{request_data.get('language_pref')}'")
-            logger.info(f"     'address_street': '{request_data.get('address_street')}'")
-            logger.info(f"     'address_city': '{request_data.get('address_city')}'")
-            logger.info(f"     'address_state': '{request_data.get('address_state')}'")
-            logger.info(f"     'address_zip': '{request_data.get('address_zip')}'")
-            logger.info(f"     'dob': '{request_data.get('dob')}'")
-            logger.info(
-                f"     'member_brand': '{request_data.get('member_brand')}' ← FROM members.member_brand"
-            )
-            logger.info(
-                f"     'device_name': '{request_data.get('device_name')}' ← FROM member_devices.brand"
-            )
-            logger.info(f"     'device_udi': '{request_data.get('device_udi')}'")
-            logger.info(f"     'device_phone_number': '{request_data.get('device_phone_number')}'")
-            logger.info(f"     'is_device_callable': {request_data.get('is_device_callable')}")
-            logger.info(f"     'fall_detection': '{request_data.get('fall_detection')}'")
-            logger.info(f"     'battery_status': '{request_data.get('battery_status')}'")
-            logger.info(f"     'customer_type': '{request_data.get('customer_type')}'")
-            logger.info(f"     'call_attempt_number': {request_data.get('call_attempt_number')}")
-            logger.info(
-                f"     'activation_start_date': '{request_data.get('activation_start_date')}'"
-            )
-            logger.info(f"     'delivery_date': '{request_data.get('delivery_date')}'")
-            logger.info("   }")
             logger.info(f"✅ [BATCH-ORCHESTRATOR] Call #{len(calls)} added to batch")
 
         if skipped_members > 0:
