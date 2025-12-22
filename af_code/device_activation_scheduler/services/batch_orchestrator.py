@@ -22,6 +22,7 @@ from af_code.bland_ai_webhook.services.config_manager import ConfigManager
 from af_code.bland_ai_webhook.services.database_service import DatabaseService
 from af_code.shared.bland_ai_client import BlandAIClient
 from af_code.shared.bland_parameters_validator import BlandParametersValidator
+from af_code.partner_campaign_scheduler.models.batch_request import BatchRequest
 
 logger = logging.getLogger(__name__)
 
@@ -376,7 +377,7 @@ class BatchOrchestrator:
 
     def _build_batch_request(
         self, members: List[Dict], batch_id: str, attempt_id_map: Dict[str, str]
-    ) -> Dict[str, Any]:
+    ) -> BatchRequest:
         """
         Build the Bland AI batch request payload for Device Activation
 
@@ -615,14 +616,14 @@ class BatchOrchestrator:
                 f"⚠️ [BATCH-ORCHESTRATOR] Skipped {skipped_members} members (missing data)"
             )
 
-        # Build complete batch request
-        batch_request = {
-            "campaign_id": str(campaign_id),
-            "calls": calls,
-            "pathway_id": pathway_id,
-            "voice_id": voice_id,
-            "bland_parameters_global": bland_params,  # Use validated params from database
-        }
+        # Build complete batch request using BatchRequest dataclass
+        batch_request = BatchRequest(
+            campaign_id=str(campaign_id),
+            calls=calls,
+            pathway_id=pathway_id,
+            voice_id=voice_id,
+            bland_parameters_global=bland_params,  # Use validated params from database
+        )
 
         # Log final batch summary
         logger.info("")
@@ -637,7 +638,7 @@ class BatchOrchestrator:
         logger.info(f"   🎯 Pathway ID: {pathway_id[:20]}...")
         logger.info(f"   🗣️ Voice ID: {voice_id[:20]}...")
         # Use .get() for optional parameters to prevent KeyError
-        bland_config = batch_request['bland_parameters_global']  # type: ignore
+        bland_config = batch_request.bland_parameters_global
         logger.info(f"   ⏱️ Max Duration: {bland_config.get('max_duration', 'N/A')} minutes")
         logger.info(f"   📞 Wait for Greeting: {bland_config.get('wait_for_greeting', 'N/A')}")
         logger.info(f"   🎙️ Record Calls: {bland_config.get('record', 'N/A')}")
