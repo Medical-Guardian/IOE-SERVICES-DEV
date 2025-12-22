@@ -498,33 +498,24 @@ class BatchOrchestrator:
                 continue
 
             # Build request_data (data passed to AI agent during call)
+            # ONLY 12 fields as required by Bland AI pathway (updated 2025-12-23)
             request_data = {
-                # Member identification
+                # Member demographics (from members table)
                 "first_name": member.get("first_name"),
                 "last_name": member.get("last_name"),
-                "primary_phone": phone_number,
+                "primary_phone": member.get("primary_phone"),
                 "email": member.get("email"),
-                "language_pref": member.get("language_pref", "EN"),
-                # Address and demographics (updated 2025-12-21 to match user requirements)
+                "dob": member.get("dob").strftime("%m-%d-%Y") if member.get("dob") else "",
+                # Address (from members table)
                 "address_street": member.get("address_street") or "",
                 "address_city": member.get("address_city") or "",
                 "address_state": member.get("address_state") or "",
                 "address_zip": member.get("address_zip") or "",
-                "dob": member.get("dob").strftime("%m-%d-%Y") if member.get("dob") else "",
-                # Member brand (added 2025-12-21 - from members.member_brand)
+                # Brand (from members table)
                 "member_brand": member.get("member_brand") or "",
-                # Device information (device_name now from member_devices.brand)
-                "device_name": member.get("device_brand") or "",
-                "device_udi": member.get("device_udi"),
-                "device_phone_number": member.get("device_phone_number"),
-                "is_device_callable": member.get("is_device_callable", 0),
-                "fall_detection": member.get("fall_detection_status"),
-                "battery_status": member.get("battery_status"),
-                # Campaign information
-                "customer_type": member.get("customer_type"),
-                "call_attempt_number": member.get("call_attempt_number", 1),
-                "activation_start_date": str(member.get("activation_start_date")),
-                "delivery_date": str(member.get("delivery_date")),
+                # Device information (from member_devices table)
+                "device_name": member.get("device_brand") or "",  # member_devices.brand
+                "fall_detection": str(member.get("fall_detection_status") or "0"),
             }
 
             # Build metadata (used for webhook processing)
@@ -645,14 +636,12 @@ class BatchOrchestrator:
         logger.info("📊 [BATCH-ORCHESTRATOR] Bland AI Configuration:")
         logger.info(f"   🎯 Pathway ID: {pathway_id[:20]}...")
         logger.info(f"   🗣️ Voice ID: {voice_id[:20]}...")
-        logger.info(
-            f"   ⏱️ Max Duration: {batch_request['bland_parameters_global']['max_duration']} minutes"  # type: ignore
-        )
-        logger.info(
-            f"   📞 Wait for Greeting: {batch_request['bland_parameters_global']['wait_for_greeting']}"  # type: ignore
-        )
-        logger.info(f"   🎙️ Record Calls: {batch_request['bland_parameters_global']['record']}")  # type: ignore
-        logger.info(f"   🤖 AMD Enabled: {batch_request['bland_parameters_global']['amd']}")  # type: ignore
+        # Use .get() for optional parameters to prevent KeyError
+        bland_config = batch_request['bland_parameters_global']  # type: ignore
+        logger.info(f"   ⏱️ Max Duration: {bland_config.get('max_duration', 'N/A')} minutes")
+        logger.info(f"   📞 Wait for Greeting: {bland_config.get('wait_for_greeting', 'N/A')}")
+        logger.info(f"   🎙️ Record Calls: {bland_config.get('record', 'N/A')}")
+        logger.info(f"   🤖 Answered By Enabled: {bland_config.get('answered_by_enabled', 'N/A')}")
         logger.info("")
         logger.info("📊 [BATCH-ORCHESTRATOR] Batch ready for submission to Bland AI")
         logger.info("📊 [BATCH-ORCHESTRATOR] ============================================")
