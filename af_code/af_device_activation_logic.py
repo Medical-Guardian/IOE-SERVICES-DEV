@@ -1571,7 +1571,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         unenroll_count = 0
 
         for row in staging_rows:
-            enrollment_status = row["enrollment_status"]
+            # Row format: (member_id, enrollment_status, unenrollment_reason)
+            enrollment_status = row[1]  # Column 1: enrollment_status
             if enrollment_status == "ENROLL":
                 enroll_count += 1
             elif enrollment_status == "UPDATE":
