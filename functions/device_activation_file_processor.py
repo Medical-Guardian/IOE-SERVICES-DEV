@@ -1,9 +1,74 @@
 import azure.functions as func
 import logging
+import pandas as pd
+from io import BytesIO
 from af_code.af_device_activation_logic import process_device_activation_file_complete
+from af_code.bland_ai_webhook.services.config_manager import ConfigManager
+from af_code.bland_ai_webhook.services.database_service import DatabaseService
 
 # Create a "Blueprint" to organize this function
 bp = func.Blueprint()
+
+
+def get_campaign_id_from_csv(blob_content: bytes) -> tuple:
+    """
+    Extract campaign_name_source from CSV and query database for campaign_id
+
+    Args:
+        blob_content: Raw CSV bytes from blob
+
+    Returns:
+        Tuple of (campaign_id, campaign_name) or (None, None) if not found
+
+    BusinessCaseID: BC-TBD (Device Activation System)
+    """
+    try:
+        # Read first row of CSV to get campaign_name_source
+        df = pd.read_csv(BytesIO(blob_content), nrows=1, dtype=str)
+
+        if 'campaign_name_source' not in df.columns:
+            logging.warning("⚠️ [DEVICE-ACTIVATION] CSV missing 'campaign_name_source' column")
+            return None, None
+
+        campaign_name = df['campaign_name_source'].iloc[0]
+        logging.info(f"📋 [DEVICE-ACTIVATION] CSV campaign_name_source: {campaign_name}")
+
+        # Query database for campaign_id
+        config_manager = ConfigManager()
+        db_service = DatabaseService(config_manager)
+
+        query = """
+        SELECT campaign_id, name, status
+        FROM engage360.campaigns_enhanced
+        WHERE name = %s
+        """
+
+        results = db_service.execute_query(query, (campaign_name,), fetch_results=True)
+
+        if not results:
+            logging.warning(
+                f"⚠️ [DEVICE-ACTIVATION] Campaign '{campaign_name}' not found in database"
+            )
+            return None, None
+
+        campaign_id = str(results[0][0])
+        db_name = results[0][1]
+        status = results[0][2]
+
+        if status != 'Active':
+            logging.warning(
+                f"⚠️ [DEVICE-ACTIVATION] Campaign '{campaign_name}' is not Active (status: {status})"
+            )
+            return None, None
+
+        logging.info(f"🎯 [DEVICE-ACTIVATION] Found campaign_id: {campaign_id}")
+        return campaign_id, db_name
+
+    except Exception as e:
+        logging.error(
+            f"❌ [DEVICE-ACTIVATION] Error reading campaign from CSV: {str(e)}", exc_info=True
+        )
+        return None, None
 
 
 @bp.function_name(name="ProcessDeviceActivationBlob")
@@ -63,6 +128,20 @@ def process_blob(myblob: func.InputStream):
         return
 
     logging.info(f"✅ [DEVICE-ACTIVATION] Filename validation passed: {filename}")
+
+    # Read blob content to extract campaign from CSV (NEW)
+    blob_content = myblob.read()
+    campaign_id, campaign_name = get_campaign_id_from_csv(blob_content)
+
+    if campaign_id:
+        logging.info(
+            f"🎯 [DEVICE-ACTIVATION] Using campaign: {campaign_name} ({campaign_id})"
+        )
+    else:
+        logging.warning(
+            f"⚠️ [DEVICE-ACTIVATION] Could not determine campaign from CSV, will use auto-discovery"
+        )
+
     logging.info("🔄 [DEVICE-ACTIVATION] Starting 5-phase ETL pipeline...")
 
     # Call shared logic to process the file
@@ -74,6 +153,7 @@ def process_blob(myblob: func.InputStream):
     # Phase 5: Audit & Log (file processing log, move to processed folder)
     success, msg, details = process_device_activation_file_complete(
         file_path=filename,
+        campaign_id=campaign_id,  # NEW: Pass explicit campaign_id
         connection_string=None,  # Retrieved from Key Vault via ConfigManager
         uploaded_by_user="AzureFunction",
         error_threshold_pct=10.0,  # 10% error threshold (reject file if >10% rows fail)
