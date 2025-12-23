@@ -400,7 +400,7 @@ def validate_device_status(status: str, field_name: str) -> Tuple[bool, str]:
 
     Args:
         status: Status value
-        field_name: 'fall_detection_status' or 'battery_status'
+        field_name: 'battery_status' (only battery_status is validated now)
 
     Returns:
         (is_valid, normalized_value)
@@ -410,13 +410,7 @@ def validate_device_status(status: str, field_name: str) -> Tuple[bool, str]:
 
     status_str = str(status).strip().title()
 
-    if field_name == "fall_detection_status":
-        valid_values = ["Active", "Inactive", "Not Applicable", "Unknown"]
-        if status_str in valid_values:
-            return (True, status_str)
-        return (False, status_str)
-
-    elif field_name == "battery_status":
+    if field_name == "battery_status":
         valid_values = ["Good", "Low", "Critical", "Charging", "Unknown"]
         if status_str in valid_values:
             return (True, status_str)

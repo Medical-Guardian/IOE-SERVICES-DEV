@@ -232,33 +232,7 @@ class TestTimezoneMapping:
 
 
 class TestDeviceStatusValidation:
-    """Test device status field validation (fall_detection_status, battery_status)"""
-
-    def test_validate_fall_detection_active(self):
-        """Test valid fall_detection_status: Active"""
-        is_valid, msg = validate_device_status("Active", "fall_detection_status")
-        assert is_valid is True
-
-    def test_validate_fall_detection_inactive(self):
-        """Test valid fall_detection_status: Inactive"""
-        is_valid, msg = validate_device_status("Inactive", "fall_detection_status")
-        assert is_valid is True
-
-    def test_validate_fall_detection_not_applicable(self):
-        """Test valid fall_detection_status: Not Applicable"""
-        is_valid, msg = validate_device_status("Not Applicable", "fall_detection_status")
-        assert is_valid is True
-
-    def test_validate_fall_detection_unknown(self):
-        """Test valid fall_detection_status: Unknown"""
-        is_valid, msg = validate_device_status("Unknown", "fall_detection_status")
-        assert is_valid is True
-
-    def test_validate_fall_detection_invalid(self):
-        """Test invalid fall_detection_status"""
-        is_valid, msg = validate_device_status("InvalidStatus", "fall_detection_status")
-        assert is_valid is False
-        assert "Invalid fall_detection_status" in msg
+    """Test device status field validation (battery_status)"""
 
     def test_validate_battery_good(self):
         """Test valid battery_status: Good"""
@@ -289,11 +263,11 @@ class TestDeviceStatusValidation:
         """Test invalid battery_status"""
         is_valid, msg = validate_device_status("InvalidBattery", "battery_status")
         assert is_valid is False
-        assert "Invalid battery_status" in msg
+        assert msg == "Invalidbattery"  # Returns normalized value for invalid input
 
     def test_validate_device_status_empty(self):
         """Test empty device status (should be valid - nullable field)"""
-        is_valid, msg = validate_device_status("", "fall_detection_status")
+        is_valid, msg = validate_device_status("", "battery_status")
         assert is_valid is True
 
     def test_validate_device_status_none(self):

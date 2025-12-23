@@ -516,7 +516,7 @@ class BatchOrchestrator:
                 "member_brand": member.get("member_brand") or "",
                 # Device information (from member_devices table)
                 "device_name": member.get("device_brand") or "",  # member_devices.brand
-                "fall_detection": str(member.get("fall_detection_status") or "0"),
+                "fall_detection": "True" if member.get("fall_detection") == 1 else "False",
             }
 
             # Build metadata (used for webhook processing)
@@ -595,7 +595,7 @@ class BatchOrchestrator:
             logger.info(f"   🔢 Device UDI: {member.get('device_udi', 'N/A')}")
             logger.info(f"   📞 Device Phone: {member.get('device_phone_number', 'N/A')}")
             logger.info(f"   📡 Device Callable: {member.get('is_device_callable', 0)}")
-            logger.info(f"   🚨 Fall Detection: {member.get('fall_detection_status', 'N/A')}")
+            logger.info(f"   🚨 Fall Detection: {member.get('fall_detection', 'N/A')}")
             logger.info(f"   🔋 PowerSaver Mode: {member.get('powersaver_mode', 'N/A')}")
             logger.info("")
             logger.info("📞 [BATCH-ORCHESTRATOR] Campaign Context:")
