@@ -561,7 +561,9 @@ def validate_and_cleanse_data_before_insert(
     df["brand_clean"] = ""  # For member brand (members.member_brand)
     df["device_name_clean"] = ""  # For device brand (member_devices.brand)
     df["fall_detection_clean"] = None  # Initialize with None (will be 'true'/'false' or None)
-    df["powersaver_mode_clean"] = None  # Initialize with None (will be 'Default'/'Standard'/'Powersaver' or None)
+    df["powersaver_mode_clean"] = (
+        None  # Initialize with None (will be 'Default'/'Standard'/'Powersaver' or None)
+    )
 
     validation_errors_count = 0
 
@@ -784,16 +786,22 @@ def validate_and_cleanse_data_before_insert(
         else:
             df.at[idx, "fall_detection_clean"] = None
 
-        # PowerSaver Mode: Validate and keep original value (NO CONVERSION)
+        # PowerSaver Mode: Validate and normalize to Title Case (CASE-INSENSITIVE)
         powersaver_mode = row.get("powersaver_mode", "") or row.get("battery_status", "")
         if powersaver_mode and str(powersaver_mode).strip():
             mode_str = str(powersaver_mode).strip().title()
-            # Validate format: accept Standard, Powersaver, Default
-            if mode_str in ["Standard", "Powersaver", "Default"]:
-                df.at[idx, "powersaver_mode_clean"] = mode_str  # Keep original value
+            # Validate format: accept Default, Standard, Battery Saver (case-insensitive via .title())
+            valid_modes = ["Default", "Standard", "Battery Saver"]
+            if mode_str in valid_modes:
+                df.at[idx, "powersaver_mode_clean"] = mode_str  # Store Title Case normalized value
+                logger.debug(f"✅ [VALIDATE] Row {idx}: Valid powersaver_mode='{mode_str}'")
             else:
                 # Invalid value - keep NULL for error tracking
                 df.at[idx, "powersaver_mode_clean"] = None
+                logger.warning(
+                    f"⚠️ [VALIDATE] Row {idx}: Invalid powersaver_mode '{mode_str}' "
+                    f"(expected: {', '.join(valid_modes)}). Value set to NULL."
+                )
         else:
             df.at[idx, "powersaver_mode_clean"] = None
 
@@ -1055,7 +1063,9 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
             if "fall_detection_status" in df.columns and "fall_detection" not in df.columns:
                 df["fall_detection"] = df["fall_detection_status"]
                 df.drop(columns=["fall_detection_status"], inplace=True)
-                logger.info("✅ [EXTRACT] Mapped fall_detection_status → fall_detection (old CSV format)")
+                logger.info(
+                    "✅ [EXTRACT] Mapped fall_detection_status → fall_detection (old CSV format)"
+                )
 
             # Add member_address_country if not present (default to 'US')
             if "member_address_country" in df.columns:
@@ -1525,7 +1535,9 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         """
         cursor.execute(merge_devices_query, (context.file_batch_id,))
         rows_affected = cursor.rowcount
-        logger.info(f"✅ [TRANSFORM] MERGE INTO member_devices complete - {rows_affected} rows affected")
+        logger.info(
+            f"✅ [TRANSFORM] MERGE INTO member_devices complete - {rows_affected} rows affected"
+        )
 
         # Debug: Verify fall_detection values were inserted correctly
         debug_query = """
@@ -1544,7 +1556,9 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         if debug_results:
             logger.info("🔍 [TRANSFORM] Sample member_devices data (after MERGE):")
             for row in debug_results:
-                logger.info(f"   device_id={row[0]}, fall_detection={row[1]}, powersaver_mode='{row[2]}'")
+                logger.info(
+                    f"   device_id={row[0]}, fall_detection={row[1]}, powersaver_mode='{row[2]}'"
+                )
         else:
             logger.warning("⚠️ [TRANSFORM] No member_devices records found for this batch")
 
@@ -1793,9 +1807,13 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         verify_results = cursor.fetchall()
 
         if verify_results:
-            logger.info(f"✅ [TRANSFORM] Campaign enrollment verified - {len(verify_results)} recent enrollments:")
+            logger.info(
+                f"✅ [TRANSFORM] Campaign enrollment verified - {len(verify_results)} recent enrollments:"
+            )
             for row in verify_results:
-                logger.info(f"   enrollment_id={row[0]}, member_id={row[1]}, campaign={row[3]}, status={row[4]}")
+                logger.info(
+                    f"   enrollment_id={row[0]}, member_id={row[1]}, campaign={row[3]}, status={row[4]}"
+                )
         else:
             logger.error(f"❌ [TRANSFORM] No enrollments found for campaign_id: {campaign_id}")
 

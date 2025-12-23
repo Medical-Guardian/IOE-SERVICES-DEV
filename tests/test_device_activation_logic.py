@@ -625,6 +625,151 @@ class TestProcessingResult:
         assert result.error == error
 
 
+class TestPowerSaverModeValidation:
+    """Test powersaver_mode field validation (case-insensitive, Title Case normalization)"""
+
+    @pytest.fixture
+    def minimal_context(self):
+        """Create minimal ProcessingContext for testing"""
+        return ProcessingContext(
+            file_name="test.csv", uploaded_ts=datetime.now(pytz.UTC), correlation_id="test-123"
+        )
+
+    @pytest.fixture
+    def minimal_row_data(self):
+        """Create minimal valid row data for testing"""
+        return {
+            "partner_name": "Medical Guardian",
+            "salesforce_account_id": "001Test",
+            "salesforce_account_number": "12345",
+            "member_first_name": "John",
+            "member_last_name": "Doe",
+            "primary_phone": "5551234567",
+            "email": "test@example.com",
+            "service_address": "123 Main St",
+            "city": "Rochester",
+            "state": "NY",
+            "zip": "14623",
+            "dob": "1970-01-01",
+            "timezone": "America/New_York",
+            "language_pref": "EN",
+            "device_udi": "123456",
+            "device_name": "MGMini",
+            "brand": "MedScope",
+            "device_phone_number": "5559876543",
+            "is_device_callable": "Y",
+            "fall_detection": "true",
+            "campaign_parameters": "",
+            "monitoring_system_id": "",
+            "enrollment_status": "ENROLL",
+            "unenrollment_reason": "",
+            "campaign_name_source": "Test Campaign",
+        }
+
+    def test_valid_default_lowercase(self, minimal_context, minimal_row_data):
+        """Test: 'default' (lowercase) normalizes to 'Default'"""
+        minimal_row_data["powersaver_mode"] = "default"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] == "Default"
+
+    def test_valid_default_uppercase(self, minimal_context, minimal_row_data):
+        """Test: 'DEFAULT' (uppercase) normalizes to 'Default'"""
+        minimal_row_data["powersaver_mode"] = "DEFAULT"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] == "Default"
+
+    def test_valid_default_titlecase(self, minimal_context, minimal_row_data):
+        """Test: 'Default' (title case) stays 'Default'"""
+        minimal_row_data["powersaver_mode"] = "Default"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] == "Default"
+
+    def test_valid_standard_lowercase(self, minimal_context, minimal_row_data):
+        """Test: 'standard' (lowercase) normalizes to 'Standard'"""
+        minimal_row_data["powersaver_mode"] = "standard"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] == "Standard"
+
+    def test_valid_standard_titlecase(self, minimal_context, minimal_row_data):
+        """Test: 'Standard' (title case) stays 'Standard'"""
+        minimal_row_data["powersaver_mode"] = "Standard"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] == "Standard"
+
+    def test_valid_standard_uppercase(self, minimal_context, minimal_row_data):
+        """Test: 'STANDARD' (uppercase) normalizes to 'Standard'"""
+        minimal_row_data["powersaver_mode"] = "STANDARD"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] == "Standard"
+
+    def test_valid_battery_saver_lowercase(self, minimal_context, minimal_row_data):
+        """Test: 'battery saver' (lowercase) normalizes to 'Battery Saver'"""
+        minimal_row_data["powersaver_mode"] = "battery saver"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] == "Battery Saver"
+
+    def test_valid_battery_saver_titlecase(self, minimal_context, minimal_row_data):
+        """Test: 'Battery Saver' (title case) stays 'Battery Saver'"""
+        minimal_row_data["powersaver_mode"] = "Battery Saver"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] == "Battery Saver"
+
+    def test_valid_battery_saver_uppercase(self, minimal_context, minimal_row_data):
+        """Test: 'BATTERY SAVER' (uppercase) normalizes to 'Battery Saver'"""
+        minimal_row_data["powersaver_mode"] = "BATTERY SAVER"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] == "Battery Saver"
+
+    def test_invalid_old_value_powersaver(self, minimal_context, minimal_row_data):
+        """Test: 'Powersaver' (old value, one word) is rejected"""
+        minimal_row_data["powersaver_mode"] = "Powersaver"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] is None or pd.isna(
+            df_result.at[0, "powersaver_mode_clean"]
+        )
+
+    def test_invalid_old_value_powersaver_lowercase(self, minimal_context, minimal_row_data):
+        """Test: 'powersaver' (old value lowercase) is rejected"""
+        minimal_row_data["powersaver_mode"] = "powersaver"
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] is None or pd.isna(
+            df_result.at[0, "powersaver_mode_clean"]
+        )
+
+    def test_empty_value_stores_null(self, minimal_context, minimal_row_data):
+        """Test: Empty string stores NULL"""
+        minimal_row_data["powersaver_mode"] = ""
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        assert df_result.at[0, "powersaver_mode_clean"] is None or pd.isna(
+            df_result.at[0, "powersaver_mode_clean"]
+        )
+
+    def test_backwards_compatibility_battery_status(self, minimal_context, minimal_row_data):
+        """Test: battery_status → powersaver_mode mapping works"""
+        minimal_row_data["battery_status"] = "default"
+        if "powersaver_mode" in minimal_row_data:
+            del minimal_row_data[
+                "powersaver_mode"
+            ]  # Remove powersaver_mode to test battery_status mapping
+        df = pd.DataFrame([minimal_row_data])
+        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
+        # Note: Column mapping happens in extract phase, not validation phase
+        # This test verifies the validation logic works with battery_status column
+        assert df_result.at[0, "powersaver_mode_clean"] == "Default"
+
+
 # Run tests with pytest
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

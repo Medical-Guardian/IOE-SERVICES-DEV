@@ -43,7 +43,7 @@ This document describes the CSV file format for Device Activation campaign membe
 The CSV file must include a header row with the following column names (case-sensitive):
 
 ```csv
-salesforce_account_id,salesforce_account_number,member_first_name,member_last_name,primary_phone,email,service_address,city,state,zip,dob,timezone,language_pref,device_udi,device_name,brand,device_phone_number,is_device_callable,delivery_date,fall_detection_status,battery_status,partner_name,customer_type,enrollment_status
+salesforce_account_id,salesforce_account_number,member_first_name,member_last_name,primary_phone,email,service_address,city,state,zip,dob,timezone,language_pref,device_udi,device_name,brand,device_phone_number,is_device_callable,delivery_date,fall_detection_status,powersaver_mode,partner_name,customer_type,enrollment_status
 ```
 
 ---
@@ -232,18 +232,20 @@ salesforce_account_id,salesforce_account_number,member_first_name,member_last_na
 - **Notes:** Can be empty/null
 - **New Field:** ✅ This is a NEW field for Device Activation
 
-#### 21. **battery_status** (OPTIONAL)
+#### 21. **powersaver_mode** (OPTIONAL)
 - **Type:** String
-- **Description:** Current battery status of the device
-- **Valid Values:**
-  - `Good` - Battery is in good condition
-  - `Low` - Battery is low
-  - `Critical` - Battery is critically low
-  - `Charging` - Device is currently charging
-  - `Unknown` - Status unknown
-- **Example:** `Good`, `Low`, `Critical`
-- **Validation:** If provided, must be one of the valid values
-- **Notes:** Can be empty/null
+- **Description:** Device power-saving mode setting
+- **Valid Values (case-insensitive):**
+  - `default` - Default power mode (any case: default, Default, DEFAULT)
+  - `standard` - Standard power mode (any case: standard, Standard, STANDARD)
+  - `battery saver` - Battery saving mode (any case: battery saver, Battery Saver, BATTERY SAVER)
+- **Example:** `default`, `Standard`, `BATTERY SAVER`
+- **Validation:** Case-insensitive matching - normalized to Title Case on storage
+- **Stored As:** `Default`, `Standard`, `Battery Saver` (Title Case)
+- **Notes:**
+  - Can be empty/null (stored as NULL in database)
+  - For backwards compatibility, CSV column name can be `battery_status` or `powersaver_mode`
+  - Values are normalized to Title Case for consistency
 - **New Field:** ✅ This is a NEW field for Device Activation
 
 ---
@@ -372,7 +374,7 @@ The sample file contains 10 test records demonstrating:
 | 12 | delivery_date | Not future, not >180 days old |
 | 13 | customer_type | DTC or MS |
 | 14 | fall_detection_status | Active/Inactive/Not Applicable/Unknown (if provided) |
-| 15 | battery_status | Good/Low/Critical/Charging/Unknown (if provided) |
+| 15 | powersaver_mode | Default/Standard/Battery Saver (case-insensitive, if provided) |
 | 16 | is_device_callable | Y or N |
 
 ---
@@ -416,8 +418,8 @@ The sample file contains 10 test records demonstrating:
 ### ❌ Error: "Invalid fall_detection_status"
 **Fix:** Use `Active`, `Inactive`, `Not Applicable`, or `Unknown` (or leave empty)
 
-### ❌ Error: "Invalid battery_status"
-**Fix:** Use `Good`, `Low`, `Critical`, `Charging`, or `Unknown` (or leave empty)
+### ❌ Error: "Invalid powersaver_mode"
+**Fix:** Use `default`, `standard`, or `battery saver` (case-insensitive, or leave empty)
 
 ---
 
@@ -436,7 +438,7 @@ Before uploading a CSV file to production:
 - [ ] Device UDI is 5-50 characters
 - [ ] is_device_callable is Y or N
 - [ ] fall_detection_status uses valid values (if provided)
-- [ ] battery_status uses valid values (if provided)
+- [ ] powersaver_mode uses valid values: default/standard/battery saver (if provided)
 - [ ] Test upload to `fs-device-activation/landing/`
 - [ ] Verify successful processing (file moves to `processed/`)
 - [ ] Check database for new records in members, member_devices, member_campaign_enrollments_enhanced
