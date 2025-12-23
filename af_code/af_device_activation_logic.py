@@ -1787,7 +1787,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         FROM engage360.member_campaign_enrollments_enhanced e
         JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
         WHERE e.campaign_id = %s
-        ORDER BY e.created_ts DESC
+        ORDER BY e.enrollment_ts DESC
         """
         cursor.execute(verify_query, (str(campaign_id),))
         verify_results = cursor.fetchall()
