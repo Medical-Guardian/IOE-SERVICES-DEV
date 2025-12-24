@@ -2,23 +2,352 @@
 Engage360 Device Activation File Processing Workflow
 ====================================================
 
-Implementation for processing Device Activation CSV files.
-Follows modular architecture with staging → core table flow and comprehensive validation.
+BusinessCaseID: BC-DA-002 (File Processing & ETL Pipeline)
+Created: 2025-12-07
+Updated: 2025-12-24 - Added comprehensive documentation and BusinessCaseID mapping
 
-BusinessCaseID: BC-TBD (Device Activation System)
+This module implements the complete ETL (Extract, Transform, Load) pipeline for processing
+Device Activation CSV files. It converts raw CSV data from external sources into structured
+database records that drive the Device Activation campaign workflow.
 
-This module processes CSV files containing device activation data:
-- Member information (salesforce_account_id, names, contact info)
-- Device information (UDI, brand, device status)
-- Campaign enrollment with business day calculations
+PURPOSE:
+--------
+Device Activation campaigns begin when external partners (e.g., Medical Guardian fulfillment)
+send CSV files containing member and device information after devices are shipped. This module
+processes those files through a robust 5-phase pipeline to:
 
+1. **Validate data quality** (Pandera schema validation)
+2. **Stage data temporarily** (stg_device_activation_delta table)
+3. **Cleanse and normalize** (SQL cleansing functions, timezone mapping)
+4. **Populate core tables** (members, member_devices, member_campaign_enrollments_enhanced)
+5. **Create audit trail** (file_processing_log, blob movement)
 
-Key Features:
-- 5-phase ETL: Extract → Load Staging → Validate → Transform → Audit
-- Business day calculations using business_hours_utils
-- Dual-timezone business hours validation
-- Device status tracking (fall detection, powersaver mode)
-- 90-day campaign lifecycle from enrollment_ts
+The end result: Members are enrolled in Device Activation campaigns and become eligible
+for proactive outreach calls via the scheduler (BC-DA-003, BC-DA-004).
+
+5-PHASE ETL PIPELINE:
+---------------------
+
+**PHASE 1: EXTRACT** (Lines 954-1107)
+    Function: extract(context: ProcessingContext)
+    Purpose: Download CSV from blob storage and validate structure
+
+    Process:
+    1. Download CSV from Azure Blob Storage (landing folder)
+    2. Parse CSV into pandas DataFrame (dtype=str, keep_default_na=False)
+    3. Validate schema using Pandera (23 required columns)
+    4. Check for critical missing fields (member_id, device_udi, delivery_date)
+    5. Return validated DataFrame or error result
+
+    Success Criteria:
+    - CSV file exists and is readable
+    - All 23 required columns present
+    - At least 1 data row (excluding header)
+    - No critical schema violations
+
+    Error Handling:
+    - Missing columns → Move to error/ folder, log details
+    - Schema violations → Move to error/ folder, log Pandera errors
+    - Empty file → Move to error/ folder
+    - Blob not found → Log error, raise exception
+
+**PHASE 2: LOAD TO STAGING** (Lines 1109-1268)
+    Function: load_to_staging(df: pd.DataFrame, context: ProcessingContext)
+    Purpose: Insert raw CSV data into staging table for validation
+
+    Process:
+    1. For each row in DataFrame:
+        a. INSERT into stg_device_activation_delta with processing_status='Raw'
+        b. Store original values in *_raw columns
+        c. Set file_id, created_ts, updated_ts
+    2. Track success/failure counts
+    3. Enforce 10% error threshold (max 10% rows can fail)
+    4. Commit or rollback based on threshold
+
+    Success Criteria:
+    - >= 90% of rows inserted successfully
+    - Database connection stable
+    - No critical SQL errors
+
+    Error Handling:
+    - Row insert fails → Log error, increment fail_count
+    - Error threshold exceeded (>10%) → Rollback transaction, abort processing
+    - Database errors → Rollback, move blob to error/ folder
+
+    Database Impact:
+    - Table: engage360_stg.stg_device_activation_delta
+    - Operation: INSERT (row-by-row with try/except)
+    - Fields: 23 raw columns + metadata (file_id, processing_status, created_ts)
+
+**PHASE 3: VALIDATE** (Lines 1270-1317)
+    Function: validate_data(context: ProcessingContext)
+    Purpose: Run SQL cleansing functions and validate data quality
+
+    Process:
+    1. Execute SQL Server stored procedure: sp_cleanse_device_activation_data
+    2. Stored procedure performs:
+        - Phone number validation (E.164 format)
+        - Email validation (regex pattern)
+        - Timezone mapping (e.g., 'Eastern' → 'America/New_York')
+        - Language code mapping (ISO 639-3 → 'EN'/'ES'/'Other')
+        - Device status validation (fall_detection, powersaver_mode)
+        - Customer type validation
+        - org_id lookup from org_name
+    3. Update stg_device_activation_delta:
+        - processing_status = 'Validated' (success)
+        - processing_status = 'Invalid' (validation failures)
+        - Set *_clean columns with validated values
+        - Set validation_status with error messages
+
+    Success Criteria:
+    - >= 50% of rows pass validation (configurable threshold)
+    - All critical validations complete
+    - Clean columns populated for valid rows
+
+    Error Handling:
+    - SQL procedure fails → Log error, abort processing
+    - Low validation rate (<50%) → Warning logged, processing continues
+    - Database errors → Rollback, move blob to error/ folder
+
+**PHASE 4: TRANSFORM & LOAD CORE** (Lines 1319-1846)
+    Function: transform_and_load_core(context: ProcessingContext)
+    Purpose: MERGE staging data into core production tables
+
+    Process:
+    1. **MERGE into engage360.members** (UPSERT pattern):
+        - Match on: member_id (salesforce_account_number)
+        - UPDATE: Existing members with latest data
+        - INSERT: New members
+        - Fields: first_name, last_name, primary_phone, email, address, timezone, etc.
+
+    2. **MERGE into engage360.member_devices** (UPSERT pattern):
+        - Match on: device_id (device_udi)
+        - UPDATE: Existing devices with latest data
+        - INSERT: New devices
+        - Fields: device_name, brand, device_phone_number, fall_detection, powersaver_mode, etc.
+
+    3. **INSERT into engage360.member_campaign_enrollments_enhanced**:
+        - Create new enrollments (no MERGE - always new)
+        - Calculate activation_start_date = delivery_date + 2 business days
+        - Calculate campaign_end_date = activation_start_date + 90 days (initial, updated in Call 5)
+        - Set current_status = 'ENROLLED'
+        - Set device_activated = 0 (not yet activated)
+        - Fields: enrollment_id, member_id, campaign_id, activation_start_date, campaign_end_date, etc.
+
+    Success Criteria:
+    - All 3 core tables updated successfully
+    - Foreign key relationships maintained
+    - Business day calculations accurate
+    - Enrollment records created for all valid members
+
+    Error Handling:
+    - MERGE fails → Log error, rollback transaction
+    - Foreign key violations → Log error, skip record
+    - Business day calculation errors → Log warning, use fallback
+    - Database errors → Rollback, move blob to error/ folder
+
+    Database Impact:
+    - Tables: engage360.members, engage360.member_devices, engage360.member_campaign_enrollments_enhanced
+    - Operations: MERGE (members, devices), INSERT (enrollments)
+    - Transaction: All-or-nothing (rollback on any error)
+
+**PHASE 5: AUDIT & LOG** (Lines 1848-1922)
+    Function: audit_and_log(context: ProcessingContext, details: Dict[str, Any])
+    Purpose: Create audit trail and move processed file
+
+    Process:
+    1. INSERT into file_processing_log:
+        - file_id (UUID)
+        - filename, file_path, container_name
+        - processing_status ('success' or 'error')
+        - rows_processed, rows_succeeded, rows_failed
+        - processing_start_ts, processing_end_ts, processing_duration_seconds
+        - error_details (if any)
+
+    2. Move blob from landing/ to processed/ or error/:
+        - Success: landing/file.csv → processed/file.csv
+        - Error: landing/file.csv → error/file.csv
+
+    3. Log final summary with emoji indicators
+
+    Success Criteria:
+    - Audit record inserted successfully
+    - Blob moved to correct folder (processed/ or error/)
+    - All phase statistics logged
+
+    Error Handling:
+    - Audit insert fails → Log error but don't fail entire pipeline
+    - Blob move fails → Retry with exponential backoff (3 attempts)
+    - Both operations track independently
+
+BUSINESS DAY CALCULATIONS:
+--------------------------
+Device Activation uses business day calculations for activation_start_date:
+
+**Formula:** activation_start_date = delivery_date + 2 business days
+
+**Rationale:** Members need 2 business days to receive and unpack devices before
+activation calls begin.
+
+**Examples:**
+- Delivery: Monday → activation_start_date: Wednesday (Mon+2 biz days)
+- Delivery: Friday → activation_start_date: Tuesday (Fri → Mon → Tue)
+- Delivery: Saturday → activation_start_date: Wednesday (Sat → Mon → Tue → Wed)
+
+**Implementation:** Uses shared utility `add_business_days()` from business_hours_utils
+
+90-DAY CAMPAIGN WINDOW:
+-----------------------
+**Initial Calculation** (in this module):
+    campaign_end_date = activation_start_date + 90 days
+
+**Updated in Call 5** (in batch_orchestrator.py BC-DA-004):
+    When Call 5 is created:
+    - call_5_timestamp = NOW()
+    - campaign_end_date = call_5_timestamp + 90 days (UPDATED)
+
+**Rationale:** The 90-day window for Call 5+ starts FROM when Call 5 is created,
+NOT from the original activation_start_date. This allows sufficient time for Calls 1-4
+before enforcing the hard stop.
+
+DATA VALIDATION RULES:
+----------------------
+**Phone Numbers (E.164 format):**
+- Must start with '+'
+- Must be 12-16 characters (e.g., +15551234567)
+- Regex: ^\\+[1-9]\\d{10,14}$
+
+**Email Addresses:**
+- Must match standard email regex
+- Regex: ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$
+
+**Timezones (IANA format):**
+- Input: 'Eastern', 'Central', 'Mountain', 'Pacific', 'EST', 'CST', etc.
+- Output: 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles'
+- Validation: pytz.timezone(tz) must not raise exception
+
+**Language Codes (ISO 639):**
+- Input: 'eng', 'spa', 'som', 'EN', 'ES', 'Other', etc.
+- Output: 'EN', 'ES', 'Other'
+- Uses shared utility: map_language_code()
+
+**Device Status (BIT flags):**
+- fall_detection: 'Yes'/'No' → 1/0
+- powersaver_mode: 'Yes'/'No'/'Battery Saver' → 1/0
+- Must be valid boolean representations
+
+**Customer Type:**
+- Valid values: 'DTC', 'MA', 'Medicaid', etc.
+- Case-insensitive validation
+
+CSV FILE STRUCTURE:
+-------------------
+**Required Columns (23 total):**
+
+**Member Information:**
+- salesforce_account_number (member_id)
+- first_name
+- last_name
+- primary_phone
+- email
+- address_street
+- address_city
+- address_state
+- address_zip
+- dob
+- timezone
+- language_pref
+- member_brand
+
+**Device Information:**
+- device_udi (device_id)
+- device_name
+- brand
+- device_phone_number
+- is_device_callable
+- fall_detection
+- powersaver_mode
+
+**Enrollment Information:**
+- delivery_date
+- customer_type
+- org_name
+- campaign_id
+
+DATABASE TABLES ACCESSED:
+--------------------------
+**Staging Table:**
+- engage360_stg.stg_device_activation_delta (read/write - temporary staging)
+
+**Core Tables:**
+- engage360.members (write - MERGE)
+- engage360.member_devices (write - MERGE)
+- engage360.member_campaign_enrollments_enhanced (write - INSERT)
+- engage360.orgs (read - org_id lookup)
+
+**Audit Tables:**
+- engage360.file_processing_log (write - audit trail)
+
+ERROR HANDLING STRATEGY:
+-------------------------
+**10% Error Threshold (Phase 2):**
+- If > 10% of rows fail during staging insert → Abort entire file
+- Rationale: Indicates systematic data quality issue, not isolated errors
+
+**50% Validation Threshold (Phase 3):**
+- If < 50% of rows pass validation → Warning logged, processing continues
+- Rationale: Some records may be salvageable even with validation failures
+
+**Transaction Rollback (Phase 4):**
+- Any error during core table updates → Rollback entire transaction
+- Rationale: Maintain data integrity (all-or-nothing approach)
+
+**Exponential Backoff (Blob Operations):**
+- Retry blob moves up to 3 times with exponential backoff
+- Delays: 2s, 4s, 8s
+- Rationale: Handle transient Azure Storage errors
+
+RELATED COMPONENTS:
+-------------------
+- **device_activation_scheduler** (BC-DA-001): Timer trigger for eligibility checks
+- **EligibilityService** (BC-DA-003): Uses enrollments created by this module
+- **BatchOrchestrator** (BC-DA-004): Updates campaign_end_date in Call 5
+- **business_hours_utils**: Business day calculations, timezone validation
+
+RELATED DOCUMENTATION:
+----------------------
+- Complete Architecture: documentation/device_activation/ARCHITECTURE/DEVICE_ACTIVATION_COMPLETE_ARCHITECTURE.md
+- Database Operations: documentation/device_activation/ARCHITECTURE/DEVICE_ACTIVATION_DATABASE_OPERATIONS.md
+- CSV Reference: documentation/device_activation/REFERENCE/DEVICE_ACTIVATION_CSV_REFERENCE.md
+
+EXAMPLES:
+---------
+Process a Device Activation CSV file:
+    >>> from af_code.af_device_activation_logic import process_device_activation_file_complete
+    >>>
+    >>> # File uploaded to Azure Blob Storage: fs-device-activation/landing/file.csv
+    >>> result = process_device_activation_file_complete(
+    ...     blob_name="MedicalGuardian_DeviceActivation_20251224_Delta.csv",
+    ...     container_name="fs-device-activation",
+    ...     trigger_metadata=None
+    ... )
+    >>>
+    >>> # Check result
+    >>> print(f"Success: {result.success}")
+    >>> print(f"Phase: {result.phase_completed}")
+    >>> print(f"Records processed: {result.records_processed}")
+    Success: True
+    Phase: Phase 5: Audit Complete
+    Records processed: 150
+
+NOTES:
+------
+- This module is triggered by blob uploads to fs-device-activation/landing/
+- Filename pattern: MedicalGuardian_DeviceActivation_*_Delta.csv
+- Processing time: ~30-60 seconds for 100-500 records
+- All phases are transactional (rollback on error)
+- Blob movement provides physical audit trail (landing → processed/error)
+- Uses shared utilities for validation (language_mapper, business_hours_utils)
 """
 
 import os
@@ -74,7 +403,17 @@ logger.info("🔄 [MODULE-LOAD] Device Activation file processing with business 
 
 
 def get_blob_service_client():
-    """Get Azure Blob Storage client using Key Vault credentials"""
+    """
+    Get Azure Blob Storage client using Key Vault credentials
+
+    BusinessCaseID: BC-DA-002
+
+    Retrieves Azure Storage connection string from Key Vault and creates BlobServiceClient.
+    Used for downloading CSV files and moving blobs between folders.
+
+    Returns:
+        BlobServiceClient: Azure Blob Storage client authenticated via connection string
+    """
     key_vault_url = os.environ.get("KEY_VAULT_URL")
     secret_name_storage = "AzureStorageConnectionString"  # nosec B105
 
@@ -213,7 +552,37 @@ def get_db_connection(timeout: int = 30):
 
 @dataclass
 class ProcessingResult:
-    """Result of a processing operation"""
+    """
+    Result of a processing operation (ETL phase result)
+
+    BusinessCaseID: BC-DA-002
+
+    Returned by each of the 5 ETL phase functions to indicate success/failure
+    and provide detailed information about what happened during processing.
+
+    Attributes:
+        success (bool): True if phase completed successfully, False otherwise
+        message (str): Human-readable summary message (e.g., "Phase 1: Extract Complete")
+        details (Dict[str, Any]): Additional context about the result:
+            - phase_completed (str): Which phase finished (e.g., "Phase 1: Extract")
+            - records_processed (int): Number of records processed
+            - records_succeeded (int): Number of successful operations
+            - records_failed (int): Number of failed operations
+            - error_details (str): Detailed error message if failure
+        error (Optional[Exception]): Exception object if error occurred
+
+    Example:
+        >>> result = ProcessingResult(
+        ...     success=True,
+        ...     message="Phase 2: Staging Complete",
+        ...     details={
+        ...         "phase_completed": "Phase 2: Staging",
+        ...         "records_processed": 150,
+        ...         "records_succeeded": 148,
+        ...         "records_failed": 2
+        ...     }
+        ... )
+    """
 
     success: bool
     message: str
@@ -223,7 +592,82 @@ class ProcessingResult:
 
 @dataclass
 class ProcessingContext:
-    """Context for file processing operations"""
+    """
+    Context for file processing operations (passed through all 5 ETL phases)
+
+    BusinessCaseID: BC-DA-002
+
+    This dataclass carries all necessary context and configuration through the
+    5-phase ETL pipeline. Each phase function receives this context and uses it
+    to access file information, database connections, and processing parameters.
+
+    Attributes:
+        file_batch_id (str): UUID identifying this file processing batch
+            - Generated once at start of processing
+            - Used to link all database records for this file
+            - Stored in stg_device_activation_delta.file_id
+
+        source_filename (str): Original CSV filename (e.g., "MedicalGuardian_DeviceActivation_20251224_Delta.csv")
+            - Used for logging and audit trail
+            - Stored in file_processing_log.filename
+
+        container_name (str): Azure Blob Storage container name
+            - Default: "fs-ops" (Operations campaigns)
+            - Standard Device Activation: "fs-device-activation"
+            - Used for blob download and movement operations
+
+        uploaded_by_user (str): User/system that uploaded the file
+            - Default: "AzureFunction" (automated upload)
+            - Could be: "User123" (manual upload)
+            - Stored in file_processing_log.uploaded_by
+
+        error_threshold_pct (float): Maximum allowed error percentage for Phase 2 (Staging)
+            - Default: 10.0 (10%)
+            - If > 10% of rows fail INSERT → Abort entire file
+            - Rationale: Prevents processing files with systematic data quality issues
+
+        log_level (str): Logging level for processing operations
+            - Default: "INFO"
+            - Options: "DEBUG", "INFO", "WARNING", "ERROR"
+            - Controls verbosity of logging output
+
+        correlation_id (Optional[str]): UUID for distributed tracing
+            - Auto-generated in __post_init__ if None
+            - Used to link log entries across all phases
+            - Helps trace file processing flow in Application Insights
+
+        campaign_id (Optional[str]): Explicit campaign UUID for Operations campaigns
+            - None: Use standard Device Activation campaign lookup
+            - UUID string: Override with specific campaign (e.g., Medicaid, DTC/MA)
+            - Used in operations_device_activation_file_processor.py
+
+        campaign_name (Optional[str]): Campaign display name
+            - Example: "Device Activation - Medicaid"
+            - Used for logging and audit trail
+            - Helps identify which campaign processed this file
+
+        blob_content (Optional[bytes]): Raw CSV bytes from blob trigger
+            - None: Download blob using blob_name
+            - Bytes: Use pre-downloaded content (from blob trigger)
+            - Optimization for blob-triggered functions
+
+    Example:
+        >>> context = ProcessingContext(
+        ...     file_batch_id=str(uuid.uuid4()),
+        ...     source_filename="MedicalGuardian_DeviceActivation_20251224_Delta.csv",
+        ...     container_name="fs-device-activation",
+        ...     uploaded_by_user="AzureFunction",
+        ...     error_threshold_pct=10.0,
+        ...     campaign_id="abc-123-def-456"
+        ... )
+        >>> print(context.correlation_id)  # Auto-generated UUID
+        "xyz-789-uvw-012"
+
+    Notes:
+        - Context is immutable after creation (dataclass frozen=False by default)
+        - Passed through all 5 phase functions: extract → load_to_staging → validate → transform → audit
+        - correlation_id enables distributed tracing across Azure Functions and Application Insights
+    """
 
     file_batch_id: str
     source_filename: str
@@ -1810,6 +2254,86 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 )
         else:
             logger.error(f"❌ [TRANSFORM] No enrollments found for campaign_id: {campaign_id}")
+
+        # Step 4.5: MERGE INTO member_identifiers (save monitoring_system_id)
+        logger.info(
+            "💾 [TRANSFORM] Step 4.5: Upserting member identifiers (monitoring_system_id)..."
+        )
+
+        merge_identifiers_query = """
+        MERGE engage360.member_identifiers AS tgt
+        USING (
+            SELECT DISTINCT
+                m.member_id,
+                'monitoring_system_id' AS id_type,
+                stg.monitoring_system_id AS id_value
+            FROM engage360_stg.stg_device_activation_delta stg
+            INNER JOIN engage360.members m
+                ON m.org_id = stg.org_id
+                AND m.salesforce_account_number = stg.salesforce_account_number
+            WHERE stg.file_batch_id = %s
+              AND stg.processing_status = 'TRANSFORMING'
+              AND stg.monitoring_system_id IS NOT NULL
+              AND LTRIM(RTRIM(stg.monitoring_system_id)) != ''
+        ) AS src
+        ON tgt.member_id = src.member_id AND tgt.id_type = src.id_type
+        WHEN MATCHED THEN
+            UPDATE SET
+                id_value = src.id_value
+        WHEN NOT MATCHED THEN
+            INSERT (
+                member_identifier_id, member_id, id_type, id_value, created_ts
+            )
+            VALUES (
+                NEWID(), src.member_id, src.id_type, src.id_value, SYSDATETIMEOFFSET()
+            );
+        """
+
+        cursor.execute(merge_identifiers_query, (context.file_batch_id,))
+        identifiers_affected = cursor.rowcount
+        logger.info(
+            f"✅ [TRANSFORM] MERGE INTO member_identifiers complete - "
+            f"{identifiers_affected} rows affected"
+        )
+
+        # Verification query - sample the inserted identifiers
+        if identifiers_affected > 0:
+            verify_identifiers_query = """
+            SELECT TOP 5
+                mi.member_identifier_id,
+                m.first_name,
+                m.last_name,
+                mi.id_type,
+                mi.id_value,
+                mi.created_ts
+            FROM engage360.member_identifiers mi
+            INNER JOIN engage360.members m ON mi.member_id = m.member_id
+            WHERE mi.member_id IN (
+                SELECT DISTINCT m.member_id
+                FROM engage360_stg.stg_device_activation_delta stg
+                INNER JOIN engage360.members m
+                    ON m.org_id = stg.org_id
+                    AND m.salesforce_account_number = stg.salesforce_account_number
+                WHERE stg.file_batch_id = %s
+                  AND stg.monitoring_system_id IS NOT NULL
+            )
+              AND mi.id_type = 'monitoring_system_id'
+            ORDER BY mi.created_ts DESC
+            """
+            cursor.execute(verify_identifiers_query, (context.file_batch_id,))
+            verify_results = cursor.fetchall()
+
+            if verify_results:
+                logger.info("🔍 [TRANSFORM] Sample member_identifiers (monitoring_system_id):")
+                for row in verify_results:
+                    logger.info(
+                        f"   identifier_id={row[0]}, member='{row[1]} {row[2]}', "
+                        f"type={row[3]}, value={row[4]}"
+                    )
+            else:
+                logger.warning("⚠️ [TRANSFORM] Verification query returned no results")
+        else:
+            logger.info("ℹ️ [TRANSFORM] No monitoring_system_id values found in this batch")
 
         # Step 5: Mark staging as PROCESSED
         update_staging_query = """
