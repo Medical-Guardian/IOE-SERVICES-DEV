@@ -195,8 +195,18 @@ partner_name,campaign_name_source,salesforce_account_id,salesforce_account_numbe
 - **Description:** Unique Device Identifier (UDI)
 - **Format:** 5-50 characters
 - **Example:** `UDI-MG-2025-001234`
-- **Validation:** Required, non-empty, 5-50 characters
-- **Notes:** Used as device_id (primary key) in member_devices table
+- **Validation:**
+  - Required, non-empty, 5-50 characters
+  - **File-level check:** Each device_udi must be associated with only ONE salesforce_account_id per file
+  - If the same device_udi appears with multiple different salesforce_account_id values, ALL affected rows will be rejected
+- **Processing:**
+  - Scientific notation converted to full number (e.g., `9.17E+11` → `917000000000`)
+  - Used as device_id (primary key) in member_devices table
+- **Notes:**
+  - A single device can only belong to one Salesforce account
+  - If multiple rows have the same device_udi, they must ALL have the same salesforce_account_id
+  - Duplicate device_udi with SAME account is allowed (e.g., updating device data)
+  - Duplicate device_udi with DIFFERENT accounts will cause file rejection
 
 #### 15. **device_name** (REQUIRED)
 - **Type:** String
@@ -429,6 +439,7 @@ The sample file contains 10 test records demonstrating:
 | 17 | **Contact Method** | At least one of: primary_phone, email, or device_phone required |
 | 18 | enrollment_status | ENROLL/UPDATE/UNENROLL (+ past tense, case-insensitive) |
 | 19 | unenrollment_reason | Required if enrollment_status = UNENROLL |
+| 20 | device_udi | No duplicate across different salesforce_account_id (file-level check) |
 
 ---
 
@@ -519,6 +530,29 @@ The sample file contains 10 test records demonstrating:
 - Valid: `Member deceased`
 - Valid: `Duplicate enrollment`
 - Valid: `Member relocated - out of coverage area`
+
+### ❌ Error: "Duplicate device_udi 'UDI-123' used by multiple accounts: [ACC-001, ACC-002]"
+**Fix:** Each device can only belong to one Salesforce account. If you need to transfer a device from one account to another:
+1. First unenroll the device from the old account (use enrollment_status = UNENROLL)
+2. Then enroll the device to the new account in a separate file upload
+
+**Example of Invalid File:**
+```csv
+salesforce_account_id,device_udi,...
+ACC-001,UDI-123,...  ← First account using device UDI-123
+ACC-002,UDI-123,...  ← ERROR: Different account trying to use same device
+```
+
+**Example of Valid File (Same Account):**
+```csv
+salesforce_account_id,device_udi,...
+ACC-001,UDI-123,...  ← First row
+ACC-001,UDI-123,...  ← OK: Same account can appear multiple times (e.g., updating data)
+```
+
+**Notes:**
+- All rows with the duplicate device_udi will be rejected (not just the duplicates)
+- To fix: Remove or correct the rows so each device_udi belongs to only one account
 
 ---
 

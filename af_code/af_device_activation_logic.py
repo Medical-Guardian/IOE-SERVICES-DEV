@@ -1531,6 +1531,88 @@ def validate_and_cleanse_data_before_insert(
             f"{context.error_threshold_pct}%"
         )
 
+    # ===================================================================
+    # FILE-LEVEL VALIDATION: Check for duplicate device_udi across different accounts
+    # ===================================================================
+    logger.info("🔍 [VALIDATION] Checking for duplicate device_udi across different accounts...")
+
+    validated_rows = df[df["validation_status"] == "VALIDATED"].copy()
+
+    if len(validated_rows) > 0:
+        # Group by device_udi and count distinct salesforce_account_id values
+        device_account_counts = (
+            validated_rows.groupby("device_udi")["salesforce_account_id"]
+            .agg(["nunique", lambda x: list(x)])
+            .reset_index()
+        )
+        device_account_counts.columns = ["device_udi", "account_count", "account_ids"]
+
+        # Find device_udi values used by multiple different accounts
+        duplicate_devices = device_account_counts[device_account_counts["account_count"] > 1]
+
+        if len(duplicate_devices) > 0:
+            logger.warning(
+                f"⚠️ [VALIDATION] Found {len(duplicate_devices)} device_udi values "
+                f"used by multiple different salesforce_account_id values"
+            )
+
+            # Mark all affected rows as FAILED
+            duplicate_count = 0
+            for _, dup_row in duplicate_devices.iterrows():
+                device_udi = dup_row["device_udi"]
+                account_ids = dup_row["account_ids"]
+
+                # Get indices of all rows with this device_udi
+                affected_indices = df[df["device_udi"] == device_udi].index
+
+                # Build error message
+                account_ids_str = ", ".join([str(acc_id) for acc_id in account_ids])
+                error_msg = (
+                    f"Duplicate device_udi '{device_udi}' used by multiple accounts: [{account_ids_str}]. "
+                    f"Each device must belong to only one account."
+                )
+
+                # Mark all affected rows as FAILED
+                for idx in affected_indices:
+                    df.at[idx, "validation_status"] = "VALIDATION_ERROR"
+                    # Prepend to existing error message if any
+                    existing_error = df.at[idx, "error_message"]
+                    if existing_error:
+                        df.at[idx, "error_message"] = f"{error_msg}; {existing_error}"
+                    else:
+                        df.at[idx, "error_message"] = error_msg
+
+                    # Also update error_details
+                    existing_details = df.at[idx, "error_details"]
+                    if existing_details:
+                        df.at[idx, "error_details"] = f"{error_msg}\n{existing_details}"
+                    else:
+                        df.at[idx, "error_details"] = error_msg
+
+                duplicate_count += len(affected_indices)
+
+                logger.warning(
+                    f"   ❌ device_udi='{device_udi}' used by accounts: {account_ids_str} "
+                    f"({len(affected_indices)} rows affected)"
+                )
+
+            validation_errors_count += duplicate_count
+            logger.error(
+                f"❌ [VALIDATION] File-level validation FAILED: "
+                f"{duplicate_count} rows with duplicate device_udi across different accounts"
+            )
+
+            # Recalculate error rate after file-level validation
+            error_rate = (validation_errors_count / total_rows * 100) if total_rows > 0 else 0
+            logger.info(
+                f"📊 [VALIDATION] Updated error count: "
+                f"{validation_errors_count}/{total_rows} errors ({error_rate:.1f}%)"
+            )
+        else:
+            logger.info("✅ [VALIDATION] No duplicate device_udi across different accounts found")
+    else:
+        logger.info("ℹ️ [VALIDATION] No validated rows to check for duplicates")
+
     return df
 
 
