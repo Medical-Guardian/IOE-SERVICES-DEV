@@ -1,8 +1,8 @@
 # Device Activation CSV - Required Fields Update
 
-**Date:** 2025-12-29
+**Date:** 2025-12-30
 **Change Type:** Validation Enhancement
-**Impact:** CSV files must now include 26 required fields (up from 9)
+**Impact:** CSV files must now include 25 required fields (up from 9)
 
 ---
 
@@ -13,7 +13,7 @@
 - **monitoring_system_id** - Monitoring system identifier
 
 ### Previously Optional Fields Now REQUIRED
-The following 17 fields are now mandatory:
+The following 16 fields are now mandatory:
 
 1. **salesforce_account_number** - Primary matching key for member records
 2. **member_email** - Member's email address (must be valid format)
@@ -28,13 +28,12 @@ The following 17 fields are now mandatory:
 11. **device_phone_number** - Device phone number (must be valid US phone)
 12. **fall_detection** - Fall detection setting (true/false, 1/0, yes/no)
 13. **powersaver_mode** - Power saving mode (Default/Standard/Battery Saver)
-14. **campaign_parameters** - Campaign configuration parameters
 
 ---
 
-## Complete List of 26 Required Fields
+## Complete List of 25 Required Fields
 
-### Always Required (24 fields)
+### Always Required (23 fields)
 
 | # | Field Name | Type | Format/Valid Values | Default Value |
 |---|------------|------|---------------------|---------------|
@@ -60,15 +59,20 @@ The following 17 fields are now mandatory:
 | 20 | device_phone_number | String | 10-digit US phone | - |
 | 21 | fall_detection | String | true/false, yes/no, 1/0 | - |
 | 22 | powersaver_mode | String | Default/Standard/Battery Saver | - |
-| 23 | campaign_parameters | String | Any string (config params) | - |
-| 24 | monitoring_system_id | String | Monitoring system ID | - |
-| 25 | enrollment_status | String | ENROLL/UPDATE/UNENROLL | 'ENROLL' (if empty) |
+| 23 | monitoring_system_id | String | Monitoring system ID | - |
+| 24 | enrollment_status | String | ENROLL/UPDATE/UNENROLL | 'ENROLL' (if empty) |
 
 ### Conditionally Required (1 field)
 
 | # | Field Name | Type | Condition | Format |
 |---|------------|------|-----------|--------|
-| 26 | unenrollment_reason | String | REQUIRED when enrollment_status = 'UNENROLL' | Any string |
+| 25 | unenrollment_reason | String | REQUIRED when enrollment_status = 'UNENROLL' | Any string |
+
+### Optional Fields (1 field)
+
+| # | Field Name | Type | Description | Default Value |
+|---|------------|------|-------------|---------------|
+| 26 | campaign_parameters | String | Campaign configuration parameters (can be empty) | - |
 
 ---
 
@@ -98,7 +102,6 @@ If any required field is missing, you'll receive specific error messages:
 - ❌ `device_phone_number is required`
 - ❌ `fall_detection is required`
 - ❌ `powersaver_mode is required`
-- ❌ `campaign_parameters is required`
 - ❌ `monitoring_system_id is required`
 
 ### Format Validation Errors
@@ -129,7 +132,8 @@ Ensure all rows have values for:
 - `device_phone_number`
 - `fall_detection`
 - `powersaver_mode`
-- `campaign_parameters`
+
+**Note:** `campaign_parameters` is now optional and can be left empty.
 
 ### Step 3: Use Correct Formats
 - **fall_detection**: Use `1`/`0`, `true`/`false`, or `yes`/`no` (case-insensitive)
@@ -149,8 +153,10 @@ These fields can be left empty and will use defaults:
 ## Example Valid Row
 
 ```csv
-Medical Guardian,Device Activation - Medicaid,001ABC123,ACC-123456,John,Doe,5551234567,john.doe@email.com,123 Main St,New York,NY,10001,US,1980-01-15,America/New_York,EN,UDI-123456,MGMini,MedScope,5559876543,1,Standard,test_params,a3lR30000012HU1IAM,ENROLL,,Y
+Medical Guardian,Device Activation - Medicaid,001ABC123,ACC-123456,John,Doe,5551234567,john.doe@email.com,123 Main St,New York,NY,10001,US,1980-01-15,America/New_York,EN,UDI-123456,MGMini,MedScope,5559876543,1,Standard,,a3lR30000012HU1IAM,ENROLL,,Y
 ```
+
+**Note:** In this example, `campaign_parameters` is empty (two consecutive commas `,,`) which is now allowed.
 
 **Field-by-field breakdown:**
 - partner_name: `Medical Guardian`
@@ -175,7 +181,7 @@ Medical Guardian,Device Activation - Medicaid,001ABC123,ACC-123456,John,Doe,5551
 - device_phone_number: `5559876543`
 - fall_detection: `1` (true)
 - powersaver_mode: `Standard`
-- campaign_parameters: `test_params`
+- campaign_parameters: (empty - optional field)
 - monitoring_system_id: `a3lR30000012HU1IAM`
 - enrollment_status: `ENROLL`
 - unenrollment_reason: (empty - not unenrolling)
@@ -208,7 +214,7 @@ Before uploading CSV to production:
 
 - [ ] Added `campaign_name_source` column
 - [ ] Added `monitoring_system_id` column
-- [ ] All 26 required fields populated for every row
+- [ ] All 25 required fields populated for every row
 - [ ] `salesforce_account_number` not empty
 - [ ] `member_email` is valid email format
 - [ ] All 5 address fields populated (street, city, state, zip, country)
@@ -218,8 +224,8 @@ Before uploading CSV to production:
 - [ ] `device_phone_number` is valid 10-digit phone
 - [ ] `fall_detection` uses true/false, yes/no, or 1/0
 - [ ] `powersaver_mode` uses Default/Standard/Battery Saver
-- [ ] `campaign_parameters` not empty
 - [ ] `monitoring_system_id` not empty
+- [ ] `campaign_parameters` can be empty (optional)
 - [ ] Test file uploaded to `fs-device-activation/landing/`
 - [ ] Verify file moves to `processed/` (not `error/`)
 

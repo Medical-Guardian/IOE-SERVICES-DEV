@@ -40,7 +40,7 @@ This document describes the CSV file format for Device Activation campaign membe
 
 ### Total Fields: 27
 
-**✅ UPDATED 2025-12-29:** Added 2 new required fields (campaign_name_source, monitoring_system_id) and made 17 previously optional fields REQUIRED.
+**✅ UPDATED 2025-12-30:** Added 2 new required fields (campaign_name_source, monitoring_system_id) and made 16 previously optional fields REQUIRED. Note: `campaign_parameters` is now OPTIONAL (can be empty).
 
 The CSV file must include a header row with the following column names (case-sensitive):
 

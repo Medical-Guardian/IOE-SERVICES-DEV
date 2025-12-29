@@ -959,7 +959,7 @@ def get_device_activation_schema() -> Optional[DataFrameSchema]:
             "fall_detection": Column(str, nullable=False),  # REQUIRED - CHANGED from fall_detection_status
             "powersaver_mode": Column(str, nullable=False),  # REQUIRED - CHANGED from battery_status
             # Campaign tracking
-            "campaign_parameters": Column(str, nullable=False),  # REQUIRED
+            "campaign_parameters": Column(str, nullable=True),  # OPTIONAL
             "monitoring_system_id": Column(str, nullable=False),  # REQUIRED
             "enrollment_status": Column(str, nullable=True),
             "unenrollment_reason": Column(str, nullable=True),  # NEW
@@ -1385,14 +1385,7 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, "device_name_clean"] = str(device_name).strip()
 
         # ===================================================================
-        # 10.5. Campaign Parameters Validation (REQUIRED)
-        # ===================================================================
-        campaign_parameters = str(row.get("campaign_parameters", "")).strip()
-        if not campaign_parameters:
-            row_errors.append("campaign_parameters is required")
-
-        # ===================================================================
-        # 10.6. Monitoring System ID Validation (REQUIRED)
+        # 10.5. Monitoring System ID Validation (REQUIRED)
         # ===================================================================
         monitoring_system_id = str(row.get("monitoring_system_id", "")).strip()
         if not monitoring_system_id:
