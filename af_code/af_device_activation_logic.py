@@ -930,37 +930,37 @@ def get_device_activation_schema() -> Optional[DataFrameSchema]:
         {
             # Campaign metadata (first in actual CSV)
             "partner_name": Column(str, nullable=False),
-            "campaign_name_source": Column(str, nullable=True),  # NEW
+            "campaign_name_source": Column(str, nullable=False),  # REQUIRED
             # Member identity
-            "salesforce_account_number": Column(str, nullable=True),
+            "salesforce_account_number": Column(str, nullable=False),  # REQUIRED - primary matching key
             "salesforce_account_id": Column(str, nullable=False),
             "member_first_name": Column(str, nullable=False),
             "member_last_name": Column(str, nullable=False),
             # Contact
             "member_phone_number": Column(str, nullable=False),
-            "member_email": Column(str, nullable=True),
+            "member_email": Column(str, nullable=False),  # REQUIRED
             # Address (5 separate fields - will be combined)
-            "member_address_street": Column(str, nullable=True),  # NEW
-            "member_address_city": Column(str, nullable=True),  # NEW
-            "member_address_state": Column(str, nullable=True),  # NEW
-            "member_address_zip": Column(str, nullable=True),  # NEW
+            "member_address_street": Column(str, nullable=False),  # REQUIRED
+            "member_address_city": Column(str, nullable=False),  # REQUIRED
+            "member_address_state": Column(str, nullable=False),  # REQUIRED
+            "member_address_zip": Column(str, nullable=False),  # REQUIRED
             "member_address_country": Column(str, nullable=True),  # NEW
             # Demographics
-            "member_dob": Column(str, nullable=True),  # RENAMED from dob
+            "member_dob": Column(str, nullable=False),  # REQUIRED - RENAMED from dob
             "member_timezone": Column(str, nullable=False),  # RENAMED from customer_timezone
             "language_pref": Column(str, nullable=True),
             # Device info
             "device_udi": Column(str, nullable=False),
-            "device_name": Column(str, nullable=True),
-            "member_brand": Column(str, nullable=True),  # RENAMED from brand
+            "device_name": Column(str, nullable=False),  # REQUIRED
+            "member_brand": Column(str, nullable=False),  # REQUIRED - RENAMED from brand
             # NOTE: is_device_callable NOT in CSV - inferred from device_phone_number during validation
-            "device_phone_number": Column(str, nullable=True),
+            "device_phone_number": Column(str, nullable=False),  # REQUIRED
             # Device status (NEW format: numeric 1/0 instead of text)
-            "fall_detection": Column(str, nullable=True),  # CHANGED from fall_detection_status
-            "powersaver_mode": Column(str, nullable=True),  # CHANGED from battery_status
+            "fall_detection": Column(str, nullable=False),  # REQUIRED - CHANGED from fall_detection_status
+            "powersaver_mode": Column(str, nullable=False),  # REQUIRED - CHANGED from battery_status
             # Campaign tracking
-            "campaign_parameters": Column(str, nullable=True),  # NEW
-            "monitoring_system_id": Column(str, nullable=True),  # NEW
+            "campaign_parameters": Column(str, nullable=False),  # REQUIRED
+            "monitoring_system_id": Column(str, nullable=False),  # REQUIRED
             "enrollment_status": Column(str, nullable=True),
             "unenrollment_reason": Column(str, nullable=True),  # NEW
         },
@@ -1057,8 +1057,19 @@ def validate_and_cleanse_data_before_insert(
         if not salesforce_account_id or salesforce_account_id == "":
             row_errors.append("salesforce_account_id is required")
 
-        str(row.get("salesforce_account_number", "")).strip()
-        # Account number is optional but useful for matching
+        # ===================================================================
+        # 2.5. Salesforce Account Number Validation (REQUIRED - PRIMARY MATCHING KEY)
+        # ===================================================================
+        salesforce_account_number = str(row.get("salesforce_account_number", "")).strip()
+        if not salesforce_account_number:
+            row_errors.append("salesforce_account_number is required")
+
+        # ===================================================================
+        # 2.6. Campaign Name Source Validation (REQUIRED)
+        # ===================================================================
+        campaign_name_source = str(row.get("campaign_name_source", "")).strip()
+        if not campaign_name_source:
+            row_errors.append("campaign_name_source is required")
 
         # ===================================================================
         # 3. Phone Number Validation and Standardization
@@ -1071,11 +1082,15 @@ def validate_and_cleanse_data_before_insert(
         else:
             df.at[idx, "primary_phone_clean"] = standardized_phone
 
-        # Device phone (optional)
+        # Device phone (REQUIRED)
         device_phone = row.get("device_phone", "") or row.get("device_phone_number", "")
-        if device_phone and str(device_phone).strip():
+        if not device_phone or not str(device_phone).strip():
+            row_errors.append("device_phone_number is required")
+        else:
             standardized_device_phone = standardize_phone(device_phone)
-            if standardized_device_phone:
+            if not standardized_device_phone:
+                row_errors.append(f"Invalid device_phone_number: '{device_phone}'")
+            else:
                 df.at[idx, "device_phone_clean"] = standardized_device_phone
 
         # ===================================================================
@@ -1092,6 +1107,9 @@ def validate_and_cleanse_data_before_insert(
         else:
             # Remove special characters but keep letters, spaces, and apostrophes
             cleaned_first = re.sub(r"[^a-zA-Z\s']", "", str(first_name))
+
+            # Strip leading/trailing apostrophes (e.g., 'John' → John, neil' → neil, but O'Neil stays O'Neil)
+            cleaned_first = cleaned_first.strip("'")
 
             # Validate length after cleaning
             if len(cleaned_first) > 50:
@@ -1112,6 +1130,9 @@ def validate_and_cleanse_data_before_insert(
         else:
             # Remove special characters but keep letters, spaces, and apostrophes
             cleaned_last = re.sub(r"[^a-zA-Z\s']", "", str(last_name))
+
+            # Strip leading/trailing apostrophes (e.g., 'Smith' → Smith, O'Brien' → O'Brien, but O'Neil stays O'Neil)
+            cleaned_last = cleaned_last.strip("'")
 
             # Validate length after cleaning
             if len(cleaned_last) > 50:
@@ -1177,11 +1198,13 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, "language_pref_clean"] = "EN"  # Default to English
 
         # ===================================================================
-        # 7. Date of Birth Validation (Auto-detect format, convert to YYYY-MM-DD)
+        # 7. Date of Birth Validation (REQUIRED - Auto-detect format, convert to YYYY-MM-DD)
         # ===================================================================
         # Support both column names (pre and post column mapping)
         dob = row.get("dob", "") or row.get("member_dob", "")
-        if dob and str(dob).strip():
+        if not dob or not str(dob).strip():
+            row_errors.append("member_dob is required")
+        else:
             dob_parsed = None
             # Try multiple date formats (most common first)
             date_formats = [
@@ -1216,6 +1239,22 @@ def validate_and_cleanse_data_before_insert(
         city = str(row.get("city", "") or row.get("member_address_city", "")).strip()
         state = str(row.get("state", "") or row.get("member_address_state", "")).strip()
         zip_code = str(row.get("zip", "") or row.get("member_address_zip", "")).strip()
+        country = str(row.get("address_country", "") or row.get("member_address_country", "")).strip()
+
+        # Validate all 5 address fields are present (REQUIRED)
+        if not street:
+            row_errors.append("member_address_street is required")
+        if not city:
+            row_errors.append("member_address_city is required")
+        if not state:
+            row_errors.append("member_address_state is required")
+        if not zip_code:
+            row_errors.append("member_address_zip is required")
+
+        # member_address_country - require value but default to 'US'
+        if not country:
+            country = "US"  # Default to United States
+        df.at[idx, "address_country"] = country
 
         # Combine address fields
         if street and city and state and zip_code:
@@ -1227,22 +1266,23 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, "service_address_clean"] = ", ".join(parts)
 
         # ===================================================================
-        # 8. Email Validation and Lowercase Conversion (optional)
+        # 8. Email Validation and Lowercase Conversion (REQUIRED)
         # ===================================================================
         # Support both column names (pre and post column mapping)
         email = row.get("email", "") or row.get("member_email", "")
-        if email and str(email).strip():
+        if not email or not str(email).strip():
+            row_errors.append("member_email is required")
+            df.at[idx, "email"] = None
+        else:
             email_str = str(email).strip()
 
-            # Validate format first
+            # Validate format
             if not validate_email(email_str):
                 row_errors.append(f"Invalid email format: '{email_str}'")
                 df.at[idx, "email"] = None
             else:
                 # Convert to lowercase for consistency (emails are case-insensitive)
                 df.at[idx, "email"] = email_str.lower()
-        else:
-            df.at[idx, "email"] = None
 
         # ===================================================================
         # 8.5. Contact Method Validation (BUSINESS RULE)
@@ -1285,11 +1325,14 @@ def validate_and_cleanse_data_before_insert(
                 row_errors.append(f"device_udi length must be 5-50 characters: '{device_udi}'")
 
         # ===================================================================
-        # 10. Device Status Validation (NO CONVERSION - Keep Original Values)
+        # 10. Device Status Validation (REQUIRED)
         # ===================================================================
-        # Fall Detection: Normalize to 'true'/'false' strings (for BIT column conversion in MERGE)
+        # Fall Detection: Normalize to 'true'/'false' strings (for BIT column conversion in MERGE) - REQUIRED
         fall_detection = row.get("fall_detection", "")
-        if fall_detection and str(fall_detection).strip():
+        if not fall_detection or not str(fall_detection).strip():
+            row_errors.append("fall_detection is required")
+            df.at[idx, "fall_detection_clean"] = None
+        else:
             fall_str = str(fall_detection).strip().lower()
             # Validate format: accept true/false, 1/0, yes/no
             if fall_str in ["true", "1", "1.0", "yes", "y"]:
@@ -1297,14 +1340,18 @@ def validate_and_cleanse_data_before_insert(
             elif fall_str in ["false", "0", "0.0", "no", "n", "f"]:
                 df.at[idx, "fall_detection_clean"] = "false"
             else:
-                # Invalid value - keep NULL for error tracking
+                # Invalid value - add error
+                row_errors.append(
+                    f"Invalid fall_detection value: '{fall_detection}' (must be true/false, 1/0, yes/no)"
+                )
                 df.at[idx, "fall_detection_clean"] = None
-        else:
-            df.at[idx, "fall_detection_clean"] = None
 
-        # PowerSaver Mode: Validate and normalize to Title Case (CASE-INSENSITIVE)
+        # PowerSaver Mode: Validate and normalize to Title Case (CASE-INSENSITIVE) - REQUIRED
         powersaver_mode = row.get("powersaver_mode", "") or row.get("battery_status", "")
-        if powersaver_mode and str(powersaver_mode).strip():
+        if not powersaver_mode or not str(powersaver_mode).strip():
+            row_errors.append("powersaver_mode is required")
+            df.at[idx, "powersaver_mode_clean"] = None
+        else:
             mode_str = str(powersaver_mode).strip().title()
             # Validate format: accept Default, Standard, Battery Saver (case-insensitive via .title())
             valid_modes = ["Default", "Standard", "Battery Saver"]
@@ -1312,25 +1359,44 @@ def validate_and_cleanse_data_before_insert(
                 df.at[idx, "powersaver_mode_clean"] = mode_str  # Store Title Case normalized value
                 logger.debug(f"✅ [VALIDATE] Row {idx}: Valid powersaver_mode='{mode_str}'")
             else:
-                # Invalid value - keep NULL for error tracking
+                # Invalid value - add error
+                row_errors.append(
+                    f"Invalid powersaver_mode: '{mode_str}' (must be: Default, Standard, or Battery Saver)"
+                )
                 df.at[idx, "powersaver_mode_clean"] = None
                 logger.warning(
                     f"⚠️ [VALIDATE] Row {idx}: Invalid powersaver_mode '{mode_str}' "
                     f"(expected: {', '.join(valid_modes)}). Value set to NULL."
                 )
-        else:
-            df.at[idx, "powersaver_mode_clean"] = None
 
-        # Member Brand: Map member_brand to brand_clean (for members.member_brand)
+        # Member Brand: Map member_brand to brand_clean (for members.member_brand) - REQUIRED
         # Support both column names (pre and post column mapping)
         member_brand = row.get("brand", "") or row.get("member_brand", "")
-        if member_brand and str(member_brand).strip():
+        if not member_brand or not str(member_brand).strip():
+            row_errors.append("member_brand is required")
+        else:
             df.at[idx, "brand_clean"] = str(member_brand).strip()
 
-        # Device Brand: Map device_name to device_name_clean (for member_devices.brand)
+        # Device Brand: Map device_name to device_name_clean (for member_devices.brand) - REQUIRED
         device_name = row.get("device_name", "")
-        if device_name and str(device_name).strip():
+        if not device_name or not str(device_name).strip():
+            row_errors.append("device_name is required")
+        else:
             df.at[idx, "device_name_clean"] = str(device_name).strip()
+
+        # ===================================================================
+        # 10.5. Campaign Parameters Validation (REQUIRED)
+        # ===================================================================
+        campaign_parameters = str(row.get("campaign_parameters", "")).strip()
+        if not campaign_parameters:
+            row_errors.append("campaign_parameters is required")
+
+        # ===================================================================
+        # 10.6. Monitoring System ID Validation (REQUIRED)
+        # ===================================================================
+        monitoring_system_id = str(row.get("monitoring_system_id", "")).strip()
+        if not monitoring_system_id:
+            row_errors.append("monitoring_system_id is required")
 
         # ===================================================================
         # 11. Delivery Date Validation - REMOVED (no longer required)

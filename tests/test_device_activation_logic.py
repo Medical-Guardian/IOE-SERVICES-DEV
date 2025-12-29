@@ -470,10 +470,10 @@ class TestRowLevelValidation:
                     "device_phone_number": "5559876543",
                     "is_device_callable": "1",
                     # Device status
-                    "fall_detection": "1",  # Will be converted to Active
-                    "battery_mode": "Standard",  # Will be converted to Good
+                    "fall_detection": "1",  # Will be converted to 'true'
+                    "powersaver_mode": "Standard",  # REQUIRED field
                     # Campaign tracking
-                    "campaign_parameters": "",
+                    "campaign_parameters": "test_params",  # REQUIRED field
                     "monitoring_system_id": "a3lR30000012HU1IAM",
                     "enrollment_status": "enrolled",
                     "unenrollment_reason": "",
@@ -526,7 +526,9 @@ class TestRowLevelValidation:
                     "device_phone_number": "5559876543",
                     "is_device_callable": "1",
                     "fall_detection": "1",
-                    "battery_mode": "Standard",
+                    "powersaver_mode": "Standard",
+                    "campaign_parameters": "test_params",
+                    "monitoring_system_id": "a3lR30000012HU1IAM",
                     "enrollment_status": "enrolled",
                 }
             ]
@@ -624,6 +626,7 @@ class TestPowerSaverModeValidation:
             "city": "Rochester",
             "state": "NY",
             "zip": "14623",
+            "member_address_country": "US",  # REQUIRED field
             "dob": "1970-01-01",
             "timezone": "America/New_York",
             "language_pref": "EN",
@@ -633,8 +636,9 @@ class TestPowerSaverModeValidation:
             "device_phone_number": "5559876543",
             "is_device_callable": "Y",
             "fall_detection": "true",
-            "campaign_parameters": "",
-            "monitoring_system_id": "",
+            "powersaver_mode": "Default",  # REQUIRED - tests will override
+            "campaign_parameters": "test_params",  # REQUIRED field
+            "monitoring_system_id": "a3lR30000012HU1IAM",  # REQUIRED field
             "enrollment_status": "ENROLL",
             "unenrollment_reason": "",
             "campaign_name_source": "Test Campaign",

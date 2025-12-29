@@ -38,12 +38,14 @@ This document describes the CSV file format for Device Activation campaign membe
 
 ## CSV File Structure
 
-### Total Fields: 24
+### Total Fields: 27
+
+**✅ UPDATED 2025-12-29:** Added 2 new required fields (campaign_name_source, monitoring_system_id) and made 17 previously optional fields REQUIRED.
 
 The CSV file must include a header row with the following column names (case-sensitive):
 
 ```csv
-salesforce_account_id,salesforce_account_number,member_first_name,member_last_name,primary_phone,email,service_address,city,state,zip,dob,timezone,language_pref,device_udi,device_name,brand,device_phone_number,is_device_callable,delivery_date,fall_detection_status,powersaver_mode,partner_name,customer_type,enrollment_status
+partner_name,campaign_name_source,salesforce_account_id,salesforce_account_number,member_first_name,member_last_name,member_phone_number,member_email,member_address_street,member_address_city,member_address_state,member_address_zip,member_address_country,member_dob,member_timezone,language_pref,device_udi,device_name,member_brand,device_phone_number,fall_detection,powersaver_mode,campaign_parameters,monitoring_system_id,enrollment_status,unenrollment_reason
 ```
 
 ---
@@ -60,13 +62,21 @@ salesforce_account_id,salesforce_account_number,member_first_name,member_last_na
 - **Validation:** Required, non-empty
 - **New Field:** ✅ This is a NEW field not used in DTC/Partner campaigns
 
-#### 2. **salesforce_account_number** (REQUIRED)
+#### 2. **campaign_name_source** (REQUIRED) ✅ NEW
+- **Type:** String
+- **Description:** Campaign name from source system
+- **Format:** Any string
+- **Example:** `Device Activation - Medicaid`, `Device Activation - Medicare`
+- **Validation:** Required, non-empty
+- **Notes:** Identifies the campaign in the source system
+
+#### 3. **salesforce_account_number** (REQUIRED)
 - **Type:** String
 - **Description:** Salesforce Account Number (business identifier)
 - **Format:** `ACC-XXXXXX`
 - **Example:** `ACC-100001`
 - **Validation:** Required, non-empty
-- **Notes:** Used as match key with org_id for MERGE into members table
+- **Notes:** Used as PRIMARY matching key with org_id for MERGE into members table
 
 #### 3. **member_first_name** (REQUIRED)
 - **Type:** String
@@ -76,7 +86,9 @@ salesforce_account_id,salesforce_account_number,member_first_name,member_last_na
 - **Validation:** Required, non-empty, max 50 characters after cleaning
 - **Processing:**
   - Special characters removed (keeps only letters, spaces, apostrophes)
-  - Example: `Huz@098` → `Huz`
+  - Leading/trailing apostrophes removed (e.g., `'John'` → `John`, `neil'` → `neil`)
+  - Middle apostrophes preserved (e.g., `O'Connor` → `O'Connor`)
+  - Example: `Huz@098` → `Huz`, `'John` → `John`, `neil'` → `neil`
   - Converted to Proper Case (John, Maria, O'Connor, McDonald)
 
 #### 4. **member_last_name** (REQUIRED)
@@ -87,7 +99,9 @@ salesforce_account_id,salesforce_account_number,member_first_name,member_last_na
 - **Validation:** Required, non-empty, max 50 characters after cleaning
 - **Processing:**
   - Special characters removed (keeps only letters, spaces, apostrophes)
-  - Example: `Syed'...` → `Syed'`
+  - Leading/trailing apostrophes removed (e.g., `'Smith'` → `Smith`, `O'Neil'` → `O'Neil`)
+  - Middle apostrophes preserved (e.g., `O'Brien` → `O'Brien`)
+  - Example: `Syed'...` → `Syed`, `'O'Connor` → `O'Connor`, `neil'` → `neil`
   - Converted to Proper Case (Smith, Garcia, O'Brien, McDonald)
 
 #### 5. **primary_phone** (REQUIRED)
@@ -227,17 +241,20 @@ salesforce_account_id,salesforce_account_number,member_first_name,member_last_na
 - **Notes:** Used to calculate activation_start_date (delivery_date + 2 business days)
 - **New Field:** ✅ This is a NEW field for Device Activation
 
-#### 20. **fall_detection_status** (OPTIONAL)
-- **Type:** String
-- **Description:** Status of fall detection feature on the device
-- **Valid Values:**
-  - `Active` - Fall detection is enabled and active
-  - `Inactive` - Fall detection is disabled
-  - `Not Applicable` - Device does not have fall detection
-  - `Unknown` - Status unknown
-- **Example:** `Active`, `Inactive`
-- **Validation:** If provided, must be one of the valid values
-- **Notes:** Can be empty/null
+#### 20. **fall_detection** (OPTIONAL)
+- **Type:** String (Boolean)
+- **Description:** Whether fall detection feature is enabled on the device
+- **Valid Values (case-insensitive, boolean-like):**
+  - **TRUE values:** `true`, `TRUE`, `True`, `1`, `1.0`, `yes`, `YES`, `y`, `Y`
+  - **FALSE values:** `false`, `FALSE`, `False`, `0`, `0.0`, `no`, `NO`, `n`, `N`, `f`, `F`
+- **Example:** `true`, `false`, `yes`, `no`, `1`, `0`
+- **Validation:** Must be boolean-like value (see above)
+- **Processing:** All TRUE values normalized to `"true"`, all FALSE values to `"false"`
+- **Storage:** Stored as BIT in database (1 = true, 0 = false)
+- **Notes:**
+  - Can be empty/null (stored as NULL in database)
+  - ⚠️ **IMPORTANT**: Do NOT use status strings like "Active" or "Inactive"
+  - Use simple boolean values: `true`/`false`, `yes`/`no`, or `1`/`0`
 - **New Field:** ✅ This is a NEW field for Device Activation
 
 #### 21. **powersaver_mode** (OPTIONAL)
@@ -282,12 +299,36 @@ salesforce_account_id,salesforce_account_number,member_first_name,member_last_na
 #### 24. **enrollment_status** (REQUIRED)
 - **Type:** String
 - **Description:** Enrollment action to perform
-- **Valid Values:**
-  - `ENROLL` - Enroll member in campaign
-  - `UNENROLL` - Remove member from campaign
-- **Example:** `ENROLL`
-- **Validation:** Must be ENROLL or UNENROLL
-- **Notes:** Most files will use ENROLL
+- **Valid Values (case-insensitive, accepts present and past tense):**
+  - **Present Tense:**
+    - `ENROLL` / `enroll` / `Enroll` → Creates new enrollment
+    - `UPDATE` / `update` / `Update` → Updates existing enrollment
+    - `UNENROLL` / `unenroll` / `Unenroll` → Removes member from campaign
+  - **Past Tense (also accepted):**
+    - `ENROLLED` / `enrolled` / `Enrolled` → Mapped to `ENROLL`
+    - `UPDATED` / `updated` / `Updated` → Mapped to `UPDATE`
+    - `UNENROLLED` / `unenrolled` / `Unenrolled` → Mapped to `UNENROLL`
+- **Example:** `ENROLL`, `update`, `Unenrolled`
+- **Validation:** Case-insensitive - all forms normalized to uppercase
+- **Processing:** All forms normalized to `ENROLL`, `UPDATE`, or `UNENROLL`
+- **Default:** Empty/blank values default to `ENROLL`
+- **Notes:**
+  - Most files will use `ENROLL` (for new device activations)
+  - Use `UPDATE` to refresh member/device data for existing enrollments
+  - If `enrollment_status = UNENROLL`, must provide `unenrollment_reason`
+
+#### 25. **unenrollment_reason** (CONDITIONAL)
+- **Type:** String
+- **Description:** Reason for removing member from campaign
+- **Format:** Any string
+- **Example:** `Device returned`, `Member deceased`, `Member declined service`, `Duplicate enrollment`
+- **Validation:** REQUIRED when `enrollment_status = UNENROLL`, optional otherwise
+- **Processing:** Stored as-is for audit trail
+- **Notes:**
+  - This field is ONLY required when unenrolling a member
+  - Can be blank/null for `ENROLL` and `UPDATE` actions
+  - Used for reporting and audit purposes
+  - No maximum length enforced
 
 ---
 
@@ -300,10 +341,11 @@ The sample file contains 10 test records demonstrating:
 - ✅ Multiple timezones (EST, CST, PST, MST)
 - ✅ Both customer types (DTC and MS)
 - ✅ Different device models (MG Classic, MG Premier, MG Mobile)
-- ✅ Various device statuses (Active, Inactive, Not Applicable, Unknown)
-- ✅ Various battery statuses (Good, Low, Critical, Charging, Unknown)
+- ✅ Fall detection values (true/false, yes/no, 1/0)
+- ✅ Various battery statuses (Default, Standard, Battery Saver)
 - ✅ Language preferences (EN, ES)
 - ✅ Different delivery dates (recent dates within 180-day window)
+- ✅ Enrollment statuses (ENROLL, UPDATE, UNENROLL)
 
 ---
 
@@ -315,8 +357,8 @@ The sample file contains 10 test records demonstrating:
 
 ### 2. **Validation**
 - Filename pattern validation
-- Pandera schema validation (24 fields)
-- Row-by-row validation (13 validation rules)
+- Pandera schema validation (25 fields)
+- Row-by-row validation (19 validation rules)
 - Error threshold check (10% default)
 
 ### 3. **Data Cleansing**
@@ -381,10 +423,12 @@ The sample file contains 10 test records demonstrating:
 | 11 | device_udi | Required, 5-50 characters |
 | 12 | delivery_date | Not future, not >180 days old |
 | 13 | customer_type | DTC or MS |
-| 14 | fall_detection_status | Active/Inactive/Not Applicable/Unknown (if provided) |
+| 14 | fall_detection | Boolean: true/false, yes/no, 1/0 (case-insensitive, if provided) |
 | 15 | powersaver_mode | Default/Standard/Battery Saver (case-insensitive, if provided) |
 | 16 | is_device_callable | Y or N |
 | 17 | **Contact Method** | At least one of: primary_phone, email, or device_phone required |
+| 18 | enrollment_status | ENROLL/UPDATE/UNENROLL (+ past tense, case-insensitive) |
+| 19 | unenrollment_reason | Required if enrollment_status = UNENROLL |
 
 ---
 
@@ -424,8 +468,12 @@ The sample file contains 10 test records demonstrating:
 ### ❌ Error: "Invalid customer_type"
 **Fix:** Use `DTC` or `MS` only
 
-### ❌ Error: "Invalid fall_detection_status"
-**Fix:** Use `Active`, `Inactive`, `Not Applicable`, or `Unknown` (or leave empty)
+### ❌ Error: "Invalid fall_detection format"
+**Fix:** Use boolean-like values: true/false, yes/no, 1/0 (case-insensitive)
+**Examples:**
+- Valid: `true`, `TRUE`, `yes`, `YES`, `1`, `y`, `Y`
+- Valid: `false`, `FALSE`, `no`, `NO`, `0`, `n`, `N`, `f`
+- Invalid: `Active`, `Inactive`, `enabled`, `disabled`
 
 ### ❌ Error: "Invalid powersaver_mode"
 **Fix:** Use `default`, `standard`, or `battery saver` (case-insensitive, or leave empty)
@@ -447,6 +495,31 @@ The sample file contains 10 test records demonstrating:
 ### ❌ Error: "At least one contact method required (primary_phone, email, or device_phone)"
 **Fix:** Provide at least one valid contact method - either primary_phone, email, or device_phone (cannot have all three empty)
 
+### ❌ Error: "Name contains leading/trailing apostrophes"
+**Fix:** Remove apostrophes at the start or end of names (they will be automatically removed during processing)
+**Examples:**
+- Input: `'John` → Processed as: `John`
+- Input: `neil'` → Processed as: `neil`
+- Input: `'O'Connor'` → Processed as: `O'Connor`
+- Valid: `O'Neil` → Stays as: `O'Neil` (middle apostrophe is correct)
+**Note:** This is informational - the system automatically fixes this, no action needed from file creator
+
+### ❌ Error: "Invalid enrollment_status"
+**Fix:** Use one of: ENROLL, UPDATE, UNENROLL (or past tense: enrolled, updated, unenrolled) - case-insensitive
+**Examples:**
+- Valid: `ENROLL`, `enroll`, `Enroll`, `EnRoLL`
+- Valid: `UPDATE`, `update`, `Updated`
+- Valid: `UNENROLL`, `unenrolled`, `Unenrolled`
+- Invalid: `enrol`, `add`, `remove`
+
+### ❌ Error: "unenrollment_reason is required when enrollment_status is 'UNENROLL'"
+**Fix:** Provide a reason when unenrolling a member
+**Examples:**
+- Valid: `Device returned`
+- Valid: `Member deceased`
+- Valid: `Duplicate enrollment`
+- Valid: `Member relocated - out of coverage area`
+
 ---
 
 ## Testing Checklist
@@ -454,7 +527,7 @@ The sample file contains 10 test records demonstrating:
 Before uploading a CSV file to production:
 
 - [ ] File name matches pattern: `MedicalGuardian_DeviceActivation_YYYYMMDD_Delta.csv`
-- [ ] CSV has header row with all 24 field names
+- [ ] CSV has header row with all 25 field names
 - [ ] All required fields are populated (no empty values)
 - [ ] Phone numbers are valid 10-digit US numbers
 - [ ] Timezones use IANA format (America/New_York, etc.)
@@ -463,8 +536,10 @@ Before uploading a CSV file to production:
 - [ ] Partner name is "Medical Guardian"
 - [ ] Device UDI is 5-50 characters
 - [ ] is_device_callable is Y or N
-- [ ] fall_detection_status uses valid values (if provided)
+- [ ] fall_detection uses boolean values: true/false, yes/no, 1/0 (if provided)
 - [ ] powersaver_mode uses valid values: default/standard/battery saver (if provided)
+- [ ] enrollment_status uses ENROLL/UPDATE/UNENROLL (any case, present/past tense)
+- [ ] unenrollment_reason provided if enrollment_status is UNENROLL
 - [ ] Test upload to `fs-device-activation/landing/`
 - [ ] Verify successful processing (file moves to `processed/`)
 - [ ] Check database for new records in members, member_devices, member_campaign_enrollments_enhanced
