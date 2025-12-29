@@ -71,18 +71,24 @@ salesforce_account_id,salesforce_account_number,member_first_name,member_last_na
 #### 3. **member_first_name** (REQUIRED)
 - **Type:** String
 - **Description:** Member's first name
-- **Format:** Any string
-- **Example:** `John`, `Maria`
-- **Validation:** Required, non-empty
-- **Processing:** Converted to Proper Case (John, Maria)
+- **Format:** Any string (letters, spaces, apostrophes only)
+- **Example:** `John`, `Maria`, `O'Connor`
+- **Validation:** Required, non-empty, max 50 characters after cleaning
+- **Processing:**
+  - Special characters removed (keeps only letters, spaces, apostrophes)
+  - Example: `Huz@098` → `Huz`
+  - Converted to Proper Case (John, Maria, O'Connor, McDonald)
 
 #### 4. **member_last_name** (REQUIRED)
 - **Type:** String
 - **Description:** Member's last name
-- **Format:** Any string
-- **Example:** `Smith`, `Garcia`
-- **Validation:** Required, non-empty
-- **Processing:** Converted to Proper Case (Smith, Garcia)
+- **Format:** Any string (letters, spaces, apostrophes only)
+- **Example:** `Smith`, `Garcia`, `O'Brien`
+- **Validation:** Required, non-empty, max 50 characters after cleaning
+- **Processing:**
+  - Special characters removed (keeps only letters, spaces, apostrophes)
+  - Example: `Syed'...` → `Syed'`
+  - Converted to Proper Case (Smith, Garcia, O'Brien, McDonald)
 
 #### 5. **primary_phone** (REQUIRED)
 - **Type:** String
@@ -98,6 +104,8 @@ salesforce_account_id,salesforce_account_number,member_first_name,member_last_na
 - **Format:** Valid email format
 - **Example:** `john.smith@email.com`
 - **Validation:** If provided, must be valid email format (contains @, domain)
+- **Processing:** Converted to lowercase for consistency (emails are case-insensitive)
+  - Example: `John.Doe@EXAMPLE.COM` → `john.doe@example.com`
 - **Notes:** Can be empty/null
 
 #### 7. **service_address** (REQUIRED)
@@ -364,18 +372,19 @@ The sample file contains 10 test records demonstrating:
 | 2 | salesforce_account_id | Required, non-empty |
 | 3 | salesforce_account_number | Required, non-empty |
 | 4 | primary_phone | Valid US phone, E.164 format |
-| 5 | member_first_name | Required, Proper Case |
-| 6 | member_last_name | Required, Proper Case |
+| 5 | member_first_name | Required, special chars removed, max 50 chars, Proper Case |
+| 6 | member_last_name | Required, special chars removed, max 50 chars, Proper Case |
 | 7 | timezone | Valid IANA timezone |
 | 8 | language_pref | EN, ES, or Other |
 | 9 | dob | Valid date format |
-| 10 | email | Valid email format (if provided) |
+| 10 | email | Valid email format, converted to lowercase (if provided) |
 | 11 | device_udi | Required, 5-50 characters |
 | 12 | delivery_date | Not future, not >180 days old |
 | 13 | customer_type | DTC or MS |
 | 14 | fall_detection_status | Active/Inactive/Not Applicable/Unknown (if provided) |
 | 15 | powersaver_mode | Default/Standard/Battery Saver (case-insensitive, if provided) |
 | 16 | is_device_callable | Y or N |
+| 17 | **Contact Method** | At least one of: primary_phone, email, or device_phone required |
 
 ---
 
@@ -420,6 +429,23 @@ The sample file contains 10 test records demonstrating:
 
 ### ❌ Error: "Invalid powersaver_mode"
 **Fix:** Use `default`, `standard`, or `battery saver` (case-insensitive, or leave empty)
+
+### ❌ Error: "member_first_name contains only invalid characters"
+**Fix:** Ensure first name contains at least some letters (special characters like @, #, numbers will be automatically removed)
+**Example:** `@@@###` is invalid, but `John123` becomes `John`
+
+### ❌ Error: "member_last_name contains only invalid characters"
+**Fix:** Ensure last name contains at least some letters (special characters like @, #, numbers will be automatically removed)
+**Example:** `12345` is invalid, but `Smith123` becomes `Smith`
+
+### ❌ Error: "member_first_name exceeds maximum length of 50 characters"
+**Fix:** Shorten first name to 50 characters or less (measured after special character removal)
+
+### ❌ Error: "member_last_name exceeds maximum length of 50 characters"
+**Fix:** Shorten last name to 50 characters or less (measured after special character removal)
+
+### ❌ Error: "At least one contact method required (primary_phone, email, or device_phone)"
+**Fix:** Provide at least one valid contact method - either primary_phone, email, or device_phone (cannot have all three empty)
 
 ---
 

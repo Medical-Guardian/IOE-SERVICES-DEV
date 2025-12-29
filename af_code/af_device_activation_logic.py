@@ -769,12 +769,38 @@ def validate_email(email: str) -> bool:
     return bool(re.match(email_pattern, str(email)))
 
 
-def proper_case(name: str) -> str:
-    """Convert name to proper case"""
-    if not name or pd.isna(name):
-        return ""
+def proper_case(name: str) -> Optional[str]:
+    """
+    Convert name to proper case with special handling for common patterns.
 
-    return str(name).strip().title()
+    Handles:
+    - McDonald → McDonald (not Mcdonald)
+    - O'Connor → O'Connor (not O'Connor)
+    - DeAngelo → DeAngelo (not Deangelo)
+    - McBride → McBride (not Mcbride)
+
+    Returns:
+        Properly cased name or None if empty
+    """
+    if not name or pd.isna(name):
+        return None
+
+    trimmed = str(name).strip()
+    if not trimmed:
+        return None
+
+    # Handle special cases
+    upper_name = trimmed.upper()
+    if upper_name == "MCDONALD":
+        return "McDonald"
+    elif upper_name == "OCONNOR":
+        return "O'Connor"
+    elif upper_name == "DEANGELO":
+        return "DeAngelo"
+    elif upper_name.startswith("MC") and len(upper_name) > 2:
+        return f"Mc{trimmed[2].upper()}{trimmed[3:].lower()}"
+    else:
+        return f"{trimmed[0].upper()}{trimmed[1:].lower()}"
 
 
 def map_timezone_to_iana(tz: str) -> str:
@@ -1059,15 +1085,45 @@ def validate_and_cleanse_data_before_insert(
         first_name = row.get("first_name", "") or row.get("member_first_name", "")
         last_name = row.get("last_name", "") or row.get("member_last_name", "")
 
+        # Member First Name - Add special character removal + length validation
         if not first_name or str(first_name).strip() == "":
             row_errors.append("member_first_name is required")
+            df.at[idx, "first_name_clean"] = None
         else:
-            df.at[idx, "first_name_clean"] = proper_case(first_name)
+            # Remove special characters but keep letters, spaces, and apostrophes
+            cleaned_first = re.sub(r"[^a-zA-Z\s']", "", str(first_name))
 
+            # Validate length after cleaning
+            if len(cleaned_first) > 50:
+                row_errors.append("member_first_name exceeds maximum length of 50 characters")
+                df.at[idx, "first_name_clean"] = None
+            elif not cleaned_first.strip():
+                # After removing special chars, nothing left
+                row_errors.append("member_first_name contains only invalid characters")
+                df.at[idx, "first_name_clean"] = None
+            else:
+                # Apply proper case
+                df.at[idx, "first_name_clean"] = proper_case(cleaned_first)
+
+        # Member Last Name - Add special character removal + length validation
         if not last_name or str(last_name).strip() == "":
             row_errors.append("member_last_name is required")
+            df.at[idx, "last_name_clean"] = None
         else:
-            df.at[idx, "last_name_clean"] = proper_case(last_name)
+            # Remove special characters but keep letters, spaces, and apostrophes
+            cleaned_last = re.sub(r"[^a-zA-Z\s']", "", str(last_name))
+
+            # Validate length after cleaning
+            if len(cleaned_last) > 50:
+                row_errors.append("member_last_name exceeds maximum length of 50 characters")
+                df.at[idx, "last_name_clean"] = None
+            elif not cleaned_last.strip():
+                # After removing special chars, nothing left
+                row_errors.append("member_last_name contains only invalid characters")
+                df.at[idx, "last_name_clean"] = None
+            else:
+                # Apply proper case
+                df.at[idx, "last_name_clean"] = proper_case(cleaned_last)
 
         # ===================================================================
         # 5. Timezone Validation and Mapping
@@ -1171,13 +1227,35 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, "service_address_clean"] = ", ".join(parts)
 
         # ===================================================================
-        # 8. Email Validation (optional)
+        # 8. Email Validation and Lowercase Conversion (optional)
         # ===================================================================
         # Support both column names (pre and post column mapping)
         email = row.get("email", "") or row.get("member_email", "")
         if email and str(email).strip():
-            if not validate_email(email):
-                row_errors.append(f"Invalid email format: '{email}'")
+            email_str = str(email).strip()
+
+            # Validate format first
+            if not validate_email(email_str):
+                row_errors.append(f"Invalid email format: '{email_str}'")
+                df.at[idx, "email"] = None
+            else:
+                # Convert to lowercase for consistency (emails are case-insensitive)
+                df.at[idx, "email"] = email_str.lower()
+        else:
+            df.at[idx, "email"] = None
+
+        # ===================================================================
+        # 8.5. Contact Method Validation (BUSINESS RULE)
+        # ===================================================================
+        # At least one contact method must be provided
+        member_phone_exists = df.at[idx, "primary_phone_clean"] is not None
+        email_exists = df.at[idx, "email"] is not None
+        device_phone_exists = df.at[idx, "device_phone_clean"] is not None
+
+        if not (member_phone_exists or email_exists or device_phone_exists):
+            row_errors.append(
+                "At least one contact method required (primary_phone, email, or device_phone)"
+            )
 
         # ===================================================================
         # 9. Device UDI Validation (REQUIRED) + Scientific Notation Conversion
