@@ -127,6 +127,55 @@ class BusinessHoursValidator:
         return current_date
 
     @classmethod
+    def get_business_days_between(
+        cls,
+        start_date: datetime,
+        end_date: datetime
+    ) -> int:
+        """
+        Calculate number of business days between two dates
+        (excluding weekends and US federal holidays)
+
+        Args:
+            start_date: Start datetime (inclusive, timezone-aware)
+            end_date: End datetime (exclusive, timezone-aware)
+
+        Returns:
+            int: Number of business days between dates
+
+        Examples:
+            >>> # Friday to Monday (weekend): 0 business days
+            >>> start = datetime(2025, 1, 3, 17, 0, tzinfo=pytz.UTC)
+            >>> end = datetime(2025, 1, 6, 9, 0, tzinfo=pytz.UTC)
+            >>> get_business_days_between(start, end)
+            0
+
+            >>> # Monday to Wednesday: 2 business days (Tue, Wed)
+            >>> start = datetime(2025, 1, 6, 9, 0, tzinfo=pytz.UTC)
+            >>> end = datetime(2025, 1, 8, 9, 0, tzinfo=pytz.UTC)
+            >>> get_business_days_between(start, end)
+            2
+        """
+        business_days = 0
+        current = start_date.date()
+        end = end_date.date()
+
+        # Iterate from start_date to end_date (exclusive)
+        while current < end:
+            # Check if current date is a business day
+            # Create a datetime for business day check (needs timezone)
+            check_dt = cls.MG_TIMEZONE.localize(
+                datetime.combine(current, time(12, 0))  # Noon
+            )
+
+            if cls.is_business_day(check_dt):
+                business_days += 1
+
+            current += timedelta(days=1)
+
+        return business_days
+
+    @classmethod
     def is_within_business_hours(cls, check_time: datetime, timezone: pytz.tzinfo.BaseTzInfo) -> bool:
         """
         Check if a datetime is within business hours (9 AM - 5 PM) in a specific timezone
@@ -377,3 +426,8 @@ def get_next_valid_call_time(
 ) -> datetime:
     """Find the next valid call time"""
     return BusinessHoursValidator.get_next_valid_call_time(current_time, member_timezone, preferred_hour)
+
+
+def get_business_days_between(start_date: datetime, end_date: datetime) -> int:
+    """Calculate business days between two dates"""
+    return BusinessHoursValidator.get_business_days_between(start_date, end_date)

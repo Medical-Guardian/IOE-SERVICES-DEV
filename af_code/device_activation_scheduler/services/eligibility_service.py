@@ -143,7 +143,7 @@ from datetime import datetime
 import pytz
 
 from af_code.bland_ai_webhook.services.database_service import DatabaseService
-from af_code.shared.business_hours_utils import can_make_call
+from af_code.shared.business_hours_utils import can_make_call, get_business_days_between
 
 logger = logging.getLogger(__name__)
 
@@ -362,22 +362,14 @@ class EligibilityService:
                 WHERE oa.enrollment_id = e.enrollment_id
             )
             OR
-            -- Call 2-3: 2 BUSINESS days since last attempt (excludes weekends + holidays)
+            -- Call 2-3: Has 1-2 previous attempts (business day check in Python)
             (
                 (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) BETWEEN 1 AND 2
-                AND dbo.GetBusinessDaysBetween(
-                    (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id),
-                    SYSDATETIMEOFFSET()
-                ) >= 2
             )
             OR
-            -- Call 4: 5 BUSINESS days since Call 3 (excludes weekends + holidays)
+            -- Call 4: Has exactly 3 previous attempts (business day check in Python)
             (
                 (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) = 3
-                AND dbo.GetBusinessDaysBetween(
-                    (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id),
-                    SYSDATETIMEOFFSET()
-                ) >= 5
             )
             OR
             -- Call 5+: 7 calendar days since last attempt
@@ -660,6 +652,83 @@ class EligibilityService:
 
             logger.info("📊 [ELIGIBILITY-SERVICE] ============================================")
 
+            # Filter by business day frequency (Call 2-4 only)
+            logger.info("")
+            logger.info("📅 [ELIGIBILITY-SERVICE] ============================================")
+            logger.info("📅 [ELIGIBILITY-SERVICE] BUSINESS DAY FREQUENCY VALIDATION")
+            logger.info("📅 [ELIGIBILITY-SERVICE] ============================================")
+            logger.info("📅 [ELIGIBILITY-SERVICE] Filtering Call 2-4 by business days (excludes weekends/holidays)...")
+            logger.info("📅 [ELIGIBILITY-SERVICE] Call 1: No filter (first call)")
+            logger.info("📅 [ELIGIBILITY-SERVICE] Call 2-3: Require 2 business days since last attempt")
+            logger.info("📅 [ELIGIBILITY-SERVICE] Call 4: Require 5 business days since last attempt")
+            logger.info("📅 [ELIGIBILITY-SERVICE] Call 5+: Already filtered in SQL (7 calendar days)")
+
+            business_day_filtered_members = []
+            now_utc = datetime.now(pytz.UTC)
+
+            for member in potential_members:
+                call_attempt_number = member.get("call_attempt_number", 1)
+                last_attempt_date = member.get("last_attempt_date")
+
+                # Call 1: No previous attempts, always include
+                if call_attempt_number == 1:
+                    business_day_filtered_members.append(member)
+                    continue
+
+                # Call 5+: Uses calendar days (already filtered in SQL), include
+                if call_attempt_number >= 5:
+                    business_day_filtered_members.append(member)
+                    continue
+
+                # Call 2-4: Check business days
+                if not last_attempt_date:
+                    logger.warning(
+                        f"⚠️ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} has Call {call_attempt_number} "
+                        f"but no last_attempt_date - SKIPPING"
+                    )
+                    continue
+
+                # Calculate business days since last attempt
+                business_days = get_business_days_between(last_attempt_date, now_utc)
+
+                # Call 2-3: Need 2 business days
+                if call_attempt_number in [2, 3]:
+                    if business_days >= 2:
+                        logger.debug(
+                            f"✅ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
+                            f"{business_days} business days (>= 2 required) - ELIGIBLE"
+                        )
+                        business_day_filtered_members.append(member)
+                    else:
+                        logger.debug(
+                            f"❌ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
+                            f"{business_days} business days (< 2 required) - SKIPPED"
+                        )
+
+                # Call 4: Need 5 business days
+                elif call_attempt_number == 4:
+                    if business_days >= 5:
+                        logger.debug(
+                            f"✅ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call 4: "
+                            f"{business_days} business days (>= 5 required) - ELIGIBLE"
+                        )
+                        business_day_filtered_members.append(member)
+                    else:
+                        logger.debug(
+                            f"❌ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call 4: "
+                            f"{business_days} business days (< 5 required) - SKIPPED"
+                        )
+
+            business_day_filtered_count = len(potential_members) - len(business_day_filtered_members)
+            logger.info("")
+            logger.info("✅ [ELIGIBILITY-SERVICE] Business day frequency validation complete")
+            logger.info(
+                f"   ✓ Passed business day check: {len(business_day_filtered_members)} members"
+            )
+            logger.info(
+                f"   ✗ Filtered out (insufficient business days): {business_day_filtered_count} members"
+            )
+
             # Filter by business hours
             logger.info("")
             logger.info("🕐 [ELIGIBILITY-SERVICE] ============================================")
@@ -673,9 +742,9 @@ class EligibilityService:
                 "🕐 [ELIGIBILITY-SERVICE] Member timezone: Using member.timezone for time calculations"
             )
 
-            eligible_members = self._filter_by_business_hours(potential_members)
+            eligible_members = self._filter_by_business_hours(business_day_filtered_members)
 
-            filtered_out_count = len(potential_members) - len(eligible_members)
+            filtered_out_count = len(business_day_filtered_members) - len(eligible_members)
             logger.info("")
             logger.info("✅ [ELIGIBILITY-SERVICE] Business hours validation complete")
             logger.info(f"   ✓ Eligible members: {len(eligible_members)}")
