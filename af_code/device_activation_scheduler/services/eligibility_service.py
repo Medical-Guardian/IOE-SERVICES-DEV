@@ -191,7 +191,8 @@ class EligibilityService:
         - Call 2-3: 1-2 previous attempts AND >= 2 BUSINESS days since last attempt
         - Call 4: 3 previous attempts AND >= 5 BUSINESS days since last attempt
         - No 90-day window enforced
-        - Uses dbo.GetBusinessDaysBetween() SQL function for day calculations
+        - Uses Python get_business_days_between() function for day calculations (lines 666-730)
+        - Business days exclude weekends and US federal holidays
 
         **Call 5+ (CALENDAR DAYS - includes weekends + holidays):**
         - >= 4 previous attempts AND >= 7 CALENDAR days since last attempt

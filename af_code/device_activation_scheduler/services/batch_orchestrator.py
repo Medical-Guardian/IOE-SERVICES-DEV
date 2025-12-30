@@ -49,7 +49,7 @@ Rationale: Allows sufficient time for early contact attempts before enforcing ha
 BUSINESS DAYS VS CALENDAR DAYS:
 -------------------------------
   - Calls 1-4: BUSINESS days (Monday-Friday, excluding US federal holidays)
-    * Uses dbo.GetBusinessDaysBetween() SQL function
+    * Uses Python get_business_days_between() function (eligibility_service.py:666-730)
     * Call 2-3: 2 business days between attempts
     * Call 4: 5 business days after Call 3
   - Call 5+: CALENDAR days (all days, including weekends and holidays)
@@ -969,7 +969,7 @@ class BatchOrchestrator:
             The 90-day window starts from call_5_timestamp (NOT activation_start_date).
             This allows sufficient time for early contact attempts before enforcing a hard cutoff.
 
-            Business days exclude weekends and US federal holidays (uses dbo.GetBusinessDaysBetween()).
+            Business days exclude weekends and US federal holidays (uses Python get_business_days_between() function).
             Calendar days include all days (uses DATEDIFF(day, ...)).
 
         SQL Logic:
