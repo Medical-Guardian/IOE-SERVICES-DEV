@@ -1,16 +1,97 @@
 """
 Device Activation Batch Orchestrator
-BusinessCaseID: BC-TBD (Device Activation System)
+
+BusinessCaseID: BC-DA-004 (Batch Orchestration & Bland AI Integration), BC-DA-006 (Call Frequency Logic)
 Created: 2025-12-07
+Updated: 2025-12-24 - Added comprehensive documentation and BusinessCaseID mapping
 
-This service orchestrates batch call submissions to Bland AI for Device Activation campaign.
-It handles:
-1. Batch creation in database (3-phase tracking)
-2. Bland AI payload building
-3. Batch submission to Bland AI
-4. Result tracking and error handling
+This service orchestrates batch call submissions to Bland AI for Device Activation campaigns.
 
-Pattern: Follows partner_campaign_scheduler/services/batch_orchestrator.py structure
+ARCHITECTURE:
+------------
+Implements 3-phase database tracking pattern (following DTC intro call pattern):
+
+Phase 1: Create batch record (status='Pending') BEFORE Bland AI call
+  - INSERT into outreach_batches with generated batch_id
+  - Allows transaction rollback if Phase 2 or Phase 3 fails
+  - Enables audit trail from moment batch is conceived
+
+Phase 2: Create attempt records (disposition='Pending') BEFORE Bland AI call
+  - INSERT into outreach_attempts for each member in batch
+  - Links attempts to batch_id from Phase 1
+  - Captures member/campaign/enrollment context for webhook matching
+  - Prevents orphaned attempts if Bland AI submission fails
+
+Phase 3: Update batch with vendor_batch_id (status='Submitted') AFTER Bland AI response
+  - UPDATE outreach_batches with Bland AI's vendor_batch_id
+  - Changes status to 'Submitted' to indicate successful submission
+  - Webhook processor uses vendor_batch_id to match call results
+
+BATCH SPLITTING:
+---------------
+Bland AI enforces maximum 100 calls per batch submission. This service automatically
+splits eligible members into batches of 100 and submits each batch sequentially.
+
+Example: 251 members → 3 batches (100, 100, 51 members)
+
+CALL 5 TIMESTAMP TRACKING (BC-DA-006):
+--------------------------------------
+When Call 5 is created, this service sets call_5_timestamp in member_campaign_enrollments_enhanced.
+This timestamp triggers the 90-day window logic for subsequent calls:
+
+  - call_5_timestamp = SYSDATETIMEOFFSET() (when 5th attempt is created)
+  - campaign_end_date = call_5_timestamp + 90 days
+  - Call 6+ can occur weekly (7 CALENDAR days) until campaign_end_date is reached
+  - Calls 1-4 have NO 90-day limit (use BUSINESS day frequency: 2 days for Calls 2-3, 5 days for Call 4)
+
+Rationale: Allows sufficient time for early contact attempts before enforcing hard cutoff.
+
+BUSINESS DAYS VS CALENDAR DAYS:
+-------------------------------
+  - Calls 1-4: BUSINESS days (Monday-Friday, excluding US federal holidays)
+    * Uses dbo.GetBusinessDaysBetween() SQL function
+    * Call 2-3: 2 business days between attempts
+    * Call 4: 5 business days after Call 3
+  - Call 5+: CALENDAR days (all days, including weekends and holidays)
+    * Uses DATEDIFF(day, ...) for calendar day calculations
+    * 7 calendar days between attempts (weekly frequency)
+
+ERROR HANDLING:
+--------------
+- Batch failures mark batch as 'Failed' in database
+- Individual member failures log warnings but continue processing remaining members
+- Transaction rollback prevents partial batch creation
+- Detailed error logging for troubleshooting
+
+RELATED DOCUMENTATION:
+---------------------
+- Complete Architecture: documentation/device_activation/ARCHITECTURE/DEVICE_ACTIVATION_COMPLETE_ARCHITECTURE.md
+- Database Operations: documentation/device_activation/ARCHITECTURE/DEVICE_ACTIVATION_DATABASE_OPERATIONS.md
+- Bland AI Integration: documentation/device_activation/ARCHITECTURE/DEVICE_ACTIVATION_BLAND_AI_INTEGRATION.md
+- BusinessCaseID Mapping: documentation/device_activation/REFERENCE/DEVICE_ACTIVATION_BUSINESSCASEID_MAPPING.md
+
+RELATED CODE:
+------------
+- DTC Pattern: af_code/af_dtc_intro_call/services/blandai_service.py (reference implementation)
+- Eligibility Service: af_code/device_activation_scheduler/services/eligibility_service.py (provides eligible members)
+- Bland AI Client: af_code/shared/bland_ai_client.py (handles API communication)
+- Bland Validator: af_code/shared/bland_parameters_validator.py (validates config parameters)
+
+EXAMPLE USAGE:
+-------------
+>>> from af_code.bland_ai_webhook.services.config_manager import ConfigManager
+>>> from af_code.bland_ai_webhook.services.database_service import DatabaseService
+>>> config_manager = ConfigManager()
+>>> db_service = DatabaseService(config_manager)
+>>> orchestrator = BatchOrchestrator(db_service, config_manager)
+>>>
+>>> eligible_members = [
+...     {"enrollment_id": "abc-123", "member_id": "mem-001", "campaign_id": "camp-1", ...},
+...     # ... 150 more members ...
+... ]
+>>> result = orchestrator.create_and_submit_batches(eligible_members)
+>>> print(result)
+{'success': True, 'batches_created': 2, 'calls_submitted': 151}
 """
 
 import logging
@@ -29,12 +110,57 @@ logger = logging.getLogger(__name__)
 
 class BatchOrchestrator:
     """
-    Service to orchestrate batch call submissions to Bland AI for Device Activation
+    Service to orchestrate batch call submissions to Bland AI for Device Activation campaigns
 
-    Implements 3-phase database tracking (following DTC pattern):
-    Phase 1: Create batch record (status='Pending') BEFORE Bland AI call
-    Phase 2: Create attempt records (disposition='Pending') BEFORE Bland AI call
-    Phase 3: Update batch with vendor_batch_id (status='Submitted') AFTER Bland AI response
+    Implements 3-phase database tracking pattern (following DTC intro call pattern):
+    - Phase 1: Create batch record (status='Pending') BEFORE Bland AI call
+    - Phase 2: Create attempt records (disposition='Pending') BEFORE Bland AI call
+    - Phase 3: Update batch with vendor_batch_id (status='Submitted') AFTER Bland AI response
+
+    This pattern ensures:
+    1. Atomic batch creation (all-or-nothing via transaction rollback)
+    2. Complete audit trail (batch + attempts exist before external API call)
+    3. Webhook matching capability (vendor_batch_id links Bland AI responses to our records)
+    4. Error recovery (failed batches marked in database, not lost)
+
+    BusinessCaseID: BC-DA-004, BC-DA-006
+
+    Attributes:
+        db_service (DatabaseService): Database operations service for SQL queries
+        config_manager (ConfigManager): Azure Key Vault configuration manager
+        bland_client (BlandAIClient): Bland AI API client (None if disabled)
+        enabled (bool): Whether batch orchestrator is operational (requires Bland AI API key)
+
+    Methods:
+        create_and_submit_batches(): Main orchestration method (splits, creates, submits batches)
+        _submit_single_batch(): Submit one batch of up to 100 members (3-phase tracking)
+        _build_batch_request(): Build Bland AI BatchRequest payload (18+ parameters)
+        _create_outreach_batch(): Phase 1 - INSERT batch record (status='Pending')
+        _create_outreach_attempts(): Phase 2 - INSERT attempt records (disposition='Pending')
+        _update_call_5_enrollments(): Phase 2.5 - Set call_5_timestamp for Call 5+ logic
+        _update_batch_with_vendor_id(): Phase 3 - UPDATE batch (vendor_batch_id, status='Submitted')
+        _mark_batch_failed(): Error handler - Mark batch as 'Failed' with error message
+
+    Example:
+        >>> from af_code.bland_ai_webhook.services.config_manager import ConfigManager
+        >>> from af_code.bland_ai_webhook.services.database_service import DatabaseService
+        >>>
+        >>> config_manager = ConfigManager()
+        >>> db_service = DatabaseService(config_manager)
+        >>> orchestrator = BatchOrchestrator(db_service, config_manager)
+        >>>
+        >>> # Orchestrator automatically initializes Bland AI client
+        >>> if orchestrator.enabled:
+        ...     result = orchestrator.create_and_submit_batches(eligible_members)
+        ...     print(f"Submitted {result['calls_submitted']} calls in {result['batches_created']} batches")
+        ... else:
+        ...     print("Bland AI client not configured")
+
+    Notes:
+        - Max 100 members per batch (Bland AI API limitation)
+        - Batches processed sequentially (one at a time)
+        - Individual batch failures don't stop remaining batches
+        - Call 5 timestamp automatically set when 5th attempt is created (BC-DA-006)
     """
 
     def __init__(self, db_service: DatabaseService, config_manager: ConfigManager):
@@ -62,19 +188,64 @@ class BatchOrchestrator:
         """
         Create batches and submit to Bland AI
 
-        Splits members into batches of 100 (Bland AI limit) and submits each batch.
+        Splits members into batches of 100 (Bland AI limit) and submits each batch sequentially.
+        Each batch follows the 3-phase database tracking pattern before and after Bland AI submission.
+
+        BusinessCaseID: BC-DA-004, BC-DA-006
+
+        Process:
+            1. Split eligible_members into batches of 100 (Bland AI max per batch)
+            2. For each batch:
+               a. Submit to Bland AI via _submit_single_batch() (3-phase tracking)
+               b. Log success/failure
+               c. Continue with remaining batches even if one fails
+            3. Return aggregate results
 
         Args:
-            eligible_members: List of eligible members from EligibilityService
+            eligible_members (List[Dict]): List of eligible members from EligibilityService.
+                Each dict must contain:
+                    - enrollment_id (str): Enrollment UUID
+                    - member_id (str): Member UUID
+                    - campaign_id (str): Campaign UUID
+                    - primary_phone (str): E.164 phone number
+                    - first_name (str): Member first name
+                    - last_name (str): Member last name
+                    - call_attempt_number (int): Which attempt this is (1-N)
+                    - bland_parameters_global (dict): Bland AI configuration from database
+                    - ... (additional member/device fields)
 
         Returns:
-            Dict with:
-                - success (bool): Whether all batches submitted successfully
-                - batches_created (int): Number of batches created
-                - calls_submitted (int): Total calls submitted to Bland AI
-                - error (str): Error message if failed
+            Dict[str, Any]: Result dictionary containing:
+                - success (bool): True if at least one batch submitted successfully
+                - batches_created (int): Number of batches successfully created
+                - calls_submitted (int): Total calls submitted across all batches
+                - error (str, optional): Error message if all batches failed (only if success=False)
 
-        BusinessCaseID: BC-TBD (Device Activation System)
+        Raises:
+            Exception: Critical errors are caught and returned in result dict (doesn't raise)
+
+        Example:
+            >>> eligible_members = [
+            ...     {"enrollment_id": "abc-123", "member_id": "mem-001", "campaign_id": "camp-1",
+            ...      "primary_phone": "+15551234567", "first_name": "John", "last_name": "Doe", ...},
+            ...     # ... 150 more members ...
+            ... ]
+            >>> result = orchestrator.create_and_submit_batches(eligible_members)
+            >>> result
+            {'success': True, 'batches_created': 2, 'calls_submitted': 151}
+            >>>
+            >>> # Handle individual batch failures
+            >>> if result['success']:
+            ...     print(f"✅ Submitted {result['calls_submitted']} calls")
+            ... else:
+            ...     print(f"❌ All batches failed: {result.get('error')}")
+
+        Notes:
+            - Batches are processed sequentially, not in parallel
+            - Individual batch failures are logged but don't stop remaining batches
+            - If orchestrator is disabled (no Bland AI key), returns success=False immediately
+            - Max batch size: 100 members (Bland AI API limit)
+            - Call 5 timestamp automatically set when 5th attempt created (BC-DA-006)
         """
         logger.info(
             f"🚀 [BATCH-ORCHESTRATOR] Starting batch creation for {len(eligible_members)} members"
@@ -206,9 +377,7 @@ class BatchOrchestrator:
                 "📝 [BATCH-ORCHESTRATOR] Creating attempts in engage360.outreach_attempts..."
             )
             logger.info(f"📝 [BATCH-ORCHESTRATOR] Total attempts to create: {len(members)}")
-            logger.info(
-                "📝 [BATCH-ORCHESTRATOR] Disposition: 'Pending' (awaiting call completion)"
-            )
+            logger.info("📝 [BATCH-ORCHESTRATOR] Disposition: 'Pending' (awaiting call completion)")
 
             attempt_id_map = self._create_outreach_attempts(members, batch_id)
 
@@ -381,15 +550,85 @@ class BatchOrchestrator:
         """
         Build the Bland AI batch request payload for Device Activation
 
+        Constructs a BatchRequest model with:
+        - Individual call configurations (phone, request_data, metadata)
+        - Bland AI global parameters (pathway_id, voice_id, 18+ optional params)
+        - Validation of all parameters via BlandParametersValidator
+
+        BusinessCaseID: BC-DA-004
+
         Args:
-            members: List of eligible members
-            batch_id: Batch UUID from Phase 1
-            attempt_id_map: Mapping of enrollment_id to attempt_id from Phase 2
+            members (List[Dict]): List of eligible members from eligibility query.
+                Each dict contains member, device, campaign, and config data.
+            batch_id (str): Batch UUID from Phase 1 (_create_outreach_batch)
+            attempt_id_map (Dict[str, str]): Mapping of enrollment_id → attempt_id from Phase 2
+                Used to link call results back to attempt records via webhook
 
         Returns:
-            BatchRequest dict for Bland AI API
+            BatchRequest: Bland AI batch request model containing:
+                - campaign_id (str): Device Activation campaign UUID
+                - calls (List[Dict]): List of call configurations (max 100)
+                    Each call has: to, request_data (12 fields), metadata (13 fields)
+                - pathway_id (str): Bland AI conversation pathway UUID
+                - voice_id (str): Bland AI voice UUID
+                - bland_parameters_global (Dict): 18+ optional parameters from database
 
-        BusinessCaseID: BC-TBD (Device Activation System)
+        Raises:
+            ValueError: If bland_parameters_global not found in database
+            ValueError: If Bland AI parameter validation fails (missing pathway_id, etc.)
+
+        Call Structure (per member):
+            {
+                "to": "+15551234567",  # E.164 phone format
+                "request_data": {
+                    # 12 fields passed to AI agent during call
+                    "first_name": "John",
+                    "last_name": "Doe",
+                    "primary_phone": "+15551234567",
+                    "email": "john@example.com",
+                    "dob": "01-15-1950",  # MM-DD-YYYY format
+                    "address_street": "123 Main St",
+                    "address_city": "Boston",
+                    "address_state": "MA",
+                    "address_zip": "02101",
+                    "member_brand": "Medical Guardian",
+                    "device_name": "Mini Guardian",
+                    "fall_detection": "True"  # "True" or "False" as string
+                },
+                "metadata": {
+                    # 13 fields returned in webhook (for tracking/matching)
+                    "batch_id": "uuid",
+                    "campaign_id": "uuid",
+                    "pathway_id": "uuid",
+                    "attempt_id": "uuid",  # CRITICAL for webhook matching
+                    "member_id": "uuid",
+                    "salesforce_account_number": "SF12345",
+                    "first_name": "John",
+                    "last_name": "Doe",
+                    "called_number": "+15551234567",
+                    "contact_preference": "phone",
+                    "is_device_callable": True,
+                    "language_pref": "EN",
+                    "call_type_code": "DEVICE_ACTIVATION"
+                }
+            }
+
+        Example:
+            >>> members = [{"enrollment_id": "abc-123", "member_id": "mem-001", ...}]
+            >>> batch_id = "batch-uuid-123"
+            >>> attempt_id_map = {"abc-123": "attempt-uuid-456"}
+            >>> batch_request = self._build_batch_request(members, batch_id, attempt_id_map)
+            >>> len(batch_request.calls)
+            1
+            >>> batch_request.pathway_id
+            'pathway-uuid-789'
+
+        Notes:
+            - Members without valid phone numbers are skipped with warning
+            - bland_parameters_global retrieved from database (not hardcoded)
+            - BlandParametersValidator ensures all required parameters present
+            - Metadata structure standardized to DTC format (13 fields)
+            - Request data limited to 12 fields (Bland AI pathway requirement)
         """
         logger.info("")
         logger.info("🔨 [BATCH-ORCHESTRATOR] ============================================")
@@ -499,7 +738,7 @@ class BatchOrchestrator:
                 continue
 
             # Build request_data (data passed to AI agent during call)
-            # ONLY 12 fields as required by Bland AI pathway (updated 2025-12-23)
+            # 13 fields as required by Bland AI pathway (updated 2025-12-30)
             request_data = {
                 # Member demographics (from members table)
                 "first_name": member.get("first_name"),
@@ -517,37 +756,29 @@ class BatchOrchestrator:
                 # Device information (from member_devices table)
                 "device_name": member.get("device_brand") or "",  # member_devices.brand
                 "fall_detection": "True" if member.get("fall_detection") == 1 else "False",
+                # Monitoring system ID (from member_identifiers table)
+                "monitoring_system_id": member.get("monitoring_system_id") or "",
             }
 
             # Build metadata (used for webhook processing)
+            # Updated 2025-12-23: Standardized to DTC format (13 fields)
             metadata = {
-                # Core tracking IDs
-                "attempt_id": attempt_id,  # CRITICAL for webhook
+                # Core tracking IDs (5 fields)
                 "batch_id": batch_id,
                 "campaign_id": str(campaign_id),
+                "pathway_id": pathway_id,  # NEW: From bland_parameters_global
+                "attempt_id": attempt_id,  # CRITICAL for webhook
                 "member_id": str(member.get("member_id")),
-                "enrollment_id": enrollment_id,
-                # Member identification
+                # Member identification (4 fields)
+                "salesforce_account_number": member.get("salesforce_account_number"),  # NEW
                 "first_name": member.get("first_name"),
                 "last_name": member.get("last_name"),
                 "called_number": phone_number,
-                # Campaign context
-                "campaign_type": "Device Activation",
-                "customer_type": member.get("customer_type"),
-                "call_attempt_number": member.get("call_attempt_number", 1),
-                # Device information
-                "device_udi": member.get("device_udi"),
-                "device_name": member.get("device_name"),
-                "is_device_callable": member.get("is_device_callable", 0),
-                # Communication preferences
+                # Communication preferences (4 fields)
+                "contact_preference": "phone",  # NEW: Static for activation (always call member)
+                "is_device_callable": bool(member.get("is_device_callable", 0)),  # Convert to bool
                 "language_pref": member.get("language_pref", "EN"),
-                "member_timezone": member.get("timezone"),
-                # Address and demographics (added 2025-12-19 - matches DTC pattern)
-                "service_address": member.get("address_street") or "",
-                "city": member.get("address_city") or "",
-                "state": member.get("address_state") or "",
-                "zip_code": member.get("address_zip") or "",
-                "dob": member.get("dob").strftime("%Y-%m-%d") if member.get("dob") else "",
+                "call_type_code": "DEVICE_ACTIVATION",  # NEW: Static identifier for campaign type
             }
 
             # Build call data
@@ -581,6 +812,7 @@ class BatchOrchestrator:
             )
             logger.info(f"   🌍 Timezone: {member.get('timezone', 'N/A')}")
             logger.info(f"   🗣️ Language: {member.get('language_pref', 'EN')}")
+            logger.info(f"   🆔 Monitoring System ID: {member.get('monitoring_system_id', 'N/A')}")
             logger.info("")
             logger.info("📞 [BATCH-ORCHESTRATOR] Brand Information:")
             logger.info(
@@ -717,21 +949,67 @@ class BatchOrchestrator:
 
     def _update_call_5_enrollments(self, campaign_id: str) -> int:
         """
-        Update enrollments that just reached Call 5 (NEW: 2025-12-22)
+        Update enrollments that just reached Call 5 (implements 90-day window logic)
 
         Sets call_5_timestamp and campaign_end_date for enrollments where:
-        - call_5_timestamp is currently NULL
-        - Total outreach_attempts count = 5 (just created 5th attempt)
+        - call_5_timestamp is currently NULL (hasn't reached Call 5 yet)
+        - Total outreach_attempts count = 5 (just created 5th attempt in Phase 2)
 
-        This starts the 90-day window for Calls 5+.
+        This triggers the 90-day window for subsequent calls (Call 6+).
+
+        BusinessCaseID: BC-DA-006 (Call Frequency & Sequencing Logic)
+        Created: 2025-12-22
+        Updated: 2025-12-24 - Added comprehensive documentation
+
+        Background:
+            Device Activation call frequency differs between Calls 1-4 and Call 5+:
+            - Calls 1-4: BUSINESS day frequency (2 days for Calls 2-3, 5 days for Call 4), max 4 attempts, NO 90-day limit
+            - Call 5+: 7 CALENDAR days frequency (weekly), unlimited attempts, 90-day window
+
+            The 90-day window starts from call_5_timestamp (NOT activation_start_date).
+            This allows sufficient time for early contact attempts before enforcing a hard cutoff.
+
+            Business days exclude weekends and US federal holidays (uses dbo.GetBusinessDaysBetween()).
+            Calendar days include all days (uses DATEDIFF(day, ...)).
+
+        SQL Logic:
+            UPDATE member_campaign_enrollments_enhanced
+            SET
+                call_5_timestamp = SYSDATETIMEOFFSET(),
+                campaign_end_date = CAST(DATEADD(DAY, 90, SYSDATETIMEOFFSET()) AS DATE)
+            WHERE
+                call_5_timestamp IS NULL  -- Not already set
+                AND campaign_id = %s
+                AND (SELECT COUNT(*) FROM outreach_attempts WHERE enrollment_id = e.enrollment_id) = 5
 
         Args:
-            campaign_id: Device Activation campaign UUID
+            campaign_id (str): Device Activation campaign UUID
 
         Returns:
-            Number of enrollments updated
+            int: Number of enrollments updated (count of members reaching Call 5 in this batch)
 
-        BusinessCaseID: BC-TBD (Device Activation Call Frequency Change)
+        Example:
+            >>> # After creating 5th attempt in Phase 2
+            >>> updated_count = self._update_call_5_enrollments("campaign-uuid-123")
+            >>> if updated_count > 0:
+            ...     print(f"{updated_count} members now have 90-day window starting from Call 5")
+            3 members now have 90-day window starting from Call 5
+
+        Database Updates (per enrollment):
+            - call_5_timestamp: Set to current timestamp (SYSDATETIMEOFFSET())
+            - campaign_end_date: Set to call_5_timestamp + 90 days
+
+        Eligibility Impact:
+            After this update, eligibility_service.py will:
+            1. Allow Call 6+ every 7 CALENDAR days (weekly frequency, includes weekends/holidays)
+            2. Block calls after campaign_end_date is reached
+            3. No longer enforce BUSINESS day frequency (that was for Calls 1-4)
+
+        Notes:
+            - Only updates enrollments where call_5_timestamp is NULL
+            - Only updates enrollments with exactly 5 attempts
+            - Called in Phase 2.5 (after attempts created, before Bland AI submission)
+            - Multiple batch submissions in quick succession won't double-update (NULL check)
         """
         update_call_5_sql = """
         UPDATE e

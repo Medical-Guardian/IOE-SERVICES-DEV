@@ -1,27 +1,140 @@
 """
 Device Activation Eligibility Service
-BusinessCaseID: BC-TBD (Device Activation System)
+
+BusinessCaseID: BC-DA-003 (Eligibility & Scheduling Logic), BC-DA-006 (Call Frequency & Sequencing Logic)
 Created: 2025-12-07
-Updated: 2025-12-22 - Changed 90-day window to start from Call 5
+Updated: 2025-12-24 - Added comprehensive documentation and BusinessCaseID mapping
 
-This service determines which members are eligible for Device Activation calls based on:
-1. Campaign enrollment status
-2. Call sequence timing (Call 1-4+)
-3. Business hours validation (dual-timezone)
-4. Callback queue exclusion
-5. 90-day window for Calls 5+ ONLY (starts from Call 5 timestamp, not activation_start_date)
+This service determines which members are eligible for Device Activation calls by executing
+a complex SQL eligibility query and filtering results by business hours.
 
-Call Sequence Logic:
-- Call 1: activation_start_date (first business day on or after enrollment)
+PURPOSE:
+--------
+Device Activation campaigns proactively call members who have received medical alert devices
+but have not yet activated them. This service identifies members ready to be called based on:
+
+1. **Enrollment Status**: Member is ENROLLED in an active Device Activation campaign
+2. **Call Sequence Timing**: Sufficient time has passed since last attempt (frequency rules)
+3. **Business Hours Validation**: Dual-timezone check (MG operating hours + member timezone)
+4. **Callback Queue Exclusion**: Members with pending callbacks are processed separately
+5. **90-Day Window**: Call 5+ attempts must occur within 90 days from call_5_timestamp
+
+CALL SEQUENCE LOGIC (BC-DA-006):
+---------------------------------
+Device Activation uses two distinct call frequency patterns:
+
+**Calls 1-4 (Initial Attempts):**
+- Call 1: Eligible on activation_start_date (delivery_date + 2 business days)
 - Call 2: Call 1 + 2 business days (if no success)
 - Call 3: Call 2 + 2 business days (if no success)
 - Call 4: Call 3 + 5 business days (if no success)
-- Call 5+: Weekly (7 calendar days) until call_5_timestamp + 90 days
+- **NO 90-day limit** - Only frequency rules apply
+- **Max 4 attempts** total in this phase
 
-90-Day Window:
-- Calls 1-4: NO 90-day limit (only frequency rules apply)
-- Call 5+: 90-day window starts FROM when Call 5 is created (call_5_timestamp + 90 days)
-- Rationale: Allows sufficient time for early attempts before enforcing hard stop
+**Calls 5+ (Extended Attempts):**
+- Frequency: Weekly (7 calendar days between attempts)
+- Max Attempts: Unlimited
+- **90-Day Window**: call_5_timestamp + 90 days
+  - Window starts FROM Call 5 creation (NOT activation_start_date)
+  - Allows sufficient time for early attempts before enforcing hard stop
+  - campaign_end_date = call_5_timestamp + 90 days
+- Continue weekly calls until campaign_end_date reached
+
+**Example Timeline:**
+```
+Day 1:  Device Delivery
+Day 3:  Call 1 (activation_start_date = delivery + 2 biz days)
+Day 5:  Call 2 (Call 1 + 2 biz days)
+Day 7:  Call 3 (Call 2 + 2 biz days)
+Day 12: Call 4 (Call 3 + 5 biz days)
+Day 19: Call 5 (Call 4 + 7 days) → call_5_timestamp SET, campaign_end_date = Day 109
+Day 26: Call 6 (Call 5 + 7 days)
+Day 33: Call 7 (Call 6 + 7 days)
+...
+Day 109: Campaign ends (call_5_timestamp + 90 days), no more calls
+```
+
+BUSINESS HOURS VALIDATION:
+---------------------------
+All eligible members are filtered by dual-timezone business hours validation:
+
+1. **Medical Guardian Operating Hours**: 9 AM - 5 PM EST (operating_tz)
+2. **Member's Local Timezone**: 9 AM - 5 PM in member.timezone
+
+Calls are only made when BOTH timezones are within business hours.
+
+SQL ELIGIBILITY QUERY:
+----------------------
+The service executes a 200+ line SQL query (ELIGIBLE_MEMBERS_QUERY) that:
+
+1. **JOINs 5 tables**:
+   - member_campaign_enrollments_enhanced (enrollment status, dates, call_5_timestamp)
+   - members (contact info, timezone, demographics)
+   - member_devices (device info for metadata)
+   - campaigns_enhanced (campaign config, operating hours)
+   - campaign_call_configs_enhanced (Bland AI configuration)
+
+2. **Calculates call_attempt_number**:
+   - Counts previous outreach_attempts for this enrollment
+   - Determines if member is on Call 1-4 vs Call 5+
+
+3. **Filters by eligibility criteria**:
+   - current_status = 'ENROLLED'
+   - device_activated = 0 (device not yet activated)
+   - activation_start_date <= today (past Day 2)
+   - Frequency rules (24h for Call 2-4, 7 days for Call 5+)
+   - 90-day window for Call 5+ only
+   - Not in callback queue (callbacks processed separately)
+
+4. **Returns member data** for Bland AI batch creation:
+   - Contact information (name, phone, email, address)
+   - Device information (device_name, device_phone_number, fall_detection, powersaver_mode)
+   - Campaign configuration (pathway_id, voice_id, operating hours)
+   - Metadata (enrollment_id, member_id, salesforce_account_number, etc.)
+
+RELATED COMPONENTS:
+-------------------
+- **BatchOrchestrator** (BC-DA-004): Consumes eligible members to create Bland AI batches
+- **CallbackScheduler** (BC-DA-005): Processes callbacks separately (higher priority)
+- **business_hours_utils.py**: Shared dual-timezone validation logic
+
+RELATED DOCUMENTATION:
+----------------------
+- Complete Architecture: documentation/device_activation/ARCHITECTURE/DEVICE_ACTIVATION_COMPLETE_ARCHITECTURE.md
+- Call Sequence Diagrams: documentation/device_activation/FLOWS/DEVICE_ACTIVATION_CALL_SEQUENCE.md
+- SQL Query Reference: documentation/device_activation/REFERENCE/DEVICE_ACTIVATION_SQL_QUERY_REFERENCE.md
+
+DATABASE TABLES ACCESSED:
+--------------------------
+- member_campaign_enrollments_enhanced (read: enrollment status, call_5_timestamp)
+- members (read: contact info, timezone)
+- member_devices (read: device info)
+- campaigns_enhanced (read: campaign config)
+- campaign_call_configs_enhanced (read: Bland AI config)
+- outreach_attempts (read: previous call history)
+- outreach_callback_queue (read: callback exclusion check)
+
+EXAMPLES:
+---------
+Basic usage in scheduler:
+    >>> from af_code.device_activation_scheduler.services.eligibility_service import EligibilityService
+    >>> from af_code.bland_ai_webhook.services.database_service import DatabaseService
+    >>>
+    >>> db_service = DatabaseService(config_manager)
+    >>> eligibility_service = EligibilityService(db_service)
+    >>>
+    >>> # Get members eligible for calls right now
+    >>> eligible_members = eligibility_service.get_eligible_members()
+    >>> print(f"Found {len(eligible_members)} eligible members")
+    >>>
+    >>> # Each member dict contains:
+    >>> # - enrollment_id, member_id, campaign_id
+    >>> # - first_name, last_name, primary_phone, email
+    >>> # - device_id, device_name, device_phone_number
+    >>> # - fall_detection, powersaver_mode
+    >>> # - activation_start_date, campaign_end_date, call_5_timestamp
+    >>> # - call_attempt_number, last_attempt_date, last_disposition
+    >>> # - bland_parameters_global, config_status
 """
 
 import logging
@@ -36,7 +149,112 @@ logger = logging.getLogger(__name__)
 
 
 class EligibilityService:
-    """Service to determine member eligibility for Device Activation calls"""
+    """
+    Service to determine member eligibility for Device Activation calls
+
+    BusinessCaseID: BC-DA-003, BC-DA-006
+
+    This service is responsible for identifying which members should be called in the current
+    scheduler run. It combines SQL-based eligibility queries with Python-based business hours
+    validation to produce a final list of members ready for Bland AI batch submission.
+
+    The service implements a two-stage filtering process:
+    1. **SQL Query Stage**: Execute complex eligibility query against database (200+ lines)
+    2. **Business Hours Stage**: Filter SQL results by dual-timezone validation (Python)
+
+    Attributes:
+        db_service (DatabaseService): Database service for query execution and connection management
+        ELIGIBLE_MEMBERS_QUERY (str): Class-level constant containing the 200+ line SQL eligibility query
+
+    Methods:
+        get_eligible_members() -> List[Dict]:
+            Main entry point - returns list of members eligible for calls right now
+
+        _filter_by_business_hours(potential_members: List[Dict]) -> List[Dict]:
+            Private method to filter members by dual-timezone business hours validation
+
+    SQL Query Structure:
+        The ELIGIBLE_MEMBERS_QUERY constant (lines 42-163) contains the eligibility logic:
+
+        - SELECT fields: 30+ fields from 5 joined tables
+        - FROM: member_campaign_enrollments_enhanced (base table)
+        - JOINs: members, member_devices, campaigns_enhanced, campaign_call_configs_enhanced
+        - WHERE clause: 10+ eligibility filters
+        - Subqueries: Calculate call_attempt_number, last_attempt_date, last_disposition
+        - ORDER BY: activation_start_date, call_attempt_number
+
+    Call Frequency Logic (BC-DA-006):
+        The SQL WHERE clause implements different frequency rules based on call_attempt_number:
+
+        **Calls 1-4 (BUSINESS DAYS - excludes weekends + US federal holidays):**
+        - Call 1: No previous attempts AND activation_start_date <= today
+        - Call 2-3: 1-2 previous attempts AND >= 2 BUSINESS days since last attempt
+        - Call 4: 3 previous attempts AND >= 5 BUSINESS days since last attempt
+        - No 90-day window enforced
+        - Uses dbo.GetBusinessDaysBetween() SQL function for day calculations
+
+        **Call 5+ (CALENDAR DAYS - includes weekends + holidays):**
+        - >= 4 previous attempts AND >= 7 CALENDAR days since last attempt
+        - 90-day window: call_5_timestamp IS NULL OR today < call_5_timestamp + 90 days
+        - Unlimited attempts within window
+        - Uses DATEDIFF(day, ...) for calendar day calculations
+
+    Business Hours Validation:
+        After SQL filtering, the service validates business hours for each member:
+
+        1. Get current time in UTC
+        2. Convert to Medical Guardian timezone (America/New_York)
+        3. Convert to member's timezone (from members.timezone)
+        4. Check if BOTH timezones are within operating hours:
+           - Medical Guardian: 9 AM - 4 PM EST (Monday-Friday, no US federal holidays)
+           - Member: 9 AM - 5 PM (in member's timezone, Monday-Friday, no US federal holidays)
+        5. Return only members passing both checks
+
+        Uses shared utility: af_code/shared/business_hours_utils.py::can_make_call()
+
+    Example:
+        >>> # Initialize service
+        >>> from af_code.bland_ai_webhook.services.config_manager import ConfigManager
+        >>> from af_code.bland_ai_webhook.services.database_service import DatabaseService
+        >>> from af_code.device_activation_scheduler.services.eligibility_service import EligibilityService
+        >>>
+        >>> config_manager = ConfigManager()
+        >>> db_service = DatabaseService(config_manager)
+        >>> eligibility_service = EligibilityService(db_service)
+        >>>
+        >>> # Get eligible members (combines SQL + business hours filtering)
+        >>> eligible_members = eligibility_service.get_eligible_members()
+        >>>
+        >>> # Output example:
+        >>> # ✅ [ELIGIBILITY-SERVICE] Found 25 potential members from database
+        >>> # ✅ [ELIGIBILITY-SERVICE] 18/25 members passed business hours validation
+        >>> # ✅ [ELIGIBILITY-SERVICE] Total Eligible Members: 18
+        >>>
+        >>> # Process members
+        >>> for member in eligible_members:
+        ...     print(f"Member {member['member_id']} - Call #{member['call_attempt_number']}")
+        ...     print(f"  Phone: {member['primary_phone']}, Timezone: {member['timezone']}")
+        ...     print(f"  Device: {member['device_name']}, Fall Detection: {member['fall_detection']}")
+
+    Notes:
+        - This service is called every 15 minutes by the device_activation_scheduler timer trigger
+        - Eligible members are passed to BatchOrchestrator for Bland AI batch creation
+        - Callbacks are processed separately via CallbackScheduler (not included in this query)
+        - The SQL query excludes members with pending callbacks (higher priority)
+        - Business hours validation ensures no calls outside operating hours (9 AM - 4 PM EST for MG, 9 AM - 5 PM for member)
+        - All datetime comparisons use SYSDATETIMEOFFSET() for timezone awareness
+
+    Related Components:
+        - BatchOrchestrator (BC-DA-004): Consumes eligible members to create batches
+        - CallbackScheduler (BC-DA-005): Processes callbacks separately
+        - DatabaseService: Executes SQL queries and manages connections
+        - business_hours_utils.can_make_call(): Dual-timezone validation
+
+    Related Code:
+        - af_code/device_activation_scheduler/main_logic.py: Calls this service
+        - af_code/device_activation_scheduler/services/batch_orchestrator.py: Consumes results
+        - af_code/shared/business_hours_utils.py: Business hours validation logic
+    """
 
     # SQL query to find eligible members
     ELIGIBLE_MEMBERS_QUERY = """
@@ -47,6 +265,7 @@ class EligibilityService:
         m.first_name,
         m.last_name,
         m.primary_phone,
+        m.salesforce_account_number,  -- Required for DTC-style metadata
         m.email,
         m.timezone,
         m.language_pref,
@@ -76,6 +295,7 @@ class EligibilityService:
         c.timezone_flag,
         cc.bland_parameters_global,  -- Bland AI configuration from database
         cc.config_status,            -- Config status (active/draft/archived)
+        mi.id_value AS monitoring_system_id,  -- Monitoring system ID from member_identifiers
 
         -- Calculate which call attempt this is
         ISNULL((
@@ -107,6 +327,9 @@ class EligibilityService:
         ON c.campaign_id = cc.campaign_id
         AND cc.call_type = 'Operations'
         AND cc.config_status = 'active'
+    INNER JOIN engage360.member_identifiers mi
+        ON m.member_id = mi.member_id
+        AND mi.id_type = 'monitoring_system_id'
 
     WHERE
         -- Campaign criteria (support both Device Activation and Operations campaigns)
@@ -139,16 +362,22 @@ class EligibilityService:
                 WHERE oa.enrollment_id = e.enrollment_id
             )
             OR
-            -- Call 2-3: 2 business days since last attempt
+            -- Call 2-3: 2 BUSINESS days since last attempt (excludes weekends + holidays)
             (
                 (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) BETWEEN 1 AND 2
-                AND DATEDIFF(day, (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) >= 2
+                AND dbo.GetBusinessDaysBetween(
+                    (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id),
+                    SYSDATETIMEOFFSET()
+                ) >= 2
             )
             OR
-            -- Call 4: 5 business days since Call 3
+            -- Call 4: 5 BUSINESS days since Call 3 (excludes weekends + holidays)
             (
                 (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) = 3
-                AND DATEDIFF(day, (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) >= 5
+                AND dbo.GetBusinessDaysBetween(
+                    (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id),
+                    SYSDATETIMEOFFSET()
+                ) >= 5
             )
             OR
             -- Call 5+: 7 calendar days since last attempt
@@ -175,15 +404,168 @@ class EligibilityService:
         """
         Get members eligible for Device Activation calls
 
-        This method:
-        1. Queries database for potentially eligible members
-        2. Validates business hours for each member (dual-timezone)
-        3. Returns list of eligible members ready for batch creation
+        BusinessCaseID: BC-DA-003, BC-DA-006
+
+        This is the main entry point for eligibility determination. It executes a two-stage
+        filtering process to identify members ready to be called in the current scheduler run:
+
+        **Stage 1: SQL Query (Database Filtering)**
+            Executes ELIGIBLE_MEMBERS_QUERY to find potentially eligible members based on:
+            - Enrollment status (ENROLLED, device not activated)
+            - Campaign status (Active Device Activation campaign)
+            - Call frequency rules:
+              * Calls 2-3: 2 BUSINESS days (excludes weekends + US federal holidays)
+              * Call 4: 5 BUSINESS days (excludes weekends + US federal holidays)
+              * Call 5+: 7 CALENDAR days (includes weekends + holidays)
+            - 90-day window for Call 5+ (call_5_timestamp + 90 days)
+            - Callback queue exclusion (callbacks processed separately)
+
+        **Stage 2: Business Hours Validation (Python Filtering)**
+            Filters SQL results by dual-timezone business hours:
+            - Medical Guardian operating hours: 9 AM - 4 PM EST (Monday-Friday, no US federal holidays)
+            - Member's local timezone: 9 AM - 5 PM in member.timezone (Monday-Friday, no US federal holidays)
+            - Calls only made when BOTH timezones are within business hours
+
+        Process Flow:
+            1. Log start of eligibility check
+            2. Execute SQL query via db_service.execute_query()
+            3. If no results, log diagnostic checklist and return empty list
+            4. Log statistics: call attempt distribution, timezone distribution, disposition distribution
+            5. Call _filter_by_business_hours() to filter by time
+            6. Log final summary: eligible count, filtered count, qualification rate
+            7. Return list of eligible members
 
         Returns:
-            List of dictionaries containing member and campaign details
+            List[Dict]: List of dictionaries containing member and campaign details.
+                Each dictionary contains:
 
-        BusinessCaseID: BC-TBD (Device Activation System)
+                **Member Information:**
+                - enrollment_id (str): Enrollment UUID
+                - member_id (str): Member UUID
+                - first_name (str): Member first name
+                - last_name (str): Member last name
+                - primary_phone (str): Member phone (E.164 format)
+                - email (str): Member email
+                - timezone (str): Member timezone (IANA format, e.g., 'America/New_York')
+                - language_pref (str): Language preference ('EN', 'ES', 'Other')
+                - address_street (str): Street address
+                - address_city (str): City
+                - address_state (str): State abbreviation
+                - address_zip (str): ZIP code
+                - dob (date): Date of birth
+                - member_brand (str): Member brand (e.g., 'Medical Guardian')
+                - salesforce_account_number (str): Salesforce account ID
+
+                **Device Information:**
+                - device_id (str): Device UUID
+                - device_udi (str): Device UDI (same as device_id)
+                - device_name (str): Device model name
+                - device_brand (str): Device brand
+                - device_phone_number (str): Device phone (E.164 format)
+                - is_device_callable (bool): Whether device can receive calls
+                - fall_detection (bit): Fall detection enabled (1/0)
+                - powersaver_mode (bit): Power saver mode enabled (1/0)
+
+                **Campaign Information:**
+                - campaign_id (str): Campaign UUID
+                - campaign_name (str): Campaign name
+                - operating_tz (str): Campaign timezone
+                - operating_start_time (time): Operating hours start (e.g., 09:00:00)
+                - operating_end_time (time): Operating hours end (e.g., 17:00:00)
+                - timezone_flag (str): Timezone mode ('member_tz' or 'operating_tz')
+
+                **Enrollment Information:**
+                - activation_start_date (date): Eligibility start date (delivery + 2 biz days)
+                - campaign_end_date (date): Campaign end date (call_5_timestamp + 90 days)
+                - call_5_timestamp (datetimeoffset): When Call 5 was made (NULL before Call 5)
+                - delivery_date (date): Same as activation_start_date
+
+                **Call History:**
+                - call_attempt_number (int): Current call attempt (1, 2, 3, 4, 5+)
+                - last_attempt_date (datetimeoffset): When last call was made (NULL for Call 1)
+                - last_disposition (str): Last call outcome (NULL for Call 1)
+
+                **Bland AI Configuration:**
+                - bland_parameters_global (dict): Bland AI parameters from campaign_call_configs_enhanced
+                - config_status (str): Configuration status ('active', 'draft', 'archived')
+
+        Raises:
+            Exception: If SQL query execution fails or business hours validation encounters errors
+                Error details logged with correlation context
+
+        Example:
+            >>> # Basic usage
+            >>> eligible_members = eligibility_service.get_eligible_members()
+            >>> print(f"Found {len(eligible_members)} eligible members")
+            Found 18 eligible members
+            >>>
+            >>> # Process each member
+            >>> for member in eligible_members:
+            ...     print(f"Call #{member['call_attempt_number']}: {member['first_name']} {member['last_name']}")
+            ...     print(f"  Phone: {member['primary_phone']}, Timezone: {member['timezone']}")
+            ...     print(f"  Last attempt: {member['last_attempt_date']}")
+            Call #1: John Doe
+              Phone: +15551234567, Timezone: America/New_York
+              Last attempt: None
+            Call #3: Jane Smith
+              Phone: +15559876543, Timezone: America/Chicago
+              Last attempt: 2025-12-20 14:30:00+00:00
+            >>>
+            >>> # Check Call 5+ members
+            >>> call_5_plus = [m for m in eligible_members if m['call_attempt_number'] >= 5]
+            >>> print(f"{len(call_5_plus)} members on Call 5+ (weekly frequency)")
+            3 members on Call 5+ (weekly frequency)
+
+        Logging Output:
+            The method produces detailed logging output for debugging and monitoring:
+
+            **Start:**
+            🔍 [ELIGIBILITY-SERVICE] ============================================
+            🔍 [ELIGIBILITY-SERVICE] MEMBER QUALIFICATION - DATABASE QUERY
+            🔍 [ELIGIBILITY-SERVICE] Executing SQL eligibility query...
+
+            **No Results:**
+            ⚠️ [ELIGIBILITY-SERVICE] NO POTENTIAL MEMBERS FOUND IN DATABASE
+            ⚠️ [ELIGIBILITY-SERVICE] Diagnostic checklist:
+               □ No members enrolled in Device Activation campaign
+               □ All members have recent attempts within frequency window
+               □ All members are in callback queue (higher priority)
+
+            **With Results:**
+            ✅ [ELIGIBILITY-SERVICE] Found 25 potential members from database
+            📊 [ELIGIBILITY-SERVICE] POTENTIAL MEMBER STATISTICS
+            📊 [ELIGIBILITY-SERVICE] Call Attempt Distribution:
+               📞 Call #1: 5 members
+               📞 Call #2: 8 members
+               📞 Call #5: 12 members
+
+            **Business Hours Filtering:**
+            🕐 [ELIGIBILITY-SERVICE] BUSINESS HOURS VALIDATION
+            🕐 [ELIGIBILITY-SERVICE] Filtering members by business hours...
+            ✅ [ELIGIBILITY-SERVICE] Business hours validation complete
+               ✓ Eligible members: 18
+               ✗ Filtered out (outside business hours): 7
+
+            **Final Summary:**
+            📊 [ELIGIBILITY-SERVICE] FINAL ELIGIBILITY SUMMARY
+            📊 [ELIGIBILITY-SERVICE] ✅ Total Eligible Members: 18
+            📊 [ELIGIBILITY-SERVICE] 📋 Total Potential Members: 25
+            📊 [ELIGIBILITY-SERVICE] 🕐 Filtered by Business Hours: 7
+            📊 [ELIGIBILITY-SERVICE] 📈 Qualification Rate: 72.0%
+
+        Notes:
+            - Called every 15 minutes by device_activation_scheduler timer trigger
+            - Results are passed to BatchOrchestrator for Bland AI batch creation
+            - Callbacks are NOT included (processed separately by CallbackScheduler)
+            - Empty list is returned if no eligible members (not an error)
+            - SQL query can return 0 results if all members are outside frequency window
+            - Business hours validation can filter out all members (e.g., during off-hours)
+            - All logging uses emoji prefixes for visibility in Application Insights
+
+        Related Code:
+            - af_code/device_activation_scheduler/main_logic.py:48-65 - Calls this method
+            - af_code/device_activation_scheduler/services/batch_orchestrator.py:177-239 - Consumes results
+            - af_code/shared/business_hours_utils.py:15-45 - Business hours validation
         """
         logger.info("🔍 [ELIGIBILITY-SERVICE] ============================================")
         logger.info("🔍 [ELIGIBILITY-SERVICE] MEMBER QUALIFICATION - DATABASE QUERY")
@@ -354,17 +736,140 @@ class EligibilityService:
         """
         Filter members by business hours validation (dual-timezone)
 
-        Validates BOTH:
-        1. Medical Guardian operating hours (operating_tz = America/New_York, 9 AM - 5 PM)
-        2. Member's local timezone (member.timezone, 9 AM - 5 PM)
+        BusinessCaseID: BC-DA-003
+
+        This private method performs the second stage of eligibility filtering by validating
+        business hours for each member. It ensures calls are only made when BOTH Medical Guardian
+        operating hours AND the member's local timezone are within business hours (9 AM - 5 PM).
+
+        **Why Dual-Timezone Validation?**
+            Device Activation campaigns must respect two time constraints:
+
+            1. **Medical Guardian Operating Hours**: Calls can only be made during MG business hours
+               (9 AM - 5 PM EST) to ensure staff availability for escalations and support.
+
+            2. **Member's Local Timezone**: Calls must respect the member's local time to avoid
+               calling outside reasonable hours (e.g., don't call member at 8 AM Pacific when it's
+               11 AM EST for Medical Guardian).
+
+            Example scenario:
+            - Current time: 8:30 AM EST (Medical Guardian time)
+            - Member timezone: America/Los_Angeles (Pacific - 5:30 AM local time)
+            - Result: ❌ Skip this member (before 9 AM in both timezones)
+
+            Example scenario:
+            - Current time: 11:00 AM EST (Medical Guardian time)
+            - Member timezone: America/Los_Angeles (Pacific - 8:00 AM local time)
+            - Result: ❌ Skip this member (before 9 AM in member's timezone)
+
+            Example scenario:
+            - Current time: 2:00 PM EST (Medical Guardian time)
+            - Member timezone: America/Chicago (Central - 1:00 PM local time)
+            - Result: ✅ Call this member (both timezones within 9 AM - 5 PM)
+
+        **Business Hours Logic**:
+            Uses shared utility function `can_make_call()` from business_hours_utils.py
+
+            The function checks:
+            1. Convert current UTC time to Medical Guardian timezone (America/New_York)
+            2. Check if MG time is between 9 AM - 5 PM (operating hours)
+            3. Convert current UTC time to member's timezone (from members.timezone)
+            4. Check if member's local time is between 9 AM - 5 PM
+            5. Return True only if BOTH checks pass
+
+        **Timezone Handling**:
+            - All member timezones stored in IANA format (e.g., 'America/New_York', 'America/Chicago')
+            - Uses pytz library for accurate timezone conversion (handles DST automatically)
+            - Invalid timezones cause member to be skipped with warning log
+            - UTC time source: datetime.now(pytz.UTC)
+
+        **Process Flow**:
+            1. Get current time in UTC (timezone-aware)
+            2. For each member in potential_members:
+                a. Extract member_id, timezone
+                b. Validate timezone format (pytz.timezone(member_timezone))
+                c. Call can_make_call(now_utc, member_tz) from business_hours_utils
+                d. If can_call = True: Add to eligible_members list
+                e. If can_call = False: Log reason and skip member
+            3. Return filtered eligible_members list
 
         Args:
-            potential_members: List of members from database query
+            potential_members (List[Dict]): List of members from SQL eligibility query.
+                Each dict must contain:
+                - member_id (str): Member UUID for logging
+                - timezone (str): Member timezone in IANA format (e.g., 'America/New_York')
+                - timezone_flag (str, optional): Timezone mode (defaults to 'member_tz')
+
+                Additional fields are passed through unchanged to eligible_members.
 
         Returns:
-            List of members eligible for calling based on business hours
+            List[Dict]: Filtered list of members passing business hours validation.
+                Same structure as input, but only includes members where:
+                - Medical Guardian time is 9 AM - 5 PM EST
+                - Member's local time is 9 AM - 5 PM in member.timezone
 
-        BusinessCaseID: BC-TBD (Device Activation System)
+                Returns empty list if no members pass validation (not an error).
+
+        Raises:
+            Exception: If timezone validation encounters critical errors.
+                Individual member timezone errors are caught and logged as warnings.
+                Member is skipped but processing continues for remaining members.
+
+        Example:
+            >>> # Setup
+            >>> now_utc = datetime.now(pytz.UTC)  # 2025-12-24 18:00:00 UTC
+            >>> print(f"Current time UTC: {now_utc}")
+            Current time UTC: 2025-12-24 18:00:00+00:00
+            >>>
+            >>> # Member 1: Eastern timezone (1:00 PM local)
+            >>> member1 = {
+            ...     'member_id': 'abc-123',
+            ...     'timezone': 'America/New_York',
+            ...     'first_name': 'John'
+            ... }
+            >>>
+            >>> # Member 2: Pacific timezone (10:00 AM local)
+            >>> member2 = {
+            ...     'member_id': 'def-456',
+            ...     'timezone': 'America/Los_Angeles',
+            ...     'first_name': 'Jane'
+            ... }
+            >>>
+            >>> # Filter members
+            >>> eligible = eligibility_service._filter_by_business_hours([member1, member2])
+            >>> print(f"Eligible: {[m['first_name'] for m in eligible]}")
+            Eligible: ['John', 'Jane']  # Both pass (1 PM EST and 10 AM PST are valid)
+
+        Logging Output:
+            **Start:**
+            ⏰ [ELIGIBILITY-SERVICE] Validating business hours for 25 members...
+
+            **Per Member (Debug Level):**
+            ⏰ [ELIGIBILITY-SERVICE] Checking member abc-123 (timezone: America/New_York, mode: member_tz)
+            ✅ [ELIGIBILITY-SERVICE] Member abc-123 eligible: Both timezones within business hours
+
+            **Per Member (Filtered Out):**
+            ⏰ [ELIGIBILITY-SERVICE] Checking member def-456 (timezone: America/Los_Angeles, mode: member_tz)
+            ⏰ [ELIGIBILITY-SERVICE] Member def-456 not eligible: Member timezone outside business hours (8:00 AM Pacific)
+
+            **Timezone Error:**
+            ⚠️ [ELIGIBILITY-SERVICE] Error validating business hours for member ghi-789: Invalid timezone 'Bad/Timezone'
+
+            **Summary:**
+            ✅ [ELIGIBILITY-SERVICE] 18/25 members passed business hours validation
+
+        Notes:
+            - This is a private method (underscore prefix) called only by get_eligible_members()
+            - Business hours are hardcoded: 9 AM - 5 PM (not configurable per campaign)
+            - Timezone validation errors skip the member but don't fail the entire batch
+            - DST transitions are handled automatically by pytz library
+            - Weekend/holiday checks are NOT performed (only time-of-day validation)
+            - Members with invalid timezones are skipped with warning log
+            - Empty result is valid (e.g., all members called during off-hours)
+
+        Related Code:
+            - af_code/shared/business_hours_utils.py:15-45 - can_make_call() implementation
+            - af_code/device_activation_scheduler/services/eligibility_service.py:389-552 - Calls this method
         """
         logger.info(
             f"⏰ [ELIGIBILITY-SERVICE] Validating business hours for {len(potential_members)} members..."
