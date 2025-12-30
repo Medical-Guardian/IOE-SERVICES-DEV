@@ -14,7 +14,8 @@ from af_code.shared.business_hours_utils import (
     is_business_day,
     add_business_days,
     can_make_call,
-    get_next_valid_call_time
+    get_next_valid_call_time,
+    get_business_days_between
 )
 
 
@@ -113,6 +114,86 @@ class TestBusinessDayAddition:
         start = datetime(2025, 1, 6, 10, 0, tzinfo=pytz.UTC)
         result = BusinessHoursValidator.add_business_days(start, 0)
         assert result.date() == start.date()
+
+
+class TestBusinessDaysBetween:
+    """Test calculating business days between two dates (Device Activation Call 2-4 frequency)"""
+
+    def test_friday_to_monday_weekend(self):
+        """Test Friday to Monday (weekend): 1 business day (Friday)"""
+        # Friday 5 PM to Monday 9 AM - skip weekend, count Friday
+        friday = datetime(2025, 1, 3, 22, 0, tzinfo=pytz.UTC)  # Friday 5 PM EST
+        monday = datetime(2025, 1, 6, 14, 0, tzinfo=pytz.UTC)  # Monday 9 AM EST
+
+        result = get_business_days_between(friday, monday)
+        assert result == 1  # Friday counts, weekend doesn't
+
+    def test_monday_to_wednesday(self):
+        """Test Monday to Wednesday: 2 business days (Mon, Tue)"""
+        monday = datetime(2025, 1, 6, 14, 0, tzinfo=pytz.UTC)
+        wednesday = datetime(2025, 1, 8, 14, 0, tzinfo=pytz.UTC)
+
+        result = get_business_days_between(monday, wednesday)
+        assert result == 2  # Monday and Tuesday
+
+    def test_monday_to_next_monday(self):
+        """Test Monday to next Monday: 5 business days"""
+        monday1 = datetime(2025, 1, 6, 14, 0, tzinfo=pytz.UTC)
+        monday2 = datetime(2025, 1, 13, 14, 0, tzinfo=pytz.UTC)
+
+        result = get_business_days_between(monday1, monday2)
+        assert result == 5  # Mon, Tue, Wed, Thu, Fri
+
+    def test_same_day(self):
+        """Test same day: 0 business days"""
+        same_day_morning = datetime(2025, 1, 6, 14, 0, tzinfo=pytz.UTC)
+        same_day_evening = datetime(2025, 1, 6, 22, 0, tzinfo=pytz.UTC)
+
+        result = get_business_days_between(same_day_morning, same_day_evening)
+        assert result == 0
+
+    def test_skip_christmas_holiday(self):
+        """Test skipping Christmas holiday"""
+        dec_24 = datetime(2025, 12, 24, 14, 0, tzinfo=pytz.UTC)
+        dec_26 = datetime(2025, 12, 26, 14, 0, tzinfo=pytz.UTC)
+
+        result = get_business_days_between(dec_24, dec_26)
+        assert result == 1  # Only Dec 24 (skip Christmas Dec 25)
+
+    def test_skip_thanksgiving_and_weekend(self):
+        """Test skipping Thanksgiving and weekend"""
+        # Monday Nov 24 to Monday Dec 1
+        nov_24 = datetime(2025, 11, 24, 14, 0, tzinfo=pytz.UTC)
+        dec_1 = datetime(2025, 12, 1, 14, 0, tzinfo=pytz.UTC)
+
+        result = get_business_days_between(nov_24, dec_1)
+        # Mon 24, Tue 25, Wed 26, skip Thu 27 (Thanksgiving), Fri 28, skip weekend
+        assert result == 4  # 24, 25, 26, 28
+
+    def test_call_2_frequency_2_business_days(self):
+        """Test Call 2 frequency: 2 business days requirement"""
+        # Simulate: Last call Friday 2 PM, check Tuesday 9 AM
+        last_call = datetime(2025, 1, 3, 19, 0, tzinfo=pytz.UTC)  # Friday 2 PM EST
+        now = datetime(2025, 1, 7, 14, 0, tzinfo=pytz.UTC)  # Tuesday 9 AM EST
+
+        result = get_business_days_between(last_call, now)
+        assert result >= 2  # At least 2 business days (Fri, Mon)
+
+    def test_call_4_frequency_5_business_days(self):
+        """Test Call 4 frequency: 5 business days requirement"""
+        last_call = datetime(2025, 1, 6, 19, 0, tzinfo=pytz.UTC)  # Monday 2 PM EST
+        now = datetime(2025, 1, 13, 14, 0, tzinfo=pytz.UTC)  # Next Monday 9 AM EST
+
+        result = get_business_days_between(last_call, now)
+        assert result >= 5  # At least 5 business days
+
+    def test_new_years_holiday_skip(self):
+        """Test skipping New Year's Day (Jan 1)"""
+        dec_31 = datetime(2024, 12, 31, 14, 0, tzinfo=pytz.UTC)  # Tuesday
+        jan_2 = datetime(2025, 1, 2, 14, 0, tzinfo=pytz.UTC)  # Thursday
+
+        result = get_business_days_between(dec_31, jan_2)
+        assert result == 1  # Only Dec 31 (skip Jan 1 holiday)
 
 
 class TestBusinessHoursValidation:
@@ -331,6 +412,64 @@ class TestConvenienceFunctions:
 
         # Should be Monday
         assert next_time.astimezone(member_tz).weekday() == 0
+
+
+class TestBusinessHoursDualTimezone:
+    """Test dual-timezone validation: MG 9AM-4PM EST, Member 9AM-4PM local"""
+
+    def test_3_30pm_est_member_in_est_valid(self):
+        """Test 3:30 PM EST for EST member - valid for both (within 9-4 EST)"""
+        call_time = datetime(2025, 1, 6, 20, 30, tzinfo=pytz.UTC)  # 3:30 PM EST, Monday
+        member_tz = pytz.timezone('America/New_York')
+
+        can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
+        assert can_call
+        assert "Call allowed" in reason
+
+    def test_4pm_est_member_in_est_invalid(self):
+        """Test 4:00 PM EST for EST member - invalid (at cutoff, hour=16)"""
+        call_time = datetime(2025, 1, 6, 21, 0, tzinfo=pytz.UTC)  # 4:00 PM EST, Monday
+        member_tz = pytz.timezone('America/New_York')
+
+        can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
+        assert not can_call  # hour=16 fails (< 16 check)
+        assert "business hours" in reason
+
+    def test_12pm_est_member_in_pst_valid(self):
+        """Test 12 PM EST (9 AM PST) for PST member - valid start of window"""
+        call_time = datetime(2025, 1, 6, 17, 0, tzinfo=pytz.UTC)  # 12 PM EST = 9 AM PST
+        member_tz = pytz.timezone('America/Los_Angeles')
+
+        can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
+        assert can_call  # MG: 12 PM EST valid, Member: 9 AM PST valid
+        assert "Call allowed" in reason
+
+    def test_4pm_est_member_in_pst_invalid(self):
+        """Test 4 PM EST (1 PM PST) for PST member - invalid (MG cutoff, member OK)"""
+        call_time = datetime(2025, 1, 6, 21, 0, tzinfo=pytz.UTC)  # 4 PM EST = 1 PM PST
+        member_tz = pytz.timezone('America/Los_Angeles')
+
+        can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
+        assert not can_call  # MG cutoff at 4 PM EST (member local 1 PM PST is OK)
+        assert "Medical Guardian business hours" in reason
+
+    def test_10am_est_member_in_cst_valid(self):
+        """Test 10 AM EST (9 AM CST) for CST member - valid start of window"""
+        call_time = datetime(2025, 1, 6, 15, 0, tzinfo=pytz.UTC)  # 10 AM EST = 9 AM CST
+        member_tz = pytz.timezone('America/Chicago')
+
+        can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
+        assert can_call  # MG: 10 AM EST valid, Member: 9 AM CST valid
+        assert "Call allowed" in reason
+
+    def test_9am_est_member_in_cst_invalid_member_early(self):
+        """Test 9 AM EST (8 AM CST) for CST member - invalid (member too early)"""
+        call_time = datetime(2025, 1, 6, 14, 0, tzinfo=pytz.UTC)  # 9 AM EST = 8 AM CST
+        member_tz = pytz.timezone('America/Chicago')
+
+        can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
+        assert not can_call  # Member local 8 AM CST is before 9 AM
+        assert "member business hours" in reason
 
 
 # Run tests with pytest
