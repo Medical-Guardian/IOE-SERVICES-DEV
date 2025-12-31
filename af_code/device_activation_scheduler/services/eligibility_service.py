@@ -143,7 +143,11 @@ from datetime import datetime
 import pytz
 
 from af_code.bland_ai_webhook.services.database_service import DatabaseService
-from af_code.shared.business_hours_utils import can_make_call, get_business_days_between
+from af_code.shared.business_hours_utils import (
+    can_make_call,
+    get_business_days_between,
+    is_business_day,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -658,11 +662,20 @@ class EligibilityService:
             logger.info("📅 [ELIGIBILITY-SERVICE] ============================================")
             logger.info("📅 [ELIGIBILITY-SERVICE] BUSINESS DAY FREQUENCY VALIDATION")
             logger.info("📅 [ELIGIBILITY-SERVICE] ============================================")
-            logger.info("📅 [ELIGIBILITY-SERVICE] Filtering Call 2-4 by business days (excludes weekends/holidays)...")
+            logger.info(
+                "📅 [ELIGIBILITY-SERVICE] Filtering Call 2-4 by business days (excludes weekends/holidays)..."
+            )
             logger.info("📅 [ELIGIBILITY-SERVICE] Call 1: No filter (first call)")
-            logger.info("📅 [ELIGIBILITY-SERVICE] Call 2-3: Require 2 business days since last attempt")
-            logger.info("📅 [ELIGIBILITY-SERVICE] Call 4: Require 5 business days since last attempt")
-            logger.info("📅 [ELIGIBILITY-SERVICE] Call 5+: Already filtered in SQL (7 calendar days)")
+            logger.info(
+                "📅 [ELIGIBILITY-SERVICE] Call 2-3: Require 2 business days since last attempt"
+            )
+            logger.info(
+                "📅 [ELIGIBILITY-SERVICE] Call 4: Require 5 business days since last attempt"
+            )
+            logger.info("📅 [ELIGIBILITY-SERVICE] Call 5+: 7 calendar days frequency (SQL)")
+            logger.info(
+                "📅 [ELIGIBILITY-SERVICE] Call 5+: Business day validation (Python - current day check)"
+            )
 
             business_day_filtered_members = []
             now_utc = datetime.now(pytz.UTC)
@@ -676,9 +689,21 @@ class EligibilityService:
                     business_day_filtered_members.append(member)
                     continue
 
-                # Call 5+: Uses calendar days (already filtered in SQL), include
+                # Call 5+: Check current day is a business day (no frequency calculation needed)
+                # Frequency uses 7 CALENDAR days (SQL), but calls only on business days
                 if call_attempt_number >= 5:
-                    business_day_filtered_members.append(member)
+                    # Check if TODAY is a business day (excludes weekends and federal holidays)
+                    if is_business_day(now_utc):
+                        logger.debug(
+                            f"✅ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
+                            f"Current day is a business day - ELIGIBLE"
+                        )
+                        business_day_filtered_members.append(member)
+                    else:
+                        logger.debug(
+                            f"❌ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
+                            f"Current day is NOT a business day (weekend or holiday) - SKIPPED"
+                        )
                     continue
 
                 # Call 2-4: Check business days
@@ -720,7 +745,9 @@ class EligibilityService:
                             f"{business_days} business days (< 5 required) - SKIPPED"
                         )
 
-            business_day_filtered_count = len(potential_members) - len(business_day_filtered_members)
+            business_day_filtered_count = len(potential_members) - len(
+                business_day_filtered_members
+            )
             logger.info("")
             logger.info("✅ [ELIGIBILITY-SERVICE] Business day frequency validation complete")
             logger.info(
@@ -729,6 +756,7 @@ class EligibilityService:
             logger.info(
                 f"   ✗ Filtered out (insufficient business days): {business_day_filtered_count} members"
             )
+            logger.info("   ℹ️ Call 5+ members validated for current day being a business day")
 
             # Filter by business hours
             logger.info("")
