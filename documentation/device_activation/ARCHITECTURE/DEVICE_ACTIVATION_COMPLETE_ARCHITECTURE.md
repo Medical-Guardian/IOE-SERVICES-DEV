@@ -26,7 +26,7 @@ The Device Activation system is a healthcare automation platform that proactivel
 - **Processing Speed:** 1 CSV file per minute (30-60 seconds per file)
 - **Scheduling Frequency:** Every 15 minutes
 - **Batch Size:** Up to 100 members per Bland AI batch
-- **Call Frequency:** 2 BUSINESS days (Calls 2-3), 5 BUSINESS days (Call 4), 7 CALENDAR days (Calls 5+)
+- **Call Frequency:** 2 BUSINESS days (Calls 2-3), 5 BUSINESS days (Call 4), 7 CALENDAR days frequency for Calls 5+ (calls only on business days)
 - **Campaign Duration:** Up to 90 days from Call 5 creation
 - **Callback Timeout:** 24 CALENDAR hours OR 3 reschedule attempts
 
@@ -167,9 +167,9 @@ Complete BusinessCaseID mapping for all Device Activation components. See [DEVIC
 - **Key Functions:** Business hours validation, reschedule logic, timeout detection (24h OR 3 attempts)
 
 **BC-DA-006: Device Activation - Call Frequency & Sequencing Logic**
-- **Purpose:** Call 1-4 vs Call 5+ logic, 90-day window management
-- **Files:** `eligibility_service.py`, `batch_orchestrator.py`, `database/create_business_days_function.sql`
-- **Key Functions:** BUSINESS day frequency (Calls 2-3: 2 days, Call 4: 5 days), 7 CALENDAR days (Call 5+), call_5_timestamp tracking
+- **Purpose:** Call 1-4 vs Call 5+ logic, 90-day window management, explicit business day validation for Call 5+
+- **Files:** `eligibility_service.py`, `batch_orchestrator.py`, `business_hours_utils.py`, `test_device_activation_call_5_business_days.py`
+- **Key Functions:** BUSINESS day frequency (Calls 2-3: 2 days, Call 4: 5 days), 7 CALENDAR days frequency for Call 5+ (calls only on business days), call_5_timestamp tracking, defense in depth business day validation
 
 **BC-DA-007: Device Activation - Webhook Processing & Status Updates**
 - **Purpose:** Call result processing, disposition mapping, status updates
@@ -653,7 +653,7 @@ WHERE c.campaign_id = %s
    - **Call 1:** No previous attempts
    - **Calls 2-3:** 2 BUSINESS days since last attempt, max 3 total attempts
    - **Call 4:** 5 BUSINESS days since last attempt, exactly 3 previous attempts
-   - **Calls 5+:** 7 CALENDAR days since last attempt, within 90-day window
+   - **Calls 5+:** 7 CALENDAR days frequency since last attempt (counts weekends/holidays), calls ONLY on business days (timing), within 90-day window
 5. NOT in pending callback queue (callbacks have priority)
 6. NOT in pending batch (already scheduled)
 
@@ -823,8 +823,17 @@ OR
 
 **Purpose:** Extended outreach over 90-day window for persistent engagement
 
-**Frequency:** CALENDAR days (all days, including weekends and holidays)
+**CRITICAL DISTINCTION:**
+- **Frequency Calculation:** 7 CALENDAR days (includes weekends/holidays in the count)
+- **Call Timing:** Calls ONLY on business days (Monday-Friday, excluding federal holidays)
+
+**Frequency:** CALENDAR days for counting the 7-day window
 - Minimum 7 CALENDAR days between attempts (weekly frequency)
+- SQL: `DATEDIFF(day, last_attempt, now) >= 7` (counts ALL days)
+
+**Call Timing:** BUSINESS days only (when calls can actually be made)
+- Python: `is_business_day(now_utc)` - filters out weekends/holidays
+- Defense in Depth: Validated in BOTH eligibility filter AND business hours filter
 
 **Max Attempts:** Unlimited (within 90-day window)
 
@@ -834,16 +843,18 @@ OR
 - **Calculation:** `DATEADD(DAY, 90, call_5_timestamp)`
 
 **Timeline:**
-- **Call 5:** Call 4 + 7 CALENDAR days (triggers 90-day window)
-- **Call 6:** Call 5 + 7 CALENDAR days (weekly frequency)
-- **Call 7:** Call 6 + 7 CALENDAR days
-- **...continues weekly until campaign_end_date reached**
+- **Call 5:** Call 4 + 7 CALENDAR days frequency (triggers 90-day window), calls only on business days
+- **Call 6:** Call 5 + 7 CALENDAR days frequency, calls only on business days
+- **Call 7:** Call 6 + 7 CALENDAR days frequency, calls only on business days
+- **...continues weekly (7 calendar day frequency, business day timing) until campaign_end_date reached**
 - **Max Possible:** ~13 calls (90 days ÷ 7 days)
 
 **Key Points:**
 - Window starts from call_5_timestamp, NOT activation_start_date
-- Uses `DATEDIFF(day, ...)` for calendar day calculations (DIFFERENT from Calls 1-4)
-- Calls CAN occur on weekends or holidays (calendar days include all days)
+- **Frequency uses CALENDAR days** via `DATEDIFF(day, ...)` - includes weekends/holidays in count
+- **Calls are ONLY made on business days** via `is_business_day()` - skips weekends/holidays
+- Example: If 7 calendar days pass and it's Saturday, call is skipped until Monday (next business day)
+- Defense in depth: Business day validated in eligibility filter (explicit) AND business hours filter (implicit via `can_make_call()`)
 - Still subject to business hours validation (9 AM-4 PM EST for MG, 9 AM-5 PM for member)
 
 **SQL Logic (Eligibility Query):**
@@ -867,6 +878,33 @@ OR
 )
 ```
 
+**Python Business Day Validation (eligibility_service.py:680-695):**
+```python
+# Call 5+: Check current day is a business day (no frequency calculation needed)
+# Frequency uses 7 CALENDAR days (SQL), but calls only on business days
+if call_attempt_number >= 5:
+    # Check if TODAY is a business day (excludes weekends and federal holidays)
+    if is_business_day(now_utc):
+        logger.debug(
+            f"✅ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
+            f"Current day is a business day - ELIGIBLE"
+        )
+        business_day_filtered_members.append(member)
+    else:
+        logger.debug(
+            f"❌ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
+            f"Current day is NOT a business day (weekend or holiday) - SKIPPED"
+        )
+    continue
+```
+
+**Key Implementation Notes:**
+- SQL calculates frequency using CALENDAR days (7 days = eligible)
+- Python filters by BUSINESS day (current day must be Mon-Fri, not holiday)
+- Defense in depth: Business day also validated in `can_make_call()` (business hours filter)
+- If member eligible (7 calendar days passed) but today is weekend → skipped until next business day
+- Uses Python `holidays` library for US federal holidays (NOT database table)
+
 ### 6.3 Example Timeline (with Business Days)
 
 **Scenario:** Device delivered on Monday, Jan 1 (no holidays in this period)
@@ -879,22 +917,27 @@ Fri Jan 5:   Call 2 eligible (2 business days later: Thu, Fri)
 Tue Jan 9:   Call 3 eligible (2 business days later: Mon, Tue)
 Mon Jan 15:  Call 4 eligible (5 business days later: Wed, Thu, Fri, Mon, Mon)
              Skip Sat Jan 13, Sun Jan 14 (weekend)
-Mon Jan 22:  Call 5 eligible (7 CALENDAR days later, includes weekend)
+Mon Jan 22:  Call 5 eligible (7 CALENDAR days frequency since Jan 15, calls only on business days)
+             → Today is Monday (business day) → Call made
              → call_5_timestamp = Jan 22
              → campaign_end_date = Apr 22 (90 calendar days later)
-Mon Jan 29:  Call 6 eligible (7 calendar days later)
-Mon Feb 5:   Call 7 eligible (7 calendar days later)
-...weekly calls (every Monday)...
-Mon Apr 21:  Last call before campaign_end_date
+Mon Jan 29:  Call 6 eligible (7 calendar days frequency since Jan 22, today is Monday → call made)
+Mon Feb 5:   Call 7 eligible (7 calendar days frequency since Jan 29, today is Monday → call made)
+...weekly calls (7 calendar day frequency, only on business days)...
+Mon Apr 21:  Last call before campaign_end_date (7 calendar days since Apr 14, today is Monday → call made)
 Apr 22:      campaign_end_date reached → No more calls
+
+NOTE: If any Call 5+ eligible date falls on weekend/holiday, call is skipped until next business day
+Example: If Call 6 eligible on Saturday Jan 27, skipped until Monday Jan 29
 ```
 
 **Total Duration:** 112 days (Jan 1 to Apr 22)
-**Total Calls:** Up to 17 (4 initial + 13 weekly)
+**Total Calls:** Up to 17 (4 initial + 13 weekly, assuming all Call 5+ eligible dates are business days)
 
 **Key Timeline Differences:**
-- **Calls 1-4:** Use BUSINESS days (skip weekends, take longer in real time)
-- **Call 5+:** Use CALENDAR days (include weekends, exactly 7 days apart)
+- **Calls 1-4:** Use BUSINESS days for both frequency AND timing (skip weekends, take longer in real time)
+- **Call 5+:** Use CALENDAR days for frequency (7 days = eligible), but calls ONLY on business days (timing)
+- **Call 5+ Example:** If 7 calendar days pass (eligible) but it's Saturday → skipped until Monday (next business day)
 
 ---
 

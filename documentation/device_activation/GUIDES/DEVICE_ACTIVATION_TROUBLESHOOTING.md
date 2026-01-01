@@ -719,16 +719,18 @@ GROUP BY e.enrollment_id;
 
 **Symptoms:**
 - Members called before minimum BUSINESS days elapsed (Calls 1-4 should use business days, not calendar days)
-- Call 5+ members called before 7 CALENDAR days elapsed
+- Call 5+ members called before 7 CALENDAR days elapsed (frequency issue)
+- Call 5+ members called on weekends or holidays (should only call on business days)
 - Call 5+ members not called after 90 days (should stop at campaign_end_date)
 
 **Root Causes:**
 
 1. **Frequency logic error** in Python business days filtering (eligibility_service.py:666-730)
-2. **call_5_timestamp not set** (batch_orchestrator issue)
-3. **campaign_end_date miscalculated** (should be call_5_timestamp + 90 days)
-4. ⚠️ **DEPRECATED:** Business days function missing - **NO LONGER USED** (now calculated in Python)
-5. ⚠️ **DEPRECATED:** Holidays table missing - **NO LONGER USED** (Python `holidays` library used instead)
+2. **Call 5+ business day validation missing** - members eligible on weekend/holiday not being filtered (eligibility_service.py:680-695)
+3. **call_5_timestamp not set** (batch_orchestrator issue)
+4. **campaign_end_date miscalculated** (should be call_5_timestamp + 90 days)
+5. ⚠️ **DEPRECATED:** Business days function missing - **NO LONGER USED** (now calculated in Python)
+6. ⚠️ **DEPRECATED:** Holidays table missing - **NO LONGER USED** (Python `holidays` library used instead)
 
 **Diagnostic Steps:**
 
@@ -752,7 +754,7 @@ ORDER BY attempt_ts DESC;
 -- Python code uses get_business_days_between() function to filter:
 -- Calls 2-3: business_days >= 2
 -- Call 4: business_days >= 5
--- Call 5+: calendar_days >= 7
+-- Call 5+: calendar_days >= 7 (frequency), calls ONLY on business days (timing via is_business_day())
 
 -- Step 2: ⚠️ DEPRECATED - dbo.GetBusinessDaysBetween function NO LONGER USED
 -- Business day filtering is now in Python code (af_code/shared/business_hours_utils.py)
@@ -831,10 +833,17 @@ WHERE e.campaign_id IN (SELECT campaign_id FROM engage360.campaigns_enhanced WHE
 -- Python code filters by business days using get_business_days_between()
 -- See: eligibility_service.py:666-730
 
--- Call 5+: Use DATEDIFF(day, ...) for CALENDAR days (includes weekends/holidays) - STILL IN SQL
+-- Call 5+: Use DATEDIFF(day, ...) for CALENDAR days frequency (includes weekends/holidays) - STILL IN SQL
 AND DATEDIFF(DAY, last_attempt_ts, SYSDATETIMEOFFSET()) >= 7
 
--- IMPORTANT: Calls 1-4 use BUSINESS days (PYTHON), Call 5+ uses CALENDAR days (SQL)
+-- Call 5+ business day validation: Explicit check in Python (eligibility_service.py:680-695)
+-- Filters out weekends/holidays even if 7 calendar days have passed
+-- Uses is_business_day(now_utc) to check if current day is a business day
+
+-- IMPORTANT DISTINCTION:
+-- Calls 1-4: BUSINESS days for both frequency AND timing (PYTHON)
+-- Call 5+: CALENDAR days for frequency (SQL), BUSINESS days for timing (PYTHON)
+-- Example: If 7 calendar days pass but today is Saturday → member skipped until Monday
 ```
 
 ---

@@ -19,7 +19,7 @@
 Device Activation uses two distinct call frequency patterns based on attempt number:
 
 - **Calls 1-4 (Initial Phase):** Frequent attempts using BUSINESS days (2 days for Calls 2-3, 5 days for Call 4) with a maximum of 4 attempts. **No 90-day limit.**
-- **Calls 5+ (Extended Phase):** Weekly attempts (7 CALENDAR days) within a 90-day window starting from Call 5 creation.
+- **Calls 5+ (Extended Phase):** Weekly attempts (7 CALENDAR days frequency, calls only on business days) within a 90-day window starting from Call 5 creation.
 
 Additionally, the system supports callback scheduling when members request to be called back at a specific time.
 
@@ -130,9 +130,14 @@ Timeline Rules (Calls 1-4):
 
 5. **Transition to Call 5+:**
    - After Call 4 completes, system switches to weekly frequency (7 CALENDAR days spacing)
-   - IMPORTANT: Call 5+ uses CALENDAR days (includes weekends/holidays), NOT business days
+   - IMPORTANT: Call 5+ frequency uses 7 CALENDAR days (includes weekends/holidays in the count)
+   - IMPORTANT: Call 5+ calls are ONLY made on business days (weekends/holidays are skipped)
+   - **Defense in Depth:** Business day validation happens in TWO places:
+     1. Eligibility filter explicitly checks `is_business_day(now_utc)` for Call 5+ members
+     2. Business hours filter validates via `can_make_call()` (implicit business day check)
    - 90-day window logic activates starting from Call 5 creation
    - Code: `af_code/device_activation_scheduler/services/batch_orchestrator.py:_update_call_5_enrollments()`
+   - Code: `af_code/device_activation_scheduler/services/eligibility_service.py:680-695` (Call 5+ business day filter)
 
 ### Related Code Files
 
@@ -204,7 +209,8 @@ Day X+90 (Apr 13):  🛑 Campaign Ends (campaign_end_date reached)
 
 Timeline Rules (Call 5+):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-• Frequency: Minimum 7 calendar days between attempts
+• Frequency: Minimum 7 calendar days between attempts (counts weekends/holidays)
+• Call Timing: Calls ONLY on business days (Mon-Fri, excluding federal holidays)
 • Max Attempts: Unlimited (within 90-day window)
 • Window Start: call_5_timestamp (NOT activation_start_date)
 • Window Duration: Exactly 90 calendar days
@@ -228,10 +234,12 @@ Timeline Rules (Call 5+):
    - Window is 90 **calendar days** (includes weekends/holidays)
 
 3. **Weekly Frequency (7-Day Spacing):**
-   - Minimum 7 calendar days between attempts (not business days)
-   - SQL: `DATEDIFF(DAY, last_attempt_ts, SYSDATETIMEOFFSET()) >= 7`
+   - **Frequency Window:** Minimum 7 calendar days between attempts (counts weekends/holidays)
+   - **Call Timing:** Calls ONLY made on business days (Mon-Fri, excluding federal holidays)
+   - **SQL Frequency Check:** `DATEDIFF(DAY, last_attempt_ts, SYSDATETIMEOFFSET()) >= 7`
+   - **Python Business Day Check:** `is_business_day(now_utc)` filters out weekends/holidays
    - Call 6 eligible 7 days after Call 5, Call 7 eligible 7 days after Call 6, etc.
-   - Code: `af_code/device_activation_scheduler/services/eligibility_service.py:110-132`
+   - Code: `af_code/device_activation_scheduler/services/eligibility_service.py:110-132, 680-695`
 
 4. **Unlimited Attempts Within Window:**
    - No maximum attempt count for Call 5+ (unlike Calls 1-4)
@@ -510,7 +518,7 @@ Tuesday 4:00 PM: 24 hours elapsed since created_at → Timeout ❌
 These three diagrams illustrate the complete call sequencing logic for Device Activation:
 
 1. **Calls 1-4:** Initial rapid outreach (BUSINESS days: 2 days for Calls 2-3, 5 days for Call 4, max 4 attempts, no time limit)
-2. **Calls 5+:** Extended weekly outreach (7 CALENDAR days, unlimited attempts, 90-day window)
+2. **Calls 5+:** Extended weekly outreach (7 CALENDAR days frequency, calls only on business days, unlimited attempts, 90-day window)
 3. **Callbacks:** Member-requested callback handling (business hours validation, 24 CALENDAR hour timeout protection)
 
 **Key Architectural Decisions:**

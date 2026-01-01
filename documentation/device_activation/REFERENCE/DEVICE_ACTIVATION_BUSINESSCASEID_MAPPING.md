@@ -284,25 +284,30 @@ SELECT * FROM RegularCalls UNION ALL SELECT * FROM CallbackCalls
 
 **Scope:**
 - **Calls 1-4 Frequency:** BUSINESS day frequency (2 days for Calls 2-3, 5 days for Call 4), max 4 attempts, NO 90-day limit
-- **Call 5+ Frequency:** CALENDAR day frequency (7 days weekly, includes weekends/holidays), unlimited attempts, 90-day window
-- **Business Days:** Monday-Friday, excluding US federal holidays - **FILTERED IN PYTHON** (uses `get_business_days_between()` function)
-- **Calendar Days:** All days including weekends and holidays (uses `DATEDIFF(day, ...)` in SQL)
+- **Call 5+ Frequency:** 7 CALENDAR days frequency (includes weekends/holidays in count), calls ONLY on business days, unlimited attempts, 90-day window
+- **Business Days:** Monday-Friday, excluding US federal holidays - **FILTERED IN PYTHON** (uses `get_business_days_between()` for Calls 1-4, `is_business_day()` for Call 5+)
+- **Calendar Days:** All days including weekends and holidays (uses `DATEDIFF(day, ...)` in SQL for frequency calculation)
 - **90-Day Window Logic:** Starts from call_5_timestamp (NOT activation_start_date)
 - **Call 5 Timestamp Tracking:** Set when Call 5 is created, triggers campaign_end_date calculation
 - **Campaign End Date Calculation:** call_5_timestamp + 90 days
+- **Defense in Depth:** Call 5+ business day validation happens in TWO places (eligibility filter + business hours filter)
 
 **Components:**
-- Eligibility query frequency logic (Python `get_business_days_between()` for Calls 1-4, SQL DATEDIFF for Call 5+)
+- Eligibility query frequency logic (Python `get_business_days_between()` for Calls 1-4, SQL DATEDIFF for Call 5+ frequency)
+- Explicit business day validation for Call 5+ (Python `is_business_day()` for current day check)
 - Call 5 timestamp update logic
 - Campaign end date calculation
 - Attempt count tracking
 - Python `holidays` library for US federal holidays (NOT database table)
+- Defense in depth: Business day validation in eligibility filter AND business hours filter
 
 **Files:**
-- `af_code/device_activation_scheduler/services/eligibility_service.py` (414 lines) - Frequency rules in SQL query
-- `af_code/device_activation_scheduler/services/batch_orchestrator.py` (809 lines) - call_5_timestamp update
-- `database/create_business_days_function.sql` - Business days calculation function
-- `database/create_us_federal_holidays_table.sql` - Holidays table
+- `af_code/device_activation_scheduler/services/eligibility_service.py` - Frequency rules in SQL query + explicit Call 5+ business day validation (lines 680-695)
+- `af_code/device_activation_scheduler/services/batch_orchestrator.py` - call_5_timestamp update
+- `af_code/shared/business_hours_utils.py` - Business day utilities (`is_business_day()`, `get_business_days_between()`)
+- `tests/test_device_activation_call_5_business_days.py` (377 lines) - Comprehensive test suite for Call 5+ business day validation (10 test cases)
+- `database/create_business_days_function.sql` - Business days calculation function (DEPRECATED - now using Python)
+- `database/create_us_federal_holidays_table.sql` - Holidays table (DEPRECATED - now using Python `holidays` library)
 
 **Key Logic Blocks:**
 
@@ -311,6 +316,7 @@ SELECT * FROM RegularCalls UNION ALL SELECT * FROM CallbackCalls
 ⚠️ **NOTE: Business day filtering for Calls 2-4 now happens in PYTHON, not SQL.**
 See: `eligibility_service.py:666-730` (uses `get_business_days_between()` function)
 
+**SQL Frequency Calculation:**
 ```sql
 -- Calls 2-3: 2 BUSINESS days since last attempt (FILTERED IN PYTHON)
 (SELECT COUNT(*) FROM outreach_attempts WHERE enrollment_id = e.enrollment_id) BETWEEN 1 AND 2
@@ -320,10 +326,30 @@ See: `eligibility_service.py:666-730` (uses `get_business_days_between()` functi
 (SELECT COUNT(*) FROM outreach_attempts WHERE enrollment_id = e.enrollment_id) = 3
 -- Business day check removed from SQL - now filtered in Python code
 
--- Call 5+: 7 CALENDAR days since last attempt
+-- Call 5+: 7 CALENDAR days since last attempt (frequency only, call timing checked in Python)
 (SELECT COUNT(*) FROM outreach_attempts WHERE enrollment_id = e.enrollment_id) >= 4
 AND DATEDIFF(DAY, MAX(attempt_ts), SYSDATETIMEOFFSET()) >= 7
 AND (call_5_timestamp IS NULL OR SYSDATETIMEOFFSET() < DATEADD(DAY, 90, call_5_timestamp))
+```
+
+**Python Business Day Validation for Call 5+ (eligibility_service.py:680-695):**
+```python
+# Call 5+: Check current day is a business day (no frequency calculation needed)
+# Frequency uses 7 CALENDAR days (SQL), but calls only on business days
+if call_attempt_number >= 5:
+    # Check if TODAY is a business day (excludes weekends and federal holidays)
+    if is_business_day(now_utc):
+        logger.debug(
+            f"✅ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
+            f"Current day is a business day - ELIGIBLE"
+        )
+        business_day_filtered_members.append(member)
+    else:
+        logger.debug(
+            f"❌ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
+            f"Current day is NOT a business day (weekend or holiday) - SKIPPED"
+        )
+    continue
 ```
 
 **In batch_orchestrator.py (Python):**
@@ -345,12 +371,17 @@ def _update_call_5_enrollments(self, eligible_members: List[Dict]) -> None:
 2. **Call 2:** 2 BUSINESS days after Call 1, no success yet
 3. **Call 3:** 2 BUSINESS days after Call 2, no success yet
 4. **Call 4:** 5 BUSINESS days after Call 3, no success yet
-5. **Call 5:** 7 CALENDAR days after Call 4, sets call_5_timestamp and 90-day window
-6. **Call 6+:** Weekly (every 7 CALENDAR days) until call_5_timestamp + 90 days
+5. **Call 5:** 7 CALENDAR days after Call 4 (frequency), calls ONLY on business days (timing), sets call_5_timestamp and 90-day window
+6. **Call 6+:** Weekly (every 7 CALENDAR days frequency), calls ONLY on business days (timing), until call_5_timestamp + 90 days
 
 **Key Distinction:**
-- **Calls 1-4:** Use BUSINESS days (Monday-Friday, no holidays) - gives members more time in real calendar
-- **Call 5+:** Use CALENDAR days (includes weekends/holidays) - weekly frequency regardless of business days
+- **Calls 1-4:** Use BUSINESS days for both frequency AND timing (Monday-Friday, no holidays) - gives members more time in real calendar
+- **Call 5+:** Use CALENDAR days for frequency (includes weekends/holidays), but calls ONLY on business days (Monday-Friday, no holidays)
+
+**Critical Clarification (Call 5+):**
+- **Frequency Calculation (SQL):** `DATEDIFF(day, ...) >= 7` - counts ALL days (calendar days)
+- **Call Timing (Python):** `is_business_day(now_utc)` - filters out weekends/holidays
+- **Example:** If Call 5 attempted on Monday, 7 calendar days = next Monday (eligible). If next Monday is a holiday, call skipped until next business day (Tuesday).
 
 **Related Documentation:**
 - [Complete Architecture](../ARCHITECTURE/DEVICE_ACTIVATION_COMPLETE_ARCHITECTURE.md#5-call-sequencing-logic)

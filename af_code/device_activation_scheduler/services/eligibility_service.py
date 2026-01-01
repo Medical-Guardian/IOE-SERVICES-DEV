@@ -3,7 +3,7 @@ Device Activation Eligibility Service
 
 BusinessCaseID: BC-DA-003 (Eligibility & Scheduling Logic), BC-DA-006 (Call Frequency & Sequencing Logic)
 Created: 2025-12-07
-Updated: 2025-12-24 - Added comprehensive documentation and BusinessCaseID mapping
+Updated: 2026-01-01 - Added explicit business day validation for Call 5+ members (defense in depth)
 
 This service determines which members are eligible for Device Activation calls by executing
 a complex SQL eligibility query and filtering results by business hours.
@@ -32,13 +32,15 @@ Device Activation uses two distinct call frequency patterns:
 - **Max 4 attempts** total in this phase
 
 **Calls 5+ (Extended Attempts):**
-- Frequency: Weekly (7 calendar days between attempts)
+- **Frequency Calculation**: Weekly (7 CALENDAR days between attempts - counts weekends/holidays)
+- **Call Timing**: Calls ONLY on business days (Mon-Fri, excluding federal holidays)
 - Max Attempts: Unlimited
 - **90-Day Window**: call_5_timestamp + 90 days
   - Window starts FROM Call 5 creation (NOT activation_start_date)
   - Allows sufficient time for early attempts before enforcing hard stop
   - campaign_end_date = call_5_timestamp + 90 days
 - Continue weekly calls until campaign_end_date reached
+- **Defense in Depth**: Business day validated in BOTH eligibility filter AND business hours filter
 
 **Example Timeline:**
 ```
@@ -82,7 +84,7 @@ The service executes a 200+ line SQL query (ELIGIBLE_MEMBERS_QUERY) that:
    - current_status = 'ENROLLED'
    - device_activated = 0 (device not yet activated)
    - activation_start_date <= today (past Day 2)
-   - Frequency rules (24h for Call 2-4, 7 days for Call 5+)
+   - Frequency rules: 2/5 BUSINESS days for Calls 2-4, 7 CALENDAR days for Call 5+ (calls only on business days)
    - 90-day window for Call 5+ only
    - Not in callback queue (callbacks processed separately)
 
