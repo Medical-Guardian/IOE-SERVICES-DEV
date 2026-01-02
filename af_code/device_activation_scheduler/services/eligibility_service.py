@@ -32,14 +32,14 @@ Device Activation uses two distinct call frequency patterns:
 - **Max 4 attempts** total in this phase
 
 **Calls 5+ (Extended Attempts):**
-- **Frequency Calculation**: Weekly (7 CALENDAR days between attempts - counts weekends/holidays)
+- **Frequency Calculation**: After 7 days (>7 CALENDAR days = 8+ days between attempts - counts weekends/holidays)
 - **Call Timing**: Calls ONLY on business days (Mon-Fri, excluding federal holidays)
 - Max Attempts: Unlimited
 - **90-Day Window**: call_5_timestamp + 90 days
   - Window starts FROM Call 5 creation (NOT activation_start_date)
   - Allows sufficient time for early attempts before enforcing hard stop
   - campaign_end_date = call_5_timestamp + 90 days
-- Continue weekly calls until campaign_end_date reached
+- Continue 8+ day calls until campaign_end_date reached
 - **Defense in Depth**: Business day validated in BOTH eligibility filter AND business hours filter
 
 **Example Timeline:**
@@ -49,11 +49,11 @@ Day 3:  Call 1 (activation_start_date = delivery + 2 biz days)
 Day 5:  Call 2 (Call 1 + 2 biz days)
 Day 7:  Call 3 (Call 2 + 2 biz days)
 Day 12: Call 4 (Call 3 + 5 biz days)
-Day 19: Call 5 (Call 4 + 7 days) → call_5_timestamp SET, campaign_end_date = Day 109
-Day 26: Call 6 (Call 5 + 7 days)
-Day 33: Call 7 (Call 6 + 7 days)
+Day 20: Call 5 (Call 4 + 8 days) → call_5_timestamp SET, campaign_end_date = Day 110
+Day 28: Call 6 (Call 5 + 8 days)
+Day 36: Call 7 (Call 6 + 8 days)
 ...
-Day 109: Campaign ends (call_5_timestamp + 90 days), no more calls
+Day 110: Campaign ends (call_5_timestamp + 90 days), no more calls
 ```
 
 BUSINESS HOURS VALIDATION:
@@ -84,7 +84,7 @@ The service executes a 200+ line SQL query (ELIGIBLE_MEMBERS_QUERY) that:
    - current_status = 'ENROLLED'
    - device_activated = 0 (device not yet activated)
    - activation_start_date <= today (past Day 2)
-   - Frequency rules: 2/5 BUSINESS days for Calls 2-4, 7 CALENDAR days for Call 5+ (calls only on business days)
+   - Frequency rules: 2/5 BUSINESS days for Calls 2-4, >7 CALENDAR days (8+ days) for Call 5+ (calls only on business days)
    - 90-day window for Call 5+ only
    - Not in callback queue (callbacks processed separately)
 
@@ -201,7 +201,7 @@ class EligibilityService:
         - Business days exclude weekends and US federal holidays
 
         **Call 5+ (CALENDAR DAYS - includes weekends + holidays):**
-        - >= 4 previous attempts AND >= 7 CALENDAR days since last attempt
+        - >= 4 previous attempts AND > 7 CALENDAR days (8+ days) since last attempt
         - 90-day window: call_5_timestamp IS NULL OR today < call_5_timestamp + 90 days
         - Unlimited attempts within window
         - Uses DATEDIFF(day, ...) for calendar day calculations
@@ -379,10 +379,10 @@ class EligibilityService:
                 (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) = 3
             )
             OR
-            -- Call 5+: 7 calendar days since last attempt
+            -- Call 5+: >7 calendar days (8+ days) since last attempt
             (
                 (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) >= 4
-                AND DATEDIFF(day, (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) >= 7
+                AND DATEDIFF(day, (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) > 7
             )
         )
 
@@ -674,7 +674,9 @@ class EligibilityService:
             logger.info(
                 "📅 [ELIGIBILITY-SERVICE] Call 4: Require 5 business days since last attempt"
             )
-            logger.info("📅 [ELIGIBILITY-SERVICE] Call 5+: 7 calendar days frequency (SQL)")
+            logger.info(
+                "📅 [ELIGIBILITY-SERVICE] Call 5+: >7 calendar days (8+ days) frequency (SQL)"
+            )
             logger.info(
                 "📅 [ELIGIBILITY-SERVICE] Call 5+: Business day validation (Python - current day check)"
             )
@@ -692,7 +694,7 @@ class EligibilityService:
                     continue
 
                 # Call 5+: Check current day is a business day (no frequency calculation needed)
-                # Frequency uses 7 CALENDAR days (SQL), but calls only on business days
+                # Frequency uses >7 CALENDAR days (8+ days, SQL), but calls only on business days
                 if call_attempt_number >= 5:
                     # Check if TODAY is a business day (excludes weekends and federal holidays)
                     if is_business_day(now_utc):

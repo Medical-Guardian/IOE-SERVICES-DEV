@@ -41,7 +41,7 @@ This timestamp triggers the 90-day window logic for subsequent calls:
 
   - call_5_timestamp = SYSDATETIMEOFFSET() (when 5th attempt is created)
   - campaign_end_date = call_5_timestamp + 90 days
-  - Call 6+ can occur weekly (7 CALENDAR days) until campaign_end_date is reached
+  - Call 6+ can occur after 7 days (>7 CALENDAR days = 8+ days) until campaign_end_date is reached
   - Calls 1-4 have NO 90-day limit (use BUSINESS day frequency: 2 days for Calls 2-3, 5 days for Call 4)
 
 Rationale: Allows sufficient time for early contact attempts before enforcing hard cutoff.
@@ -54,7 +54,7 @@ BUSINESS DAYS VS CALENDAR DAYS:
     * Call 4: 5 business days after Call 3
   - Call 5+: CALENDAR days (all days, including weekends and holidays)
     * Uses DATEDIFF(day, ...) for calendar day calculations
-    * 7 calendar days between attempts (weekly frequency)
+    * >7 calendar days between attempts (8+ days minimum)
 
 ERROR HANDLING:
 --------------
@@ -964,13 +964,13 @@ class BatchOrchestrator:
         Background:
             Device Activation call frequency differs between Calls 1-4 and Call 5+:
             - Calls 1-4: BUSINESS day frequency (2 days for Calls 2-3, 5 days for Call 4), max 4 attempts, NO 90-day limit
-            - Call 5+: 7 CALENDAR days frequency (weekly), unlimited attempts, 90-day window
+            - Call 5+: >7 CALENDAR days frequency (8+ days), unlimited attempts, 90-day window
 
             The 90-day window starts from call_5_timestamp (NOT activation_start_date).
             This allows sufficient time for early contact attempts before enforcing a hard cutoff.
 
             Business days exclude weekends and US federal holidays (uses Python get_business_days_between() function).
-            Calendar days include all days (uses DATEDIFF(day, ...)).
+            Calendar days include all days (uses DATEDIFF(day, ...) with > 7 operator).
 
         SQL Logic:
             UPDATE member_campaign_enrollments_enhanced
@@ -1001,7 +1001,7 @@ class BatchOrchestrator:
 
         Eligibility Impact:
             After this update, eligibility_service.py will:
-            1. Allow Call 6+ every 7 CALENDAR days (weekly frequency, includes weekends/holidays)
+            1. Allow Call 6+ every >7 CALENDAR days (8+ days, includes weekends/holidays)
             2. Block calls after campaign_end_date is reached
             3. No longer enforce BUSINESS day frequency (that was for Calls 1-4)
 
