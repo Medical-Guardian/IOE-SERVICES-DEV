@@ -932,13 +932,15 @@ def get_device_activation_schema() -> Optional[DataFrameSchema]:
             "partner_name": Column(str, nullable=False),
             "campaign_name_source": Column(str, nullable=False),  # REQUIRED
             # Member identity
-            "salesforce_account_number": Column(str, nullable=False),  # REQUIRED - primary matching key
+            "salesforce_account_number": Column(
+                str, nullable=False
+            ),  # REQUIRED - primary matching key
             "salesforce_account_id": Column(str, nullable=False),
             "member_first_name": Column(str, nullable=False),
             "member_last_name": Column(str, nullable=False),
             # Contact
             "member_phone_number": Column(str, nullable=False),
-            "member_email": Column(str, nullable=False),  # REQUIRED
+            "member_email": Column(str, nullable=True),  # OPTIONAL
             # Address (5 separate fields - will be combined)
             "member_address_street": Column(str, nullable=False),  # REQUIRED
             "member_address_city": Column(str, nullable=False),  # REQUIRED
@@ -956,8 +958,12 @@ def get_device_activation_schema() -> Optional[DataFrameSchema]:
             # NOTE: is_device_callable NOT in CSV - inferred from device_phone_number during validation
             "device_phone_number": Column(str, nullable=False),  # REQUIRED
             # Device status (NEW format: numeric 1/0 instead of text)
-            "fall_detection": Column(str, nullable=False),  # REQUIRED - CHANGED from fall_detection_status
-            "powersaver_mode": Column(str, nullable=False),  # REQUIRED - CHANGED from battery_status
+            "fall_detection": Column(
+                str, nullable=False
+            ),  # REQUIRED - CHANGED from fall_detection_status
+            "powersaver_mode": Column(
+                str, nullable=False
+            ),  # REQUIRED - CHANGED from battery_status
             # Campaign tracking
             "campaign_parameters": Column(str, nullable=True),  # OPTIONAL
             "monitoring_system_id": Column(str, nullable=False),  # REQUIRED
@@ -1239,7 +1245,9 @@ def validate_and_cleanse_data_before_insert(
         city = str(row.get("city", "") or row.get("member_address_city", "")).strip()
         state = str(row.get("state", "") or row.get("member_address_state", "")).strip()
         zip_code = str(row.get("zip", "") or row.get("member_address_zip", "")).strip()
-        country = str(row.get("address_country", "") or row.get("member_address_country", "")).strip()
+        country = str(
+            row.get("address_country", "") or row.get("member_address_country", "")
+        ).strip()
 
         # Validate all 5 address fields are present (REQUIRED)
         if not street:
@@ -1266,17 +1274,17 @@ def validate_and_cleanse_data_before_insert(
             df.at[idx, "service_address_clean"] = ", ".join(parts)
 
         # ===================================================================
-        # 8. Email Validation and Lowercase Conversion (REQUIRED)
+        # 8. Email Validation and Lowercase Conversion (OPTIONAL)
         # ===================================================================
         # Support both column names (pre and post column mapping)
         email = row.get("email", "") or row.get("member_email", "")
         if not email or not str(email).strip():
-            row_errors.append("member_email is required")
+            # Email is optional - set to None if not provided
             df.at[idx, "email"] = None
         else:
             email_str = str(email).strip()
 
-            # Validate format
+            # Validate format when email is provided
             if not validate_email(email_str):
                 row_errors.append(f"Invalid email format: '{email_str}'")
                 df.at[idx, "email"] = None
