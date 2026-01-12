@@ -1115,19 +1115,20 @@ voice = "bc97a31e-b0b8-49e5-bcb8-393fcc6a86ea"
     {
       "phone_number": "+18173137409",
       "request_data": {
-        "language_pref": "EN",
         "first_name": "Barbara",
         "last_name": "McDaniel",
-        "service_address": "4424 Overton Crest St",
-        "zip_code": "76109",
         "primary_phone": "+18173137409",
-        "city": "Fort Worth",
-        "state": "TX",
-        "dob": "1935-12-16",
+        "email": "barbara.mcdaniel@example.com",
+        "dob": "12-16-1935",
+        "address_street": "4424 Overton Crest St",
+        "address_city": "Fort Worth",
+        "address_state": "TX",
+        "address_zip": "76109",
+        "member_brand": "Medical Guardian",
         "device_name": "MGMini",
-        "device_udi": "457128490",
-        "fall_detection_status": "False",
-        "battery_status": "Good"
+        "fall_detection": "False",
+        "powersaver_mode": "Standard",
+        "monitoring_system_id": "MG457128490"
       },
       "metadata": {
         "batch_id": "b1234567-89ab-cdef-0123-456789abcdef",

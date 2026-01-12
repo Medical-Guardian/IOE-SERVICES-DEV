@@ -97,11 +97,13 @@ Automated outreach to help customers activate their Medical Guardian devices (MG
 | Field Name | Type | Required | Description | Example |
 |------------|------|----------|-------------|---------|
 | `fall_detection_status` | String(50) | YES | Fall detection feature status | `Active`, `Inactive`, `Not Applicable` |
-| `battery_status` | String(50) | YES | Current battery status | `Good`, `Low`, `Critical`, `Unknown` |
+| `powersaver_mode` | String(50) | YES | Device power management mode | `Default`, `Standard`, `Battery Saver` |
 
 **Valid Values:**
 - **fall_detection_status**: `Active`, `Inactive`, `Not Applicable`, `Unknown`
-- **battery_status**: `Good`, `Low`, `Critical`, `Charging`, `Unknown`
+- **powersaver_mode**: `Default`, `Standard`, `Battery Saver`
+
+**Note:** The field `battery_status` was renamed to `powersaver_mode` as of 2025-12-22. CSV files may use either column name for backward compatibility.
 
 ---
 
@@ -220,19 +222,21 @@ MedicalGuardian_DeviceActivation_YYYYMMDD_Delta.csv
 ### **CSV Header Row (Column Order)**
 
 ```csv
-salesforce_account_id,salesforce_account_number,member_first_name,member_last_name,member_phone_number,member_email,service_address,city,state,zip,dob,customer_timezone,language_pref,device_udi,device_name,brand,device_phone_number,is_device_callable,delivery_date,fall_detection_status,battery_status,partner_name,customer_type,enrollment_status
+salesforce_account_id,salesforce_account_number,member_first_name,member_last_name,member_phone_number,member_email,service_address,city,state,zip,dob,customer_timezone,language_pref,device_udi,device_name,brand,device_phone_number,is_device_callable,delivery_date,fall_detection_status,powersaver_mode,partner_name,customer_type,enrollment_status
 ```
+
+**Note:** For backward compatibility, CSV files may still use `battery_status` as the column name - it will be automatically mapped to `powersaver_mode` during processing.
 
 ---
 
 ### **Sample CSV Data**
 
 ```csv
-salesforce_account_id,salesforce_account_number,member_first_name,member_last_name,member_phone_number,member_email,service_address,city,state,zip,dob,customer_timezone,language_pref,device_udi,device_name,brand,device_phone_number,is_device_callable,delivery_date,fall_detection_status,battery_status,partner_name,customer_type,enrollment_status
-SF-2025-001234,ACC-789456,Sarah,Johnson,+15551234567,sarah.j@example.com,123 Main Street,Boston,MA,02101,1950-06-15,America/New_York,EN,MGM-12345-2025,MGMini,Medical Guardian,+15551234568,Y,2025-01-06,Active,Good,Medical Guardian,DTC,ENROLL
-SF-2025-001235,ACC-789457,John,Martinez,+15559876543,john.m@example.com,456 Oak Avenue,Los Angeles,CA,90001,1948-03-22,America/Los_Angeles,ES,MGM-12346-2025,MGMini,Medical Guardian,,N,2025-01-05,Active,Unknown,Medical Guardian,DTC,ENROLL
-SF-2025-001236,ACC-789458,Mary,Chen,+15556543210,mary.chen@example.com,789 Elm Street,Chicago,IL,60601,1955-11-08,America/Chicago,EN,MGM-12347-2025,MGMini,Medical Guardian,+15556543211,Y,2025-01-04,Inactive,Good,Medical Guardian,MS,ENROLL
-SF-2025-001237,ACC-789459,Robert,Williams,+15554321098,,321 Pine Road,Phoenix,AZ,85001,1952-07-19,America/Phoenix,EN,MGM-12348-2025,MGMini,Medical Guardian,,N,2025-01-03,Not Applicable,Low,Medical Guardian,DTC,ENROLL
+salesforce_account_id,salesforce_account_number,member_first_name,member_last_name,member_phone_number,member_email,service_address,city,state,zip,dob,customer_timezone,language_pref,device_udi,device_name,brand,device_phone_number,is_device_callable,delivery_date,fall_detection_status,powersaver_mode,partner_name,customer_type,enrollment_status
+SF-2025-001234,ACC-789456,Sarah,Johnson,+15551234567,sarah.j@example.com,123 Main Street,Boston,MA,02101,1950-06-15,America/New_York,EN,MGM-12345-2025,MGMini,Medical Guardian,+15551234568,Y,2025-01-06,Active,Standard,Medical Guardian,DTC,ENROLL
+SF-2025-001235,ACC-789457,John,Martinez,+15559876543,john.m@example.com,456 Oak Avenue,Los Angeles,CA,90001,1948-03-22,America/Los_Angeles,ES,MGM-12346-2025,MGMini,Medical Guardian,,N,2025-01-05,Active,Default,Medical Guardian,DTC,ENROLL
+SF-2025-001236,ACC-789458,Mary,Chen,+15556543210,mary.chen@example.com,789 Elm Street,Chicago,IL,60601,1955-11-08,America/Chicago,EN,MGM-12347-2025,MGMini,Medical Guardian,+15556543211,Y,2025-01-04,Inactive,Battery Saver,Medical Guardian,MS,ENROLL
+SF-2025-001237,ACC-789459,Robert,Williams,+15554321098,,321 Pine Road,Phoenix,AZ,85001,1952-07-19,America/Phoenix,EN,MGM-12348-2025,MGMini,Medical Guardian,,N,2025-01-03,Not Applicable,Standard,Medical Guardian,DTC,ENROLL
 ```
 
 ---
@@ -295,7 +299,7 @@ CREATE TABLE engage360_stg.stg_device_activation_delta (
 
     -- Device status
     fall_detection_status NVARCHAR(50),
-    battery_status NVARCHAR(50),
+    powersaver_mode NVARCHAR(50),
 
     -- Campaign metadata
     partner_name NVARCHAR(100),
@@ -361,7 +365,7 @@ brand NVARCHAR(100),                           -- NEW
 delivery_date DATE,                            -- NEW
 activation_date DATE,                          -- NEW: Set when device activates
 fall_detection_status NVARCHAR(50),           -- NEW
-battery_status NVARCHAR(50),                  -- NEW
+powersaver_mode NVARCHAR(50),                 -- NEW (renamed from battery_status 2025-12-22)
 last_signal_received_ts DATETIMEOFFSET,       -- NEW: Last time device sent signal
 created_ts DATETIMEOFFSET,
 updated_ts DATETIMEOFFSET
@@ -508,7 +512,7 @@ call_4_date = add_business_days(call_3_date, 5)    # Day 11
 - ✅ `zip` - ZIP code
 - ✅ `brand` - Device brand
 - ✅ `fall_detection_status` - Fall detection feature status
-- ✅ `battery_status` - Battery status
+- ✅ `powersaver_mode` - Power management mode (Default/Standard/Battery Saver)
 
 ---
 

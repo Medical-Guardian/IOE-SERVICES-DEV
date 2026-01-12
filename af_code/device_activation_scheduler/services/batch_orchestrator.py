@@ -738,7 +738,7 @@ class BatchOrchestrator:
                 continue
 
             # Build request_data (data passed to AI agent during call)
-            # 13 fields as required by Bland AI pathway (updated 2025-12-30)
+            # 14 fields as required by Bland AI pathway (updated 2026-01-12)
             request_data = {
                 # Member demographics (from members table)
                 "first_name": member.get("first_name"),
@@ -756,6 +756,8 @@ class BatchOrchestrator:
                 # Device information (from member_devices table)
                 "device_name": member.get("device_brand") or "",  # member_devices.brand
                 "fall_detection": "True" if member.get("fall_detection") == 1 else "False",
+                "powersaver_mode": member.get("powersaver_mode")
+                or "",  # Default/Standard/Battery Saver
                 # Monitoring system ID (from member_identifiers table)
                 "monitoring_system_id": member.get("monitoring_system_id") or "",
             }
