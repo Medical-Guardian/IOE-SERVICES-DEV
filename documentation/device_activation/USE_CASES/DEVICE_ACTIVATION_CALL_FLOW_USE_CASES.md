@@ -194,7 +194,7 @@ Dec 25, 2022 (Sunday) = Christmas
 
 **ALL calls require BOTH timezones to be within business hours:**
 
-1. **Medical Guardian Hours:** 9:00 AM - 4:00 PM EST (America/New_York)
+1. **Medical Guardian Hours:** 9:00 AM - 5:00 PM EST (America/New_York)
 2. **Member Local Hours:** 9:00 AM - 5:00 PM (member.timezone)
 
 ### Validation Logic
@@ -205,9 +205,9 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
     if not is_business_day(call_time):
         return (False, "Not a business day (weekend or holiday)")
 
-    # Check 2: Medical Guardian hours (9 AM - 4 PM EST)?
+    # Check 2: Medical Guardian hours (9 AM - 5 PM EST)?
     mg_time = call_time.astimezone(MG_TIMEZONE)
-    if not (9 <= mg_time.hour < 16):
+    if not (9 <= mg_time.hour < 17):
         return (False, f"Outside MG hours (current: {mg_time.strftime('%I:%M %p EST')})")
 
     # Check 3: Member hours (9 AM - 5 PM member timezone)?
@@ -223,10 +223,10 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 | Member Timezone | EST Offset | Valid Hours (EST) | Valid Hours (Local) | Window Duration |
 |-----------------|------------|-------------------|---------------------|-----------------|
-| **EST** (New York) | 0 hours | 9:00 AM - 4:00 PM | 9:00 AM - 4:00 PM | 7 hours |
-| **CST** (Chicago) | -1 hour | 10:00 AM - 4:00 PM | 9:00 AM - 3:00 PM | 6 hours |
-| **MST** (Denver) | -2 hours | 11:00 AM - 4:00 PM | 9:00 AM - 2:00 PM | 5 hours |
-| **PST** (California) | -3 hours | 12:00 PM - 4:00 PM | 9:00 AM - 1:00 PM | 4 hours |
+| **EST** (New York) | 0 hours | 9:00 AM - 5:00 PM | 9:00 AM - 5:00 PM | 8 hours |
+| **CST** (Chicago) | -1 hour | 10:00 AM - 5:00 PM | 9:00 AM - 4:00 PM | 7 hours |
+| **MST** (Denver) | -2 hours | 11:00 AM - 5:00 PM | 9:00 AM - 3:00 PM | 6 hours |
+| **PST** (California) | -3 hours | 12:00 PM - 5:00 PM | 9:00 AM - 2:00 PM | 5 hours |
 
 **Note:** As members move further west, the calling window narrows!
 
@@ -256,7 +256,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Wednesday, not holiday)
-   ❌ Is it 9 AM - 4 PM EST? NO (8:30 AM is before 9 AM)
+   ❌ Is it 9 AM - 5 PM EST? NO (8:30 AM is before 9 AM)
    ❌ Is it 9 AM - 5 PM member time? NO (8:30 AM EST = too early)
 
 📋 Decision: ❌ Skip this member
@@ -270,7 +270,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Wednesday)
-   ✅ Is it 9 AM - 4 PM EST? YES (9:00 AM = valid)
+   ✅ Is it 9 AM - 5 PM EST? YES (9:00 AM = valid)
    ✅ Is it 9 AM - 5 PM member time? YES (9:00 AM EST = valid)
 
 📋 Decision: ✅ CALL 1 MADE
@@ -309,7 +309,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Friday, not holiday)
-   ✅ Is it 9 AM - 4 PM EST? YES (10:15 AM = valid)
+   ✅ Is it 9 AM - 5 PM EST? YES (10:15 AM = valid)
    ✅ Is it 9 AM - 5 PM member time? YES (10:15 AM EST = valid)
 
 📋 Decision: ✅ CALL 2 MADE
@@ -358,7 +358,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Monday, not holiday)
-   ✅ Is it 9 AM - 4 PM EST? YES (2:30 PM = 14:30 = valid)
+   ✅ Is it 9 AM - 5 PM EST? YES (2:30 PM = 14:30 = valid)
    ✅ Is it 9 AM - 5 PM member time? YES (2:30 PM EST = valid)
 
 📋 Decision: ✅ CALL 3 MADE
@@ -390,10 +390,10 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 ⏭️ Next Check: Monday, Jan 15 at 9:00 AM
 ```
 
-#### Scenario 2: 3:45 PM EST on Monday - ✅ LAST HOUR
+#### Scenario 2: 4:45 PM EST on Monday - ✅ LAST HOUR
 
 ```
-⏰ Scheduler Run: 3:45 PM EST (Monday, Jan 15)
+⏰ Scheduler Run: 4:45 PM EST (Monday, Jan 15)
 
 🔍 Eligibility Check:
    ✅ Frequency passed? YES (Jan 8 → Jan 15 = 7 days, >= 5 required)
@@ -402,25 +402,25 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Monday)
-   ✅ Is it 9 AM - 4 PM EST? YES (3:45 PM = 15:45, still before 4 PM)
-   ✅ Is it 9 AM - 5 PM member time? YES (3:45 PM EST = valid)
+   ✅ Is it 9 AM - 5 PM EST? YES (4:45 PM = 16:45, still before 5 PM)
+   ✅ Is it 9 AM - 5 PM member time? YES (4:45 PM EST = valid)
 
 📋 Decision: ✅ CALL 4 MADE
 
 📞 Call Details:
-   - Call Time: Monday, Jan 15, 2025 at 3:45 PM EST
+   - Call Time: Monday, Jan 15, 2025 at 4:45 PM EST
    - Disposition: NoAnswer (member didn't pick up again)
    - Next Eligible: Monday, Jan 22 (Call 4 + 7 calendar days)
 ```
 
-#### Scenario 3: 4:15 PM EST - ❌ TOO LATE
+#### Scenario 3: 5:15 PM EST - ❌ TOO LATE
 
 ```
-⏰ If Scheduler Ran: 4:15 PM EST (Monday, Jan 15)
+⏰ If Scheduler Ran: 5:15 PM EST (Monday, Jan 15)
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES
-   ❌ Is it 9 AM - 4 PM EST? NO (4:15 PM = after 4 PM cutoff)
+   ❌ Is it 9 AM - 5 PM EST? NO (5:15 PM = after 5 PM cutoff)
 
 📋 Decision: ❌ Too late today
 ⏭️ Next Check: Tomorrow (Tuesday) at 9:00 AM
@@ -449,7 +449,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Monday)
-   ✅ Is it 9 AM - 4 PM EST? YES (11:30 AM = valid)
+   ✅ Is it 9 AM - 5 PM EST? YES (11:30 AM = valid)
    ✅ Is it 9 AM - 5 PM member time? YES (11:30 AM EST = valid)
 
 📋 Decision: ✅ CALL 5 MADE
@@ -498,7 +498,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Monday)
-   ✅ Is it 9 AM - 4 PM EST? YES (1:00 PM = 13:00 = valid)
+   ✅ Is it 9 AM - 5 PM EST? YES (1:00 PM = 13:00 = valid)
    ✅ Is it 9 AM - 5 PM member time? YES (1:00 PM EST = valid)
 
 📋 Decision: ✅ CALL 6 MADE
@@ -532,7 +532,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Monday)
-   ✅ Is it 9 AM - 4 PM EST? YES (9:15 AM = valid)
+   ✅ Is it 9 AM - 5 PM EST? YES (9:15 AM = valid)
    ✅ Is it 9 AM - 5 PM member time? YES (9:15 AM EST = valid)
 
 📋 Decision: ✅ CALL 7 MADE
@@ -600,7 +600,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
    - Member Local Time: 6:00 AM PST ❌
 
 🔍 Business Hours Check:
-   ✅ Is it 9 AM - 4 PM EST? YES (9:00 AM EST)
+   ✅ Is it 9 AM - 5 PM EST? YES (9:00 AM EST)
    ❌ Is it 9 AM - 5 PM member time? NO (6:00 AM PST = before 9 AM)
 
 📋 Decision: ❌ Too early for California member
@@ -622,7 +622,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Wednesday)
-   ✅ Is it 9 AM - 4 PM EST? YES (12:00 PM = noon EST)
+   ✅ Is it 9 AM - 5 PM EST? YES (12:00 PM = noon EST)
    ✅ Is it 9 AM - 5 PM member time? YES (9:00 AM PST = exactly 9 AM)
 
 📋 Decision: ✅ CALL 1 MADE
@@ -633,29 +633,29 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
    - Next Eligible: Friday, Jan 5
 
 ⏰ Valid Calling Window for PST Members:
-   - EST Window: 12:00 PM - 4:00 PM EST (4 hours)
-   - PST Window: 9:00 AM - 1:00 PM PST (4 hours)
+   - EST Window: 12:00 PM - 5:00 PM EST (5 hours)
+   - PST Window: 9:00 AM - 2:00 PM PST (5 hours)
    - Much narrower than EST members!
 ```
 
-#### Scenario 3: 4:30 PM EST = 1:30 PM PST - ❌ TOO LATE
+#### Scenario 3: 5:30 PM EST = 2:30 PM PST - ❌ TOO LATE
 
 ```
-⏰ If Scheduler Ran: 4:30 PM EST
+⏰ If Scheduler Ran: 5:30 PM EST
 
 🌍 Timezone Conversion:
-   - Medical Guardian Time: 4:30 PM EST ❌ (after 4 PM)
-   - Member Local Time: 1:30 PM PST ✅ (still valid)
+   - Medical Guardian Time: 5:30 PM EST ❌ (after 5 PM)
+   - Member Local Time: 2:30 PM PST ✅ (still valid)
 
 🔍 Business Hours Check:
-   ❌ Is it 9 AM - 4 PM EST? NO (4:30 PM = after MG closes)
-   ✅ Is it 9 AM - 5 PM member time? YES (1:30 PM PST = valid)
+   ❌ Is it 9 AM - 5 PM EST? NO (5:30 PM = after MG closes)
+   ✅ Is it 9 AM - 5 PM member time? YES (2:30 PM PST = valid)
 
 📋 Decision: ❌ Medical Guardian closed (EST hours expired)
 ⏭️ Next Check: Tomorrow at 12:00 PM EST
 
 💡 Note: Even though member's timezone is valid,
-         MG closes at 4 PM EST, so no calls after that
+         MG closes at 5 PM EST, so no calls after that
 ```
 
 ---
@@ -678,7 +678,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Friday)
-   ✅ Is it 9 AM - 4 PM EST? YES (3:30 PM = 15:30 = valid)
+   ✅ Is it 9 AM - 5 PM EST? YES (3:30 PM = 15:30 = valid)
    ✅ Is it 9 AM - 5 PM member time? YES (12:30 PM PST = valid)
 
 📋 Decision: ✅ CALL 2 MADE
@@ -699,12 +699,12 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
    - Member Local Time: 4:00 PM PST ✅ (still within 5 PM)
 
 🔍 Business Hours Check:
-   ❌ Is it 9 AM - 4 PM EST? NO (7:00 PM = after hours)
+   ❌ Is it 9 AM - 5 PM EST? NO (7:00 PM = after hours)
    ✅ Is it 9 AM - 5 PM member time? YES (4:00 PM PST = valid)
 
 📋 Decision: ❌ Medical Guardian closed (EST hours expired)
 
-💡 Lesson: MG hours (9 AM - 4 PM EST) always takes precedence
+💡 Lesson: MG hours (9 AM - 5 PM EST) always takes precedence
            Even if member's local time is valid
 ```
 
@@ -750,7 +750,7 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo) -> Tuple[bo
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Tuesday, not holiday)
-   ✅ Is it 9 AM - 4 PM EST? YES (2:00 PM = 14:00)
+   ✅ Is it 9 AM - 5 PM EST? YES (2:00 PM = 14:00)
    ✅ Is it 9 AM - 5 PM member time? YES (11:00 AM PST)
 
 📋 Decision: ✅ CALL 3 MADE
@@ -776,16 +776,17 @@ EST Time          PST Time         Status
 1:00 PM EST   →   10:00 AM PST    ✅ Valid
 2:00 PM EST   →   11:00 AM PST    ✅ Valid
 3:00 PM EST   →   12:00 PM PST    ✅ Valid
-3:59 PM EST   →   12:59 PM PST    ✅ VALID WINDOW ENDS
-4:00 PM EST   →   1:00 PM PST     ❌ MG closed
+4:00 PM EST   →   1:00 PM PST     ✅ Valid
+4:59 PM EST   →   1:59 PM PST     ✅ VALID WINDOW ENDS
 5:00 PM EST   →   2:00 PM PST     ❌ MG closed
+6:00 PM EST   →   3:00 PM PST     ❌ MG closed
 ```
 
 **Key Observations:**
-- ⏰ **4-hour window** for PST members (12 PM - 4 PM EST)
-- 📉 **43% narrower** than EST members (7-hour window)
+- ⏰ **5-hour window** for PST members (12 PM - 5 PM EST)
+- 📉 **38% narrower** than EST members (8-hour window)
 - 🌅 **No morning calls** possible (6-8 AM PST too early)
-- 🌆 **No afternoon calls** after 1 PM PST (4 PM EST cutoff)
+- 🌆 **No afternoon calls** after 2 PM PST (5 PM EST cutoff)
 
 ---
 
@@ -815,7 +816,7 @@ Dec 24 (Wednesday): Frequency check passes (2 calendar days)
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Wednesday, not a federal holiday)
-   ✅ Is it 9 AM - 4 PM EST? YES (10:00 AM EST)
+   ✅ Is it 9 AM - 5 PM EST? YES (10:00 AM EST)
    ✅ Is it 9 AM - 5 PM member time? YES (10:00 AM EST)
 
 📋 Decision: ✅ CALL 2 MADE
@@ -877,7 +878,7 @@ Dec 26 (Friday): Frequency check passes (2 calendar days)
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Friday, not holiday)
-   ✅ Is it 9 AM - 4 PM EST? YES (2:00 PM = 14:00)
+   ✅ Is it 9 AM - 5 PM EST? YES (2:00 PM = 14:00)
    ✅ Is it 9 AM - 5 PM member time? YES (2:00 PM EST)
 
 📋 Decision: ✅ CALL 3 MADE
@@ -907,7 +908,7 @@ Jan 1 (Thursday): New Year's Day = Federal Holiday
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES (Dec 31 is NOT a federal holiday)
-   ✅ Is it 9 AM - 4 PM EST? YES (10:00 AM EST)
+   ✅ Is it 9 AM - 5 PM EST? YES (10:00 AM EST)
 
 📋 Decision: ✅ CALL 4 MADE on Dec 31
 
@@ -1101,11 +1102,12 @@ EST Time          CST Time         Status
 1:00 PM EST   →   12:00 PM CST    ✅ Valid
 2:00 PM EST   →   1:00 PM CST     ✅ Valid
 3:00 PM EST   →   2:00 PM CST     ✅ Valid
-3:59 PM EST   →   2:59 PM CST     ✅ VALID WINDOW ENDS
-4:00 PM EST   →   3:00 PM CST     ❌ MG closed
+4:00 PM EST   →   3:00 PM CST     ✅ Valid
+4:59 PM EST   →   3:59 PM CST     ✅ VALID WINDOW ENDS
+5:00 PM EST   →   4:00 PM CST     ❌ MG closed
 ```
 
-**Valid Window:** 10:00 AM - 4:00 PM EST (6 hours)
+**Valid Window:** 10:00 AM - 5:00 PM EST (7 hours)
 
 ---
 
@@ -1120,7 +1122,7 @@ EST Time          CST Time         Status
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES
-   ✅ Is it 9 AM - 4 PM EST? YES (1:30 PM = 13:30)
+   ✅ Is it 9 AM - 5 PM EST? YES (1:30 PM = 13:30)
    ✅ Is it 9 AM - 5 PM member time? YES (12:30 PM CST)
 
 📋 Decision: ✅ CALL MADE
@@ -1152,11 +1154,12 @@ EST Time          MST Time         Status
 1:00 PM EST   →   11:00 AM MST    ✅ Valid
 2:00 PM EST   →   12:00 PM MST    ✅ Valid
 3:00 PM EST   →   1:00 PM MST     ✅ Valid
-3:59 PM EST   →   1:59 PM MST     ✅ VALID WINDOW ENDS
-4:00 PM EST   →   2:00 PM MST     ❌ MG closed
+4:00 PM EST   →   2:00 PM MST     ✅ Valid
+4:59 PM EST   →   2:59 PM MST     ✅ VALID WINDOW ENDS
+5:00 PM EST   →   3:00 PM MST     ❌ MG closed
 ```
 
-**Valid Window:** 11:00 AM - 4:00 PM EST (5 hours)
+**Valid Window:** 11:00 AM - 5:00 PM EST (6 hours)
 
 ---
 
@@ -1171,14 +1174,14 @@ EST Time          MST Time         Status
 
 🔍 Business Hours Check:
    ✅ Is it a business day? YES
-   ✅ Is it 9 AM - 4 PM EST? YES (3:00 PM = 15:00)
+   ✅ Is it 9 AM - 5 PM EST? YES (3:00 PM = 15:00)
    ✅ Is it 9 AM - 5 PM member time? YES (1:00 PM MST)
 
 📋 Decision: ✅ CALL MADE
 
 ⚠️ Note:
-   - Only 1 hour left in calling window!
-   - After 4 PM EST (2 PM MST), MG closes
+   - Still 2 hours left in calling window!
+   - After 5 PM EST (3 PM MST), MG closes
    - MST members have narrower window than CST
 ```
 
@@ -1250,16 +1253,16 @@ EST Time          MST Time         Status
 
 | Timezone | Offset | Valid Window (EST) | Valid Window (Local) | Duration | % of Day |
 |----------|--------|-------------------|---------------------|----------|----------|
-| EST | 0 hrs | 9 AM - 4 PM | 9 AM - 4 PM | 7 hours | 29% |
-| CST | -1 hr | 10 AM - 4 PM | 9 AM - 3 PM | 6 hours | 25% |
-| MST | -2 hrs | 11 AM - 4 PM | 9 AM - 2 PM | 5 hours | 21% |
-| PST | -3 hrs | 12 PM - 4 PM | 9 AM - 1 PM | 4 hours | 17% |
+| EST | 0 hrs | 9 AM - 5 PM | 9 AM - 5 PM | 8 hours | 33% |
+| CST | -1 hr | 10 AM - 5 PM | 9 AM - 4 PM | 7 hours | 29% |
+| MST | -2 hrs | 11 AM - 5 PM | 9 AM - 3 PM | 6 hours | 25% |
+| PST | -3 hrs | 12 PM - 5 PM | 9 AM - 2 PM | 5 hours | 21% |
 
 **Key Insights:**
 - 📉 Window narrows by 1 hour per timezone westward
 - ⏰ Noon EST is universally valid for all timezones
-- 🌅 PST members have 43% narrower window than EST
-- 🎯 Best batch submission time: 12:00 PM - 2:00 PM EST
+- 🌅 PST members have 38% narrower window than EST
+- 🎯 Best batch submission time: 12:00 PM - 3:00 PM EST
 
 ---
 
@@ -1302,7 +1305,7 @@ START: Member in database with device delivered
    │  ├─ NO → Skip today, try tomorrow
    │  └─ YES → Continue
    │
-   ├─ Is it 9 AM - 4 PM EST?
+   ├─ Is it 9 AM - 5 PM EST?
    │  ├─ NO → Skip this run, try next (15 min)
    │  └─ YES → Continue
    │
@@ -1339,7 +1342,7 @@ START: Member with 4+ previous attempts
 │        │  ├─ NO → Skip today
 │        │  └─ YES → Continue
 │        │
-│        ├─ Is it 9 AM - 4 PM EST?
+│        ├─ Is it 9 AM - 5 PM EST?
 │        │  ├─ NO → Skip this run
 │        │  └─ YES → Continue
 │        │
@@ -1370,11 +1373,11 @@ INPUT: current_time (UTC), member_timezone
 │  │
 │  └─ NO → ✅ PASS (Continue to Check 2)
 │
-├─ CHECK 2: Medical Guardian Hours (9 AM - 4 PM EST)?
+├─ CHECK 2: Medical Guardian Hours (9 AM - 5 PM EST)?
 │  ├─ Is mg_time.hour < 9?
 │  │  └─ YES → ❌ FAIL ("Before MG hours")
 │  │
-│  ├─ Is mg_time.hour >= 16? (4 PM = 16:00)
+│  ├─ Is mg_time.hour >= 17? (5 PM = 17:00)
 │  │  └─ YES → ❌ FAIL ("After MG hours")
 │  │
 │  └─ NO → ✅ PASS (Continue to Check 3)
@@ -1453,16 +1456,16 @@ if not is_business_day:
 - All filtered out during business hours validation
 - Calls only work for EST/CST members
 
-**Root Cause:** Scheduler running outside PST valid window (12 PM - 4 PM EST)
+**Root Cause:** Scheduler running outside PST valid window (12 PM - 5 PM EST)
 
 **Solution:**
 ```
 Check scheduler run times:
 - Morning runs (9 AM - 11 AM EST): ❌ Won't work for PST (6-8 AM PST)
 - Noon runs (12 PM - 2 PM EST): ✅ Optimal for PST
-- Afternoon runs (3 PM - 4 PM EST): ✅ Works for PST
+- Afternoon runs (3 PM - 5 PM EST): ✅ Works for PST
 
-Recommendation: Ensure scheduler runs at least once between 12-3 PM EST daily
+Recommendation: Ensure scheduler runs at least once between 12-5 PM EST daily
 ```
 
 ---
@@ -1608,7 +1611,7 @@ This document provides comprehensive use cases covering:
 2. **Timing = Business Days** (Mon-Fri, no holidays)
 3. **Calls 1-4 = No 90-day limit** (can happen anytime)
 4. **Call 5+ = 90-day window** from call_5_timestamp
-5. **PST members = 4-hour window** (narrowest)
+5. **PST members = 5-hour window** (narrowest)
 6. **Noon EST = Optimal time** for multi-timezone batches
 
 ---

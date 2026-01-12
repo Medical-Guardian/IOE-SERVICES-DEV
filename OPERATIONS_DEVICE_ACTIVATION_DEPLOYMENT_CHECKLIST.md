@@ -41,7 +41,7 @@
   - Device Activation - Medicaid: `0F69659B-491B-40E2-88C3-ABC7D87385B2`
   - Device Activation - DTC/MA: `BA865458-60F9-4EBB-9FB5-D195B532CF5A`
   - Both have `campaign_type = 'Operations'`
-  - Both have `operating_end_time = '16:00:00'` (4 PM)
+  - Both have `operating_end_time = '17:00:00'` (5 PM)
 
 - ✅ **Bland AI Configurations Added** (manually by user)
   - Both campaigns have configs in `campaign_call_configs_enhanced` table
@@ -339,7 +339,7 @@ ORDER BY bcl.created_ts DESC;
 ### Scheduler Success
 - ✅ Timer trigger fires every 15 minutes
 - ✅ Eligibility query returns Operations campaign members
-- ✅ Business hours validation works (9 AM - 4 PM EST)
+- ✅ Business hours validation works (9 AM - 5 PM EST)
 - ✅ Batch created in `outreach_batches` table
 - ✅ Attempts created in `outreach_attempts` table
 - ✅ Bland AI batch submitted successfully

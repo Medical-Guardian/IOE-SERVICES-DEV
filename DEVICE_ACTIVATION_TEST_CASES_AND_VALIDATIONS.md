@@ -434,7 +434,7 @@ This document defines comprehensive validation rules and test cases for **Device
 
 ### 19. Dual-Timezone Business Hours Validation
 
-**Rule:** The system must validate BOTH Medical Guardian operating hours (9 AM - 4 PM EST) AND member local hours (9 AM - 5 PM in member timezone).
+**Rule:** The system must validate BOTH Medical Guardian operating hours (9 AM - 5 PM EST) AND member local hours (9 AM - 5 PM in member timezone).
 
 **Description:** Calls only scheduled when both MG and member are within business hours.
 

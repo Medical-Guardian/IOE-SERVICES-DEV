@@ -715,7 +715,7 @@ customer_type: Medicaid
 campaign_name: Device Activation - Medicaid
 operating_tz: America/New_York
 operating_start_time: 09:00:00
-operating_end_time: 16:00:00
+operating_end_time: 17:00:00
 timezone_flag: member_tz
 call_attempt_number: 1  (calculated: COUNT(*) from outreach_attempts + 1)
 last_attempt_date: NULL  (no previous attempts)
@@ -746,7 +746,7 @@ last_disposition: NULL
 def _filter_by_business_hours(self, potential_members: List[Dict]) -> List[Dict]:
     """
     Validates BOTH:
-    1. Medical Guardian operating hours (America/New_York, 9 AM - 4 PM)
+    1. Medical Guardian operating hours (America/New_York, 9 AM - 5 PM)
     2. Member's local timezone (member.timezone, 9 AM - 5 PM)
     """
     eligible_members = []
@@ -786,7 +786,7 @@ def can_make_call(now_utc: datetime, member_tz: pytz.timezone) -> Tuple[bool, st
     Dual-timezone business hours validation
 
     Checks BOTH:
-    1. Medical Guardian hours: 9 AM - 4 PM EST
+    1. Medical Guardian hours: 9 AM - 5 PM EST
     2. Member hours: 9 AM - 5 PM (member timezone)
     """
     # Convert to Medical Guardian timezone (EST)
@@ -794,10 +794,10 @@ def can_make_call(now_utc: datetime, member_tz: pytz.timezone) -> Tuple[bool, st
     now_mg = now_utc.astimezone(mg_tz)
     mg_hour = now_mg.hour
 
-    # Check MG hours: 9 AM - 4 PM EST
+    # Check MG hours: 9 AM - 5 PM EST
     if mg_hour < 9:
         return False, f"Before MG operating hours (current: {mg_hour}:00 EST)"
-    if mg_hour >= 16:  # 4 PM
+    if mg_hour >= 17:  # 5 PM
         return False, f"After MG operating hours (current: {mg_hour}:00 EST)"
 
     # Convert to member timezone
@@ -830,9 +830,9 @@ def can_make_call(now_utc: datetime, member_tz: pytz.timezone) -> Tuple[bool, st
 
 **Validation Steps:**
 
-1. **Check MG Hours (9 AM - 4 PM EST)**
+1. **Check MG Hours (9 AM - 5 PM EST)**
    - Current MG time: 10:15 AM EST
-   - ✅ Within range (9 AM - 4 PM)
+   - ✅ Within range (9 AM - 5 PM)
 
 2. **Check Member Hours (9 AM - 5 PM CST)**
    - Current member time: 09:15 AM CST
@@ -884,7 +884,7 @@ def can_make_call(now_utc: datetime, member_tz: pytz.timezone) -> Tuple[bool, st
 - EST (MG): 2025-12-20 04:15:00 PM -05:00 ❌
 - CST (Member): 2025-12-20 03:15:00 PM -06:00 ✅
 
-**Result:** ❌ Cannot call - After MG operating hours (4 PM cutoff)
+**Result:** ❌ Cannot call - After MG operating hours (5 PM cutoff)
 
 **Logs:**
 ```
@@ -1963,7 +1963,7 @@ Result: Success
 
 3. **Scheduler Runs Every 15 Minutes** - Constantly looking for eligible members
 
-4. **Dual-Timezone Validation** - Must satisfy BOTH MG hours (9 AM-4 PM EST) AND member hours (9 AM-5 PM local)
+4. **Dual-Timezone Validation** - Must satisfy BOTH MG hours (9 AM-5PM EST) AND member hours (9 AM-5 PM local)
 
 5. **Smart Frequency Logic** - Call frequency adjusts based on attempt number:
    - Calls 1-3: Every 2 business days

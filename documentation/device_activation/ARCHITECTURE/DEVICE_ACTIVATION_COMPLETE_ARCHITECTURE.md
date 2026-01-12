@@ -855,7 +855,7 @@ OR
 - **Calls are ONLY made on business days** via `is_business_day()` - skips weekends/holidays
 - Example: If 8 calendar days pass and it's Saturday, call is skipped until Monday (next business day)
 - Defense in depth: Business day validated in eligibility filter (explicit) AND business hours filter (implicit via `can_make_call()`)
-- Still subject to business hours validation (9 AM-4 PM EST for MG, 9 AM-5 PM for member)
+- Still subject to business hours validation (9 AM-5 PM EST for both MG and member)
 
 **SQL Logic (Eligibility Query):**
 ```sql
@@ -948,15 +948,15 @@ Example: If Call 6 eligible on Saturday Feb 1, skipped until Monday Feb 3
 Device Activation uses **dual-timezone validation** to respect both Medical Guardian's operating hours AND the member's local timezone.
 
 **Both conditions must be satisfied** (AND logic, not OR):
-1. **Medical Guardian Operating Hours:** Current time in EST is within 9 AM - 4 PM EST (Monday-Friday, no US federal holidays)
+1. **Medical Guardian Operating Hours:** Current time in EST is within 9 AM - 5 PM EST (Monday-Friday, no US federal holidays)
 2. **Member Operating Hours:** Current time in member's `timezone` is within 9 AM - 5 PM local (Monday-Friday, no US federal holidays)
 
 **Example:**
-- Medical Guardian: Operating hours 9 AM - 4 PM EST
+- Medical Guardian: Operating hours 9 AM - 5 PM EST
 - Member: Timezone = America/Chicago (Central)
-- Current time: 3:00 PM EST (2:00 PM Central)
-- **MG check:** 3 PM EST is within 9 AM - 4 PM EST ✓
-- **Member check:** 2 PM Central is within 9 AM - 5 PM Central ✓
+- Current time: 4:00 PM EST (3:00 PM Central)
+- **MG check:** 4 PM EST is within 9 AM - 5 PM EST ✓
+- **Member check:** 3 PM Central is within 9 AM - 5 PM Central ✓
 - **Result:** PASS (both conditions met)
 
 **Holiday Blocking:**

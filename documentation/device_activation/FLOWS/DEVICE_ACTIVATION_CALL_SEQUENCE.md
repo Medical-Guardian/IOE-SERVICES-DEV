@@ -375,8 +375,8 @@ Alternative Scenarios:
 
 Scenario A: Callback Time AFTER Operating Hours
 ───────────────────────────────────────────────
-4:00 PM:  ❌ scheduled_callback_time reached BUT operating_end_time = 3:00 PM
-          ⚠️ Business hours check FAILS (4 PM > 3 PM)
+6:00 PM:  ❌ scheduled_callback_time reached BUT operating_end_time = 5:00 PM
+          ⚠️ Business hours check FAILS (6 PM > 5 PM)
           🔄 Reschedule to next business day at 9:00 AM (operating_start_time)
           📝 UPDATE outreach_callback_queue:
               - scheduled_callback_time: Tomorrow 9:00 AM
