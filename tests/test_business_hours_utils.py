@@ -7,7 +7,7 @@ BusinessCaseID: BC-TBD (Device Activation System)
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 from af_code.shared.business_hours_utils import (
     BusinessHoursValidator,
@@ -15,7 +15,7 @@ from af_code.shared.business_hours_utils import (
     add_business_days,
     can_make_call,
     get_next_valid_call_time,
-    get_business_days_between
+    get_business_days_between,
 )
 
 
@@ -201,35 +201,35 @@ class TestBusinessHoursValidation:
 
     def test_10am_est_within_business_hours(self):
         """Test 10 AM EST is within business hours"""
-        est_tz = pytz.timezone('America/New_York')
+        est_tz = pytz.timezone("America/New_York")
         time_10am = datetime(2025, 1, 6, 15, 0, tzinfo=pytz.UTC)  # 10 AM EST
 
         assert BusinessHoursValidator.is_within_business_hours(time_10am, est_tz)
 
     def test_6pm_est_outside_business_hours(self):
         """Test 6 PM EST is outside business hours"""
-        est_tz = pytz.timezone('America/New_York')
+        est_tz = pytz.timezone("America/New_York")
         time_6pm = datetime(2025, 1, 6, 23, 0, tzinfo=pytz.UTC)  # 6 PM EST
 
         assert not BusinessHoursValidator.is_within_business_hours(time_6pm, est_tz)
 
     def test_8am_est_outside_business_hours(self):
         """Test 8 AM EST is outside business hours (before 9 AM)"""
-        est_tz = pytz.timezone('America/New_York')
+        est_tz = pytz.timezone("America/New_York")
         time_8am = datetime(2025, 1, 6, 13, 0, tzinfo=pytz.UTC)  # 8 AM EST
 
         assert not BusinessHoursValidator.is_within_business_hours(time_8am, est_tz)
 
     def test_9am_est_within_business_hours(self):
         """Test 9 AM EST is within business hours (start of day)"""
-        est_tz = pytz.timezone('America/New_York')
+        est_tz = pytz.timezone("America/New_York")
         time_9am = datetime(2025, 1, 6, 14, 0, tzinfo=pytz.UTC)  # 9 AM EST
 
         assert BusinessHoursValidator.is_within_business_hours(time_9am, est_tz)
 
     def test_4_59pm_est_within_business_hours(self):
         """Test 4:59 PM EST is within business hours (before 5 PM cutoff)"""
-        est_tz = pytz.timezone('America/New_York')
+        est_tz = pytz.timezone("America/New_York")
         time_4_59pm = datetime(2025, 1, 6, 21, 59, tzinfo=pytz.UTC)  # 4:59 PM EST
 
         assert BusinessHoursValidator.is_within_business_hours(time_4_59pm, est_tz)
@@ -241,7 +241,7 @@ class TestDualTimezoneValidation:
     def test_valid_call_member_in_est(self):
         """Test valid call: 2 PM EST, member in EST"""
         call_time = datetime(2025, 1, 6, 19, 0, tzinfo=pytz.UTC)  # 2 PM EST, Monday
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert can_call
@@ -250,7 +250,7 @@ class TestDualTimezoneValidation:
     def test_invalid_call_outside_mg_hours(self):
         """Test invalid call: 6 PM EST (outside MG hours), member in EST"""
         call_time = datetime(2025, 1, 6, 23, 0, tzinfo=pytz.UTC)  # 6 PM EST, Monday
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert not can_call
@@ -259,7 +259,7 @@ class TestDualTimezoneValidation:
     def test_invalid_call_too_early_for_member_pst(self):
         """Test invalid: 9 AM EST (6 AM PST - too early for member)"""
         call_time = datetime(2025, 1, 6, 14, 0, tzinfo=pytz.UTC)  # 9 AM EST = 6 AM PST, Monday
-        member_tz = pytz.timezone('America/Los_Angeles')
+        member_tz = pytz.timezone("America/Los_Angeles")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert not can_call
@@ -268,7 +268,7 @@ class TestDualTimezoneValidation:
     def test_valid_call_member_in_pst(self):
         """Test valid call: 12 PM EST (9 AM PST), member in PST"""
         call_time = datetime(2025, 1, 6, 17, 0, tzinfo=pytz.UTC)  # 12 PM EST = 9 AM PST, Monday
-        member_tz = pytz.timezone('America/Los_Angeles')
+        member_tz = pytz.timezone("America/Los_Angeles")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert can_call
@@ -277,7 +277,7 @@ class TestDualTimezoneValidation:
     def test_valid_call_member_in_cst(self):
         """Test valid call: 2 PM EST (1 PM CST), member in CST"""
         call_time = datetime(2025, 1, 6, 19, 0, tzinfo=pytz.UTC)  # 2 PM EST = 1 PM CST, Monday
-        member_tz = pytz.timezone('America/Chicago')
+        member_tz = pytz.timezone("America/Chicago")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert can_call
@@ -286,7 +286,7 @@ class TestDualTimezoneValidation:
     def test_invalid_call_weekend(self):
         """Test invalid call: Saturday (weekend)"""
         call_time = datetime(2025, 1, 11, 17, 0, tzinfo=pytz.UTC)  # Saturday
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert not can_call
@@ -295,7 +295,7 @@ class TestDualTimezoneValidation:
     def test_invalid_call_holiday(self):
         """Test invalid call: Christmas Day (federal holiday)"""
         call_time = datetime(2025, 12, 25, 17, 0, tzinfo=pytz.UTC)  # Christmas
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert not can_call
@@ -309,9 +309,11 @@ class TestNextValidCallTime:
         """Test Friday 6 PM → next valid is Monday 10 AM"""
         # Friday 6 PM EST
         current = datetime(2025, 1, 3, 23, 0, tzinfo=pytz.UTC)
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
-        next_time = BusinessHoursValidator.get_next_valid_call_time(current, member_tz, preferred_hour=10)
+        next_time = BusinessHoursValidator.get_next_valid_call_time(
+            current, member_tz, preferred_hour=10
+        )
 
         # Should be Monday 10 AM EST
         assert next_time.astimezone(member_tz).weekday() == 0  # Monday
@@ -321,9 +323,11 @@ class TestNextValidCallTime:
         """Test day before Christmas → next valid is day after Christmas"""
         # Wednesday Dec 24, 6 PM EST (after hours)
         current = datetime(2025, 12, 24, 23, 0, tzinfo=pytz.UTC)
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
-        next_time = BusinessHoursValidator.get_next_valid_call_time(current, member_tz, preferred_hour=10)
+        next_time = BusinessHoursValidator.get_next_valid_call_time(
+            current, member_tz, preferred_hour=10
+        )
 
         # Should skip Christmas Dec 25 and go to Friday Dec 26 at 10 AM
         expected_date = datetime(2025, 12, 26).date()
@@ -334,9 +338,11 @@ class TestNextValidCallTime:
         """Test 7 AM Tuesday → next valid is 10 AM same day"""
         # Tuesday 7 AM EST (before business hours)
         current = datetime(2025, 1, 7, 12, 0, tzinfo=pytz.UTC)
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
-        next_time = BusinessHoursValidator.get_next_valid_call_time(current, member_tz, preferred_hour=10)
+        next_time = BusinessHoursValidator.get_next_valid_call_time(
+            current, member_tz, preferred_hour=10
+        )
 
         # Should be same day at 10 AM
         assert next_time.astimezone(member_tz).date() == datetime(2025, 1, 7).date()
@@ -346,9 +352,11 @@ class TestNextValidCallTime:
         """Test finding valid time for PST member respecting timezone overlap"""
         # Current: Monday 8 AM EST = 5 AM PST (too early for PST member)
         current = datetime(2025, 1, 6, 13, 0, tzinfo=pytz.UTC)
-        member_tz = pytz.timezone('America/Los_Angeles')
+        member_tz = pytz.timezone("America/Los_Angeles")
 
-        next_time = BusinessHoursValidator.get_next_valid_call_time(current, member_tz, preferred_hour=9)
+        next_time = BusinessHoursValidator.get_next_valid_call_time(
+            current, member_tz, preferred_hour=9
+        )
 
         # Should be Monday 9 AM PST = 12 PM EST
         local_time = next_time.astimezone(member_tz)
@@ -398,7 +406,7 @@ class TestConvenienceFunctions:
     def test_convenience_can_make_call(self):
         """Test convenience function can_make_call()"""
         call_time = datetime(2025, 1, 6, 19, 0, tzinfo=pytz.UTC)  # 2 PM EST
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
         can_call_result, reason = can_make_call(call_time, member_tz)
         assert can_call_result
@@ -406,7 +414,7 @@ class TestConvenienceFunctions:
     def test_convenience_get_next_valid_call_time(self):
         """Test convenience function get_next_valid_call_time()"""
         current = datetime(2025, 1, 3, 23, 0, tzinfo=pytz.UTC)  # Friday evening
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
         next_time = get_next_valid_call_time(current, member_tz)
 
@@ -415,48 +423,66 @@ class TestConvenienceFunctions:
 
 
 class TestBusinessHoursDualTimezone:
-    """Test dual-timezone validation: MG 9AM-4PM EST, Member 9AM-4PM local"""
+    """Test dual-timezone validation: MG 9AM-5PM EST, Member 9AM-5PM local"""
 
     def test_3_30pm_est_member_in_est_valid(self):
         """Test 3:30 PM EST for EST member - valid for both (within 9-4 EST)"""
         call_time = datetime(2025, 1, 6, 20, 30, tzinfo=pytz.UTC)  # 3:30 PM EST, Monday
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert can_call
         assert "Call allowed" in reason
 
-    def test_4pm_est_member_in_est_invalid(self):
-        """Test 4:00 PM EST for EST member - invalid (at cutoff, hour=16)"""
+    def test_4pm_est_member_in_est_valid(self):
+        """Test 4:00 PM EST for EST member - VALID (before 5 PM cutoff, hour=16)"""
         call_time = datetime(2025, 1, 6, 21, 0, tzinfo=pytz.UTC)  # 4:00 PM EST, Monday
-        member_tz = pytz.timezone('America/New_York')
+        member_tz = pytz.timezone("America/New_York")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
-        assert not can_call  # hour=16 fails (< 16 check)
-        assert "business hours" in reason
+        assert can_call  # Now valid - MG cutoff extended to 5 PM EST
+        assert "Call allowed" in reason  # Success message
 
     def test_12pm_est_member_in_pst_valid(self):
         """Test 12 PM EST (9 AM PST) for PST member - valid start of window"""
         call_time = datetime(2025, 1, 6, 17, 0, tzinfo=pytz.UTC)  # 12 PM EST = 9 AM PST
-        member_tz = pytz.timezone('America/Los_Angeles')
+        member_tz = pytz.timezone("America/Los_Angeles")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert can_call  # MG: 12 PM EST valid, Member: 9 AM PST valid
         assert "Call allowed" in reason
 
-    def test_4pm_est_member_in_pst_invalid(self):
-        """Test 4 PM EST (1 PM PST) for PST member - invalid (MG cutoff, member OK)"""
+    def test_4pm_est_member_in_pst_valid(self):
+        """Test 4 PM EST (1 PM PST) for PST member - VALID (before 5 PM MG cutoff, member OK)"""
         call_time = datetime(2025, 1, 6, 21, 0, tzinfo=pytz.UTC)  # 4 PM EST = 1 PM PST
-        member_tz = pytz.timezone('America/Los_Angeles')
+        member_tz = pytz.timezone("America/Los_Angeles")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
-        assert not can_call  # MG cutoff at 4 PM EST (member local 1 PM PST is OK)
+        assert can_call  # Now valid - MG cutoff extended to 5 PM EST, member at 1 PM PST is OK
+        assert "Call allowed" in reason  # Success message
+
+    def test_5pm_est_member_in_est_invalid(self):
+        """Test 5:00 PM EST for EST member - INVALID (at 5 PM cutoff, hour=17)"""
+        call_time = datetime(2025, 1, 7, 22, 0, tzinfo=pytz.UTC)  # 5:00 PM EST, Tuesday
+        member_tz = pytz.timezone("America/New_York")
+
+        can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
+        assert not can_call  # MG cutoff at 5 PM EST (hour >= 17)
+        assert "business hours" in reason
+
+    def test_5pm_est_member_in_pst_invalid(self):
+        """Test 5 PM EST (2 PM PST) for PST member - INVALID (at 5 PM MG cutoff)"""
+        call_time = datetime(2025, 1, 7, 22, 0, tzinfo=pytz.UTC)  # 5 PM EST = 2 PM PST, Tuesday
+        member_tz = pytz.timezone("America/Los_Angeles")
+
+        can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
+        assert not can_call  # MG cutoff at 5 PM EST (member at 2 PM PST would be OK)
         assert "Medical Guardian business hours" in reason
 
     def test_10am_est_member_in_cst_valid(self):
         """Test 10 AM EST (9 AM CST) for CST member - valid start of window"""
         call_time = datetime(2025, 1, 6, 15, 0, tzinfo=pytz.UTC)  # 10 AM EST = 9 AM CST
-        member_tz = pytz.timezone('America/Chicago')
+        member_tz = pytz.timezone("America/Chicago")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert can_call  # MG: 10 AM EST valid, Member: 9 AM CST valid
@@ -465,7 +491,7 @@ class TestBusinessHoursDualTimezone:
     def test_9am_est_member_in_cst_invalid_member_early(self):
         """Test 9 AM EST (8 AM CST) for CST member - invalid (member too early)"""
         call_time = datetime(2025, 1, 6, 14, 0, tzinfo=pytz.UTC)  # 9 AM EST = 8 AM CST
-        member_tz = pytz.timezone('America/Chicago')
+        member_tz = pytz.timezone("America/Chicago")
 
         can_call, reason = BusinessHoursValidator.can_make_call(call_time, member_tz)
         assert not can_call  # Member local 8 AM CST is before 9 AM

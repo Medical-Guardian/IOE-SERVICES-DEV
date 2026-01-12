@@ -12,7 +12,7 @@
 --
 -- Campaign Configuration:
 -- - Type: Device Activation
--- - Operating Hours: 9 AM - 4 PM EST (dual-timezone validation with member timezone)
+-- - Operating Hours: 9 AM - 5 PM EST (dual-timezone validation with member timezone)
 -- - 90-day campaign lifecycle from activation_start_date
 -- - Supports both DTC and MS customer types
 -- =====================================================================================
@@ -93,7 +93,7 @@ BEGIN
         'America/New_York',                         -- operating_tz (EST/EDT)
         'member_tz',                                -- timezone_flag (dual-timezone: MG EST + member timezone)
         '09:00:00',                                 -- operating_start_time (9 AM)
-        '16:00:00',                                 -- operating_end_time (4 PM - Medical Guardian hours)
+        '17:00:00',                                 -- operating_end_time (5 PM - Medical Guardian hours)
         SYSDATETIMEOFFSET(),                        -- created_ts
         SYSDATETIMEOFFSET()                         -- updated_ts
     );
@@ -168,12 +168,12 @@ END
 -- 2. Member's individual timezone (members.timezone)
 --
 -- Call attempts only proceed if BOTH conditions are met:
--- - Current time in MG EST is between 9 AM - 4 PM (Medical Guardian hours)
+-- - Current time in MG EST is between 9 AM - 5 PM (Medical Guardian hours)
 -- - Current time in member's timezone is between 9 AM - 5 PM
 --
 -- This respects both MG operating hours AND member local hours.
 --
--- Operating Hours: 9 AM - 4 PM for MG (operating_start_time / operating_end_time)
+-- Operating Hours: 9 AM - 5 PM for MG (operating_start_time / operating_end_time)
 -- ---------------------------------------------------------------------------
 -- - Used by scheduler for eligibility filtering
 -- - Used by business_hours_utils.can_make_call() for validation

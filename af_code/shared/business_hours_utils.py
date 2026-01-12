@@ -17,7 +17,7 @@ Dependencies:
 
 import logging
 from datetime import datetime, time, timedelta
-from typing import Optional, Tuple
+from typing import Tuple
 import pytz
 import holidays
 
@@ -28,22 +28,22 @@ class BusinessHoursValidator:
     """
     Validates business hours and holidays for IOE call scheduling
 
-    Medical Guardian operates in EST timezone with business hours 9 AM - 4 PM EST.
+    Medical Guardian operates in EST timezone with business hours 9 AM - 5 PM EST.
     Members can be in any US timezone.
 
     Calls can only be made when:
     1. It's a business day (Mon-Fri, not a federal holiday)
-    2. It's within Medical Guardian business hours (9 AM - 4 PM EST)
+    2. It's within Medical Guardian business hours (9 AM - 5 PM EST)
     3. It's within member's local business hours (9 AM - 5 PM member timezone)
     4. Both timezones overlap in their business hours
     """
 
     # Medical Guardian operates in Eastern Time
-    MG_TIMEZONE = pytz.timezone('America/New_York')
+    MG_TIMEZONE = pytz.timezone("America/New_York")
 
-    # Business hours (9 AM - 4 PM for MG, 9 AM - 5 PM for members)
+    # Business hours (9 AM - 5 PM for both MG and members)
     BUSINESS_START_HOUR = 9  # 9:00 AM
-    BUSINESS_END_HOUR = 16   # 4:00 PM (Medical Guardian end time)
+    BUSINESS_END_HOUR = 17  # 5:00 PM (Medical Guardian end time)
 
     # US Federal Holidays (automatically includes all federal holidays)
     US_HOLIDAYS = holidays.US(observed=True)  # observed=True handles holidays that fall on weekends
@@ -80,7 +80,9 @@ class BusinessHoursValidator:
         # Check if federal holiday
         if check_date.date() in cls.US_HOLIDAYS:
             holiday_name = cls.US_HOLIDAYS.get(check_date.date())
-            logger.debug(f"🎉 [BUSINESS-HOURS] {check_date.date()} is a federal holiday: {holiday_name}")
+            logger.debug(
+                f"🎉 [BUSINESS-HOURS] {check_date.date()} is a federal holiday: {holiday_name}"
+            )
             return False
 
         logger.debug(f"✅ [BUSINESS-HOURS] {check_date.date()} is a business day")
@@ -119,19 +121,19 @@ class BusinessHoursValidator:
 
             if cls.is_business_day(current_date):
                 days_added += 1
-                logger.debug(f"➕ [BUSINESS-HOURS] Added business day {days_added}/{num_days}: {current_date.date()}")
+                logger.debug(
+                    f"➕ [BUSINESS-HOURS] Added business day {days_added}/{num_days}: {current_date.date()}"
+                )
             else:
                 logger.debug(f"⏭️ [BUSINESS-HOURS] Skipped non-business day: {current_date.date()}")
 
-        logger.info(f"📅 [BUSINESS-HOURS] Added {num_days} business days: {start_date.date()} → {current_date.date()}")
+        logger.info(
+            f"📅 [BUSINESS-HOURS] Added {num_days} business days: {start_date.date()} → {current_date.date()}"
+        )
         return current_date
 
     @classmethod
-    def get_business_days_between(
-        cls,
-        start_date: datetime,
-        end_date: datetime
-    ) -> int:
+    def get_business_days_between(cls, start_date: datetime, end_date: datetime) -> int:
         """
         Calculate number of business days between two dates
         (excluding weekends and US federal holidays)
@@ -164,9 +166,7 @@ class BusinessHoursValidator:
         while current < end:
             # Check if current date is a business day
             # Create a datetime for business day check (needs timezone)
-            check_dt = cls.MG_TIMEZONE.localize(
-                datetime.combine(current, time(12, 0))  # Noon
-            )
+            check_dt = cls.MG_TIMEZONE.localize(datetime.combine(current, time(12, 0)))  # Noon
 
             if cls.is_business_day(check_dt):
                 business_days += 1
@@ -176,7 +176,9 @@ class BusinessHoursValidator:
         return business_days
 
     @classmethod
-    def is_within_business_hours(cls, check_time: datetime, timezone: pytz.tzinfo.BaseTzInfo) -> bool:
+    def is_within_business_hours(
+        cls, check_time: datetime, timezone: pytz.tzinfo.BaseTzInfo
+    ) -> bool:
         """
         Check if a datetime is within business hours (9 AM - 5 PM) in a specific timezone
 
@@ -213,14 +215,12 @@ class BusinessHoursValidator:
 
     @classmethod
     def can_make_call(
-        cls,
-        call_time: datetime,
-        member_timezone: pytz.tzinfo.BaseTzInfo
+        cls, call_time: datetime, member_timezone: pytz.tzinfo.BaseTzInfo
     ) -> Tuple[bool, str]:
         """
         Validate if a call can be made at a specific time considering:
         1. Must be a business day (not weekend or holiday)
-        2. Must be within Medical Guardian business hours (9 AM - 4 PM EST)
+        2. Must be within Medical Guardian business hours (9 AM - 5 PM EST)
         3. Must be within member's local business hours (9 AM - 5 PM member TZ)
 
         Args:
@@ -245,9 +245,9 @@ class BusinessHoursValidator:
             (False, "Call blocked - not a business day (weekend or holiday)")
 
             >>> # Invalid: Outside MG business hours
-            >>> call_time = datetime(2025, 1, 6, 21, 0, tzinfo=pytz.UTC)  # 4 PM EST
+            >>> call_time = datetime(2025, 1, 6, 22, 0, tzinfo=pytz.UTC)  # 5 PM EST
             >>> can_make_call(call_time, member_tz)
-            (False, "Call blocked - outside Medical Guardian business hours (9 AM - 4 PM EST)")
+            (False, "Call blocked - outside Medical Guardian business hours (9 AM - 5 PM EST)")
         """
         # Convert to UTC if not already
         if call_time.tzinfo is None:
@@ -264,7 +264,7 @@ class BusinessHoursValidator:
             return (
                 False,
                 f"Call blocked - outside Medical Guardian business hours "
-                f"(9 AM - 4 PM EST, current time: {mg_time.strftime('%I:%M %p %Z')})"
+                f"(9 AM - 5 PM EST, current time: {mg_time.strftime('%I:%M %p %Z')})",
             )
 
         # Check 3: Member business hours (member's local timezone)
@@ -273,7 +273,7 @@ class BusinessHoursValidator:
             return (
                 False,
                 f"Call blocked - outside member business hours "
-                f"(9 AM - 5 PM {member_timezone.zone}, member local time: {member_time.strftime('%I:%M %p %Z')})"
+                f"(9 AM - 5 PM {member_timezone.zone}, member local time: {member_time.strftime('%I:%M %p %Z')})",
             )
 
         # All checks passed
@@ -285,7 +285,7 @@ class BusinessHoursValidator:
         return (
             True,
             f"Call allowed - within both MG and member business hours "
-            f"(MG: {mg_time.strftime('%I:%M %p %Z')}, Member: {member_time.strftime('%I:%M %p %Z')})"
+            f"(MG: {mg_time.strftime('%I:%M %p %Z')}, Member: {member_time.strftime('%I:%M %p %Z')})",
         )
 
     @classmethod
@@ -293,7 +293,7 @@ class BusinessHoursValidator:
         cls,
         current_time: datetime,
         member_timezone: pytz.tzinfo.BaseTzInfo,
-        preferred_hour: int = 10  # Default to 10 AM
+        preferred_hour: int = 10,  # Default to 10 AM
     ) -> datetime:
         """
         Find the next valid call time considering business days, holidays, and business hours
@@ -336,17 +336,13 @@ class BusinessHoursValidator:
                 # Move to next day at preferred hour
                 check_time = member_timezone.localize(
                     datetime.combine(
-                        member_time.date() + timedelta(days=1),
-                        time(hour=preferred_hour, minute=0)
+                        member_time.date() + timedelta(days=1), time(hour=preferred_hour, minute=0)
                     )
                 ).astimezone(pytz.UTC)
             elif member_time.hour < cls.BUSINESS_START_HOUR:
                 # Move to today at preferred hour
                 check_time = member_timezone.localize(
-                    datetime.combine(
-                        member_time.date(),
-                        time(hour=preferred_hour, minute=0)
-                    )
+                    datetime.combine(member_time.date(), time(hour=preferred_hour, minute=0))
                 ).astimezone(pytz.UTC)
 
             # Check if this time is valid
@@ -356,11 +352,15 @@ class BusinessHoursValidator:
                 return check_time
 
             # Not valid, try next day
-            logger.debug(f"⏭️ [BUSINESS-HOURS] {check_time.date()} not valid ({reason}), trying next day")
+            logger.debug(
+                f"⏭️ [BUSINESS-HOURS] {check_time.date()} not valid ({reason}), trying next day"
+            )
             check_time += timedelta(days=1)
 
         # Fallback: return time 1 business day from now at preferred hour
-        logger.warning(f"⚠️ [BUSINESS-HOURS] Could not find valid time in {max_attempts} days, using fallback")
+        logger.warning(
+            f"⚠️ [BUSINESS-HOURS] Could not find valid time in {max_attempts} days, using fallback"
+        )
         fallback = cls.add_business_days(current_time, 1)
         return member_timezone.localize(
             datetime.combine(fallback.date(), time(hour=preferred_hour, minute=0))
@@ -393,7 +393,9 @@ class BusinessHoursValidator:
             start_date: Start date
             end_date: End date
         """
-        logger.info(f"🎉 [BUSINESS-HOURS] Federal holidays between {start_date.date()} and {end_date.date()}:")
+        logger.info(
+            f"🎉 [BUSINESS-HOURS] Federal holidays between {start_date.date()} and {end_date.date()}:"
+        )
 
         current = start_date
         while current <= end_date:
@@ -420,12 +422,12 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo.BaseTzInfo) 
 
 
 def get_next_valid_call_time(
-    current_time: datetime,
-    member_timezone: pytz.tzinfo.BaseTzInfo,
-    preferred_hour: int = 10
+    current_time: datetime, member_timezone: pytz.tzinfo.BaseTzInfo, preferred_hour: int = 10
 ) -> datetime:
     """Find the next valid call time"""
-    return BusinessHoursValidator.get_next_valid_call_time(current_time, member_timezone, preferred_hour)
+    return BusinessHoursValidator.get_next_valid_call_time(
+        current_time, member_timezone, preferred_hour
+    )
 
 
 def get_business_days_between(start_date: datetime, end_date: datetime) -> int:

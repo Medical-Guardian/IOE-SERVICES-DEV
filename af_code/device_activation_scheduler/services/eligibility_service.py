@@ -60,7 +60,7 @@ BUSINESS HOURS VALIDATION:
 ---------------------------
 All eligible members are filtered by dual-timezone business hours validation:
 
-1. **Medical Guardian Operating Hours**: 9 AM - 5 PM EST (operating_tz)
+1. **Medical Guardian Operating Hours**: 9 AM - 5 PM EST (operating_tz) [CONFIRMED]
 2. **Member's Local Timezone**: 9 AM - 5 PM in member.timezone
 
 Calls are only made when BOTH timezones are within business hours.

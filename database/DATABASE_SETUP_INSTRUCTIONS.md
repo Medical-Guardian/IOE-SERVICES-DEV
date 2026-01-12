@@ -132,7 +132,7 @@ WHERE campaign_id IN (
 **Verify:**
 - ✅ campaign_type = 'Operations'
 - ✅ operating_start_time = '09:00:00'
-- ✅ operating_end_time = '16:00:00' (4 PM)
+- ✅ operating_end_time = '17:00:00' (5 PM)
 - ✅ timezone_flag = 'member_tz'
 - ✅ status = 'Active'
 
@@ -345,7 +345,7 @@ After running all scripts, verify:
 - [ ] Bland AI configs have actual pathway_id and voice_id (not TODO placeholders)
 - [ ] Both configs have config_status = 'active'
 - [ ] Both campaigns have campaign_type = 'Operations'
-- [ ] Both campaigns have operating_end_time = '16:00:00' (4 PM)
+- [ ] Both campaigns have operating_end_time = '17:00:00' (5 PM)
 
 ---
 
