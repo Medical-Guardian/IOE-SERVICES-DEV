@@ -29,10 +29,11 @@ Phase 3: Update batch with vendor_batch_id (status='Submitted') AFTER Bland AI r
 
 BATCH SPLITTING:
 ---------------
-Bland AI enforces maximum 100 calls per batch submission. This service automatically
-splits eligible members into batches of 100 and submits each batch sequentially.
+Each scheduler run processes a single batch of 20 members maximum. This ensures
+consistent batch size per 15-minute cadence. Only the top 20 qualified members
+are selected from the eligible pool for each run.
 
-Example: 251 members → 3 batches (100, 100, 51 members)
+Example: 251 eligible members → First run: 20 members, Second run: next 20 members, etc.
 
 CALL 5 TIMESTAMP TRACKING (BC-DA-006):
 --------------------------------------
@@ -133,7 +134,7 @@ class BatchOrchestrator:
 
     Methods:
         create_and_submit_batches(): Main orchestration method (splits, creates, submits batches)
-        _submit_single_batch(): Submit one batch of up to 100 members (3-phase tracking)
+        _submit_single_batch(): Submit one batch of up to 20 members (3-phase tracking)
         _build_batch_request(): Build Bland AI BatchRequest payload (18+ parameters)
         _create_outreach_batch(): Phase 1 - INSERT batch record (status='Pending')
         _create_outreach_attempts(): Phase 2 - INSERT attempt records (disposition='Pending')
@@ -157,9 +158,9 @@ class BatchOrchestrator:
         ...     print("Bland AI client not configured")
 
     Notes:
-        - Max 100 members per batch (Bland AI API limitation)
-        - Batches processed sequentially (one at a time)
-        - Individual batch failures don't stop remaining batches
+        - Max 20 members per batch (single batch per 15-minute cadence)
+        - Only top 20 qualified members processed per run
+        - Remaining members processed in subsequent scheduler runs
         - Call 5 timestamp automatically set when 5th attempt is created (BC-DA-006)
     """
 
@@ -186,20 +187,19 @@ class BatchOrchestrator:
 
     def create_and_submit_batches(self, eligible_members: List[Dict]) -> Dict[str, Any]:
         """
-        Create batches and submit to Bland AI
+        Create a single batch and submit to Bland AI
 
-        Splits members into batches of 100 (Bland AI limit) and submits each batch sequentially.
+        Processes only the top 20 qualified members from the eligible pool.
+        Each scheduler run (15-minute cadence) submits a single batch of up to 20 members.
         Each batch follows the 3-phase database tracking pattern before and after Bland AI submission.
 
         BusinessCaseID: BC-DA-004, BC-DA-006
 
         Process:
-            1. Split eligible_members into batches of 100 (Bland AI max per batch)
-            2. For each batch:
-               a. Submit to Bland AI via _submit_single_batch() (3-phase tracking)
-               b. Log success/failure
-               c. Continue with remaining batches even if one fails
-            3. Return aggregate results
+            1. Select top 20 members from eligible_members (or all if less than 20)
+            2. Submit single batch to Bland AI via _submit_single_batch() (3-phase tracking)
+            3. Return results for this batch only
+            4. Remaining members will be processed in subsequent scheduler runs
 
         Args:
             eligible_members (List[Dict]): List of eligible members from EligibilityService.
@@ -228,27 +228,29 @@ class BatchOrchestrator:
             >>> eligible_members = [
             ...     {"enrollment_id": "abc-123", "member_id": "mem-001", "campaign_id": "camp-1",
             ...      "primary_phone": "+15551234567", "first_name": "John", "last_name": "Doe", ...},
-            ...     # ... 150 more members ...
+            ...     # ... 50 more members ...
             ... ]
             >>> result = orchestrator.create_and_submit_batches(eligible_members)
             >>> result
-            {'success': True, 'batches_created': 2, 'calls_submitted': 151}
+            {'success': True, 'batches_created': 1, 'calls_submitted': 20}
+            >>> # Note: Only first 20 members processed. Remaining 31 will be processed in next run.
             >>>
-            >>> # Handle individual batch failures
+            >>> # Handle batch failures
             >>> if result['success']:
             ...     print(f"✅ Submitted {result['calls_submitted']} calls")
             ... else:
-            ...     print(f"❌ All batches failed: {result.get('error')}")
+            ...     print(f"❌ Batch failed: {result.get('error')}")
 
         Notes:
-            - Batches are processed sequentially, not in parallel
-            - Individual batch failures are logged but don't stop remaining batches
+            - Only processes top 20 qualified members per run
+            - Single batch submitted per scheduler execution (15-minute cadence)
+            - Remaining eligible members processed in subsequent runs
             - If orchestrator is disabled (no Bland AI key), returns success=False immediately
-            - Max batch size: 100 members (Bland AI API limit)
+            - Max batch size: 20 members per run
             - Call 5 timestamp automatically set when 5th attempt created (BC-DA-006)
         """
         logger.info(
-            f"🚀 [BATCH-ORCHESTRATOR] Starting batch creation for {len(eligible_members)} members"
+            f"🚀 [BATCH-ORCHESTRATOR] Starting batch creation for {len(eligible_members)} eligible members"
         )
 
         if not self.enabled:
@@ -263,52 +265,50 @@ class BatchOrchestrator:
             }
 
         try:
-            # Split into batches of 100 (Bland AI max per batch)
-            batch_size = 100
-            member_batches = [
-                eligible_members[i : i + batch_size]
-                for i in range(0, len(eligible_members), batch_size)
-            ]
+            # Process only top 20 qualified members per run (single batch per 15-minute cadence)
+            batch_size = 20
+            members_to_process = eligible_members[:batch_size]
+            
+            remaining_count = len(eligible_members) - len(members_to_process)
 
             logger.info(
-                f"📦 [BATCH-ORCHESTRATOR] Split {len(eligible_members)} members into {len(member_batches)} batches"
+                f"📦 [BATCH-ORCHESTRATOR] Processing top {len(members_to_process)} qualified members "
+                f"(batch size: {batch_size})"
             )
-
-            total_batches_created = 0
-            total_calls_submitted = 0
-
-            for batch_num, member_batch in enumerate(member_batches, 1):
+            if remaining_count > 0:
                 logger.info(
-                    f"📦 [BATCH-ORCHESTRATOR] Processing batch {batch_num}/{len(member_batches)} "
-                    f"({len(member_batch)} members)"
+                    f"📦 [BATCH-ORCHESTRATOR] {remaining_count} members remaining - will be processed in next scheduler run"
                 )
 
-                # Submit batch
-                result = self._submit_single_batch(member_batch, batch_num)
+            # Submit single batch
+            result = self._submit_single_batch(members_to_process, 1)
 
-                if result.get("success"):
-                    total_batches_created += 1
-                    total_calls_submitted += result.get("calls_submitted", 0)
-                    logger.info(
-                        f"✅ [BATCH-ORCHESTRATOR] Batch {batch_num} submitted successfully "
-                        f"({result.get('calls_submitted', 0)} calls)"
-                    )
-                else:
-                    logger.error(
-                        f"❌ [BATCH-ORCHESTRATOR] Batch {batch_num} failed: {result.get('error')}"
-                    )
-                    # Continue with remaining batches even if one fails
+            if result.get("success"):
+                calls_submitted = result.get("calls_submitted", 0)
+                logger.info(
+                    f"✅ [BATCH-ORCHESTRATOR] Batch submitted successfully ({calls_submitted} calls)"
+                )
+                logger.info(
+                    f"✅ [BATCH-ORCHESTRATOR] Batch creation complete: 1 batch, {calls_submitted} calls"
+                )
 
-            logger.info(
-                f"✅ [BATCH-ORCHESTRATOR] Batch creation complete: "
-                f"{total_batches_created} batches, {total_calls_submitted} calls"
-            )
+                return {
+                    "success": True,
+                    "batches_created": 1,
+                    "calls_submitted": calls_submitted,
+                }
+            else:
+                error_msg = result.get("error", "Unknown error")
+                logger.error(
+                    f"❌ [BATCH-ORCHESTRATOR] Batch failed: {error_msg}"
+                )
 
-            return {
-                "success": total_batches_created > 0,
-                "batches_created": total_batches_created,
-                "calls_submitted": total_calls_submitted,
-            }
+                return {
+                    "success": False,
+                    "batches_created": 0,
+                    "calls_submitted": 0,
+                    "error": error_msg,
+                }
 
         except Exception as e:
             logger.error(
@@ -324,7 +324,7 @@ class BatchOrchestrator:
 
     def _submit_single_batch(self, members: List[Dict], batch_number: int) -> Dict[str, Any]:
         """
-        Submit a single batch to Bland AI (max 100 members)
+        Submit a single batch to Bland AI (max 20 members per run)
 
         Implements 3-phase database tracking:
         Phase 1: Create batch record
@@ -332,8 +332,8 @@ class BatchOrchestrator:
         Phase 3: Update batch with vendor_batch_id
 
         Args:
-            members: List of members (max 100)
-            batch_number: Batch number for logging
+            members: List of members (max 20 per run)
+            batch_number: Batch number for logging (always 1 for single batch per run)
 
         Returns:
             Dict with success status and details
