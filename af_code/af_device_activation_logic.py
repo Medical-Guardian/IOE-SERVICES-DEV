@@ -390,6 +390,7 @@ import re
 # Import shared utilities
 from af_code.shared.language_mapper import map_language_code
 from af_code.shared.business_hours_utils import add_business_days, is_business_day
+from af_code.shared.phone_utils import standardize_phone
 
 # Module load verification
 logger = logging.getLogger(__name__)
@@ -728,36 +729,6 @@ def get_org_id_for_partner(partner_name: str) -> Optional[str]:
     except Exception as e:
         logger.error(f"❌ [ORG-LOOKUP] Error looking up org_id: {e}")
         return None
-
-
-def standardize_phone(phone: str) -> Optional[str]:
-    """
-    Standardize phone number to E.164 format (+1XXXXXXXXXX)
-
-    Args:
-        phone: Phone number in various formats
-
-    Returns:
-        E.164 formatted phone or None if invalid
-    """
-    if not phone or pd.isna(phone):
-        return None
-
-    # Remove all non-digit characters
-    digits = re.sub(r"\D", "", str(phone))
-
-    # Handle different lengths
-    if len(digits) == 10:
-        # US number without country code
-        return f"+1{digits}"
-    elif len(digits) == 11 and digits.startswith("1"):
-        # US number with country code
-        return f"+{digits}"
-    elif len(digits) >= 10:
-        # International or other format - take last 10 digits and add +1
-        return f"+1{digits[-10:]}"
-
-    return None
 
 
 def validate_email(email: str) -> bool:
@@ -1238,6 +1209,32 @@ def validate_and_cleanse_data_before_insert(
                 )
 
         # ===================================================================
+        # 7.4b. DOB Age Range Validation (NEW - TC-DA-CSV-007)
+        # ===================================================================
+        if dob_parsed is not None:
+            # Calculate age from DOB
+            today = datetime.now().date()
+            age = (
+                today.year
+                - dob_parsed.year
+                - ((today.month, today.day) < (dob_parsed.month, dob_parsed.day))
+            )
+
+            # Validate age range (18-120 years)
+            if age < 18:
+                row_errors.append(
+                    f"member_dob indicates age {age} (too young - must be 18+): '{dob}'"
+                )
+            elif age > 120:
+                row_errors.append(
+                    f"member_dob indicates age {age} (unrealistic - must be under 120): '{dob}'"
+                )
+
+            # Validate not future date
+            if dob_parsed > today:
+                row_errors.append(f"member_dob cannot be in the future: '{dob}'")
+
+        # ===================================================================
         # 7.5. Address Combination (NEW - Combine 5 fields into 1)
         # ===================================================================
         # Support both column names (pre and post column mapping)
@@ -1258,6 +1255,14 @@ def validate_and_cleanse_data_before_insert(
             row_errors.append("member_address_state is required")
         if not zip_code:
             row_errors.append("member_address_zip is required")
+
+        # Validate ZIP code format (5 or 5+4 digits) - TC-DA-CSV-006
+        if zip_code:
+            zip_pattern = r"^\d{5}(-\d{4})?$"
+            if not re.match(zip_pattern, zip_code):
+                row_errors.append(
+                    f"member_address_zip must be 5 digits (12345) or 5+4 format (12345-6789): '{zip_code}'"
+                )
 
         # member_address_country - require value but default to 'US'
         if not country:
@@ -1331,6 +1336,14 @@ def validate_and_cleanse_data_before_insert(
             # Validate length after conversion
             if device_udi and (len(device_udi) < 5 or len(device_udi) > 50):
                 row_errors.append(f"device_udi length must be 5-50 characters: '{device_udi}'")
+
+            # Validate character set (alphanumeric + hyphens only) - TC-DA-CSV-009
+            if device_udi:
+                udi_pattern = r"^[a-zA-Z0-9\-]{5,50}$"
+                if not re.match(udi_pattern, device_udi):
+                    row_errors.append(
+                        f"device_udi must contain only letters, numbers, and hyphens: '{device_udi}'"
+                    )
 
         # ===================================================================
         # 10. Device Status Validation (REQUIRED)
