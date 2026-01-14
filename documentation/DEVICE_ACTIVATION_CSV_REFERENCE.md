@@ -40,6 +40,8 @@ This document describes the CSV file format for Device Activation campaign membe
 
 ### Total Fields: 27
 
+**✅ UPDATED 2026-01-14:** Enforced strict 11-digit phone number requirement - 10-digit numbers are now REJECTED.
+
 **✅ UPDATED 2025-12-30:** Added 2 new required fields (campaign_name_source, monitoring_system_id) and made 16 previously optional fields REQUIRED. Note: `campaign_parameters` is now OPTIONAL (can be empty).
 
 The CSV file must include a header row with the following column names (case-sensitive):
@@ -107,10 +109,11 @@ partner_name,campaign_name_source,salesforce_account_id,salesforce_account_numbe
 #### 5. **primary_phone** (REQUIRED)
 - **Type:** String
 - **Description:** Member's primary phone number
-- **Format:** 10-digit US phone number (can include dashes, spaces, parentheses)
-- **Example:** `5551234567`, `555-123-4567`, `(555) 123-4567`
-- **Validation:** Must be valid US phone number (10-11 digits)
-- **Processing:** Standardized to E.164 format (+15551234567)
+- **Format:** **11-digit US phone number starting with 1** (can include dashes, spaces, parentheses)
+- **Example:** `18123654567`, `1-812-365-4567`, `1 (812) 365-4567`
+- **Validation:** Must be EXACTLY 11 digits starting with 1 (10-digit numbers are REJECTED)
+- **Processing:** Standardized to E.164 format (e.g., `18123654567` → `+18123654567`)
+- **⚠️ UPDATED 2026-01-14:** Enforced strict 11-digit requirement (10-digit numbers no longer accepted)
 
 #### 6. **email** (OPTIONAL)
 - **Type:** String
@@ -226,10 +229,11 @@ partner_name,campaign_name_source,salesforce_account_id,salesforce_account_numbe
 #### 17. **device_phone_number** (OPTIONAL)
 - **Type:** String
 - **Description:** Phone number assigned to the device
-- **Format:** 10-digit US phone number
-- **Example:** `5559871234`
-- **Validation:** If provided, must be valid US phone number
-- **Processing:** Standardized to E.164 format (+15559871234)
+- **Format:** **11-digit US phone number starting with 1**
+- **Example:** `13472932888`, `1-347-293-2888`
+- **Validation:** If provided, must be EXACTLY 11 digits starting with 1 (10-digit numbers are REJECTED)
+- **Processing:** Standardized to E.164 format (e.g., `13472932888` → `+13472932888`)
+- **⚠️ UPDATED 2026-01-14:** Enforced strict 11-digit requirement (10-digit numbers no longer accepted)
 
 #### 18. **is_device_callable** (REQUIRED)
 - **Type:** String (Boolean)
@@ -423,7 +427,7 @@ The sample file contains 10 test records demonstrating:
 | 1 | partner_name | Must be "Medical Guardian" |
 | 2 | salesforce_account_id | Required, non-empty |
 | 3 | salesforce_account_number | Required, non-empty |
-| 4 | primary_phone | Valid US phone, E.164 format |
+| 4 | primary_phone | Must be 11 digits starting with 1, E.164 format (10-digit REJECTED) |
 | 5 | member_first_name | Required, special chars removed, max 50 chars, Proper Case |
 | 6 | member_last_name | Required, special chars removed, max 50 chars, Proper Case |
 | 7 | timezone | Valid IANA timezone |
@@ -464,8 +468,9 @@ The sample file contains 10 test records demonstrating:
 ### ❌ Error: "Invalid partner_name"
 **Fix:** Ensure partner_name = "Medical Guardian" (case-insensitive)
 
-### ❌ Error: "Invalid phone number format"
-**Fix:** Use 10-digit US phone number: `5551234567` or `555-123-4567`
+### ❌ Error: "Invalid phone number format" or "Phone number must be 11 digits"
+**Fix:** Use 11-digit US phone number starting with 1: `18123654567` or `1-812-365-4567`
+**⚠️ IMPORTANT:** 10-digit phone numbers (e.g., `8123654567`) are now REJECTED. You must include the country code "1" prefix.
 
 ### ❌ Error: "Invalid timezone"
 **Fix:** Use IANA format: `America/New_York` (NOT `EST`)
@@ -563,7 +568,7 @@ Before uploading a CSV file to production:
 - [ ] File name matches pattern: `MedicalGuardian_DeviceActivation_YYYYMMDD_Delta.csv`
 - [ ] CSV has header row with all 25 field names
 - [ ] All required fields are populated (no empty values)
-- [ ] Phone numbers are valid 10-digit US numbers
+- [ ] Phone numbers are valid 11-digit US numbers starting with 1 (e.g., `18123654567`)
 - [ ] Timezones use IANA format (America/New_York, etc.)
 - [ ] Delivery dates are within 180-day window
 - [ ] Customer types are DTC or MS
