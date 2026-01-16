@@ -913,6 +913,18 @@ class TestTimezoneValidation:
         """Test None timezone"""
         assert validate_timezone(None) is False
 
+    def test_america_adak_is_valid(self):
+        """Test America/Adak (Hawaii-Aleutian) is valid"""
+        assert validate_timezone("America/Adak") is True
+
+    def test_pacific_honolulu_is_valid(self):
+        """Test Pacific/Honolulu (IANA-standard Hawaii) is valid"""
+        assert validate_timezone("Pacific/Honolulu") is True
+
+    def test_america_honolulu_still_valid(self):
+        """Test America/Honolulu still valid (backward compatibility)"""
+        assert validate_timezone("America/Honolulu") is True
+
 
 class TestTimezoneMapping:
     """Test timezone abbreviation to IANA format mapping (NEW for 27-column CSV)"""
@@ -966,6 +978,49 @@ class TestTimezoneMapping:
         """Test unknown timezone abbreviation (should return as-is)"""
         result = map_timezone_to_iana("XYZ")
         assert result == "XYZ"
+
+    def test_azt_maps_to_phoenix(self):
+        """Test AZT abbreviation maps to America/Phoenix"""
+        result = map_timezone_to_iana("AZT")
+        assert result == "America/Phoenix"
+
+    def test_hast_maps_to_adak(self):
+        """Test HAST abbreviation maps to America/Adak"""
+        result = map_timezone_to_iana("HAST")
+        assert result == "America/Adak"
+
+    def test_hadt_maps_to_adak(self):
+        """Test HADT abbreviation maps to America/Adak"""
+        result = map_timezone_to_iana("HADT")
+        assert result == "America/Adak"
+
+
+class TestNewTimezoneAbbreviationsE2E:
+    """End-to-end tests for AZT, HAST, HADT abbreviation flow"""
+
+    def test_azt_abbreviation_validates_successfully(self):
+        """Test AZT flows through mapping and validation"""
+        mapped = map_timezone_to_iana("AZT")
+        assert mapped == "America/Phoenix"
+        assert validate_timezone(mapped) is True
+
+    def test_hast_abbreviation_validates_successfully(self):
+        """Test HAST flows through mapping and validation"""
+        mapped = map_timezone_to_iana("HAST")
+        assert mapped == "America/Adak"
+        assert validate_timezone(mapped) is True
+
+    def test_hadt_abbreviation_validates_successfully(self):
+        """Test HADT flows through mapping and validation"""
+        mapped = map_timezone_to_iana("HADT")
+        assert mapped == "America/Adak"
+        assert validate_timezone(mapped) is True
+
+    def test_pacific_honolulu_iana_format_validates(self):
+        """Test Pacific/Honolulu IANA format validates"""
+        mapped = map_timezone_to_iana("Pacific/Honolulu")
+        assert mapped == "Pacific/Honolulu"  # Pass-through
+        assert validate_timezone(mapped) is True
 
 
 class TestDeviceStatusValidation:
@@ -1486,7 +1541,7 @@ class TestPowerSaverModeValidation:
 
 
 class TestDOBAgeRangeValidation:
-    """Test DOB age range validation (18-120 years, no future dates) - TC-DA-CSV-007"""
+    """Test DOB validation (max age 120 years, no future dates) - TC-DA-CSV-007"""
 
     @pytest.fixture
     def minimal_context(self):
@@ -1540,15 +1595,6 @@ class TestDOBAgeRangeValidation:
         assert df_result.at[0, "validation_status"] == "VALIDATED"
         assert pd.isna(df_result.at[0, "error_message"]) or df_result.at[0, "error_message"] == ""
 
-    def test_valid_dob_age_18_boundary(self, minimal_context, minimal_row_data):
-        """TC-DA-CSV-007-02: Valid DOB - exactly 18 years old (lower boundary)"""
-        today = date.today()
-        dob = today.replace(year=today.year - 18)
-        minimal_row_data["member_dob"] = dob.strftime("%Y-%m-%d")
-        df = pd.DataFrame([minimal_row_data])
-        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
-        assert df_result.at[0, "validation_status"] == "VALIDATED"
-
     def test_valid_dob_age_120_boundary(self, minimal_context, minimal_row_data):
         """TC-DA-CSV-007-03: Valid DOB - exactly 120 years old (upper boundary)"""
         today = date.today()
@@ -1557,17 +1603,6 @@ class TestDOBAgeRangeValidation:
         df = pd.DataFrame([minimal_row_data])
         df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
         assert df_result.at[0, "validation_status"] == "VALIDATED"
-
-    def test_invalid_dob_too_young(self, minimal_context, minimal_row_data):
-        """TC-DA-CSV-007-04: Invalid DOB - 17 years old (too young)"""
-        today = date.today()
-        dob = today.replace(year=today.year - 17)
-        minimal_row_data["member_dob"] = dob.strftime("%Y-%m-%d")
-        df = pd.DataFrame([minimal_row_data])
-        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
-        assert df_result.at[0, "validation_status"] == "VALIDATION_ERROR"
-        assert "age 17" in df_result.at[0, "error_message"]
-        assert "too young" in df_result.at[0, "error_message"]
 
     def test_invalid_dob_too_old(self, minimal_context, minimal_row_data):
         """TC-DA-CSV-007-05: Invalid DOB - 121 years old (unrealistic)"""

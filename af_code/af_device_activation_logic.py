@@ -791,7 +791,7 @@ def map_timezone_to_iana(tz: str) -> str:
     tz_str = str(tz).strip()
 
     # If already IANA format, keep as-is
-    if tz_str.startswith("America/"):
+    if tz_str.startswith("America/") or tz_str.startswith("Pacific/"):
         return tz_str
 
     # Map abbreviations to IANA format
@@ -808,6 +808,9 @@ def map_timezone_to_iana(tz: str) -> str:
         "AKDT": "America/Anchorage",
         "HST": "America/Honolulu",
         "AST": "America/Puerto_Rico",
+        "AZT": "America/Phoenix",  # Arizona Time (no DST)
+        "HAST": "America/Adak",  # Hawaii-Aleutian Standard Time
+        "HADT": "America/Adak",  # Hawaii-Aleutian Daylight Time
     }
 
     return tz_mapping.get(tz_str.upper(), tz_str)  # Return original if not found
@@ -830,6 +833,8 @@ def validate_timezone(tz: str) -> bool:
         "America/Detroit",
         "America/Indiana/Indianapolis",
         "America/Kentucky/Louisville",
+        "America/Adak",  # Hawaii-Aleutian Time (for HAST/HADT)
+        "Pacific/Honolulu",  # IANA-standard Hawaii timezone
     ]
 
     return str(tz) in valid_timezones
@@ -1209,7 +1214,7 @@ def validate_and_cleanse_data_before_insert(
                 )
 
         # ===================================================================
-        # 7.4b. DOB Age Range Validation (NEW - TC-DA-CSV-007)
+        # 7.4b. DOB Age and Future Date Validation (TC-DA-CSV-007)
         # ===================================================================
         if dob_parsed is not None:
             # Calculate age from DOB
@@ -1220,12 +1225,8 @@ def validate_and_cleanse_data_before_insert(
                 - ((today.month, today.day) < (dob_parsed.month, dob_parsed.day))
             )
 
-            # Validate age range (18-120 years)
-            if age < 18:
-                row_errors.append(
-                    f"member_dob indicates age {age} (too young - must be 18+): '{dob}'"
-                )
-            elif age > 120:
+            # Validate maximum age (120 years) - data quality check
+            if age > 120:
                 row_errors.append(
                     f"member_dob indicates age {age} (unrealistic - must be under 120): '{dob}'"
                 )

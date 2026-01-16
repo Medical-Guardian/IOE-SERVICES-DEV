@@ -190,18 +190,18 @@ This document defines comprehensive validation rules and test cases for **Device
 
 ### 7. Date of Birth Validation and Age Range
 
-**Rule:** The system must validate member date of birth is in YYYY-MM-DD format and represents age between 18-120 years.
+**Rule:** The system must validate member date of birth is in YYYY-MM-DD format, is not a future date, and represents age under 120 years.
 
-**Description:** DOB must be a valid past date, not in the future, and indicate an adult (18+) under 120 years old.
+**Description:** DOB must be a valid past date, not in the future, and under 120 years old (data quality check). Members of any age under 120 are accepted. Accepts multiple date formats and auto-converts to YYYY-MM-DD.
 
 **Test Cases:**
 - **TC-DA-CSV-007-01:** Input `1980-05-15` (45 years old) → Verify passes validation
-- **TC-DA-CSV-007-02:** Input `05/15/1980` (MM/DD/YYYY format) → Verify auto-converted to `1980-05-15` OR rejected
+- **TC-DA-CSV-007-02:** Input `05/15/1980` (MM/DD/YYYY format) → Verify auto-converted to `1980-05-15`
 - **TC-DA-CSV-007-03:** Input `2030-01-01` (future date) → Verify rejected
-- **TC-DA-CSV-007-04:** Input `2010-01-01` (15 years old, <18) → Verify rejected
+- **TC-DA-CSV-007-04:** Input `2010-01-01` (15 years old) → Verify **ACCEPTED** (minors now allowed)
 - **TC-DA-CSV-007-05:** Input `1890-01-01` (135 years old, >120) → Verify rejected
 
-**Expected Behavior:** DOB validated for format and age range (18-120 years)
+**Expected Behavior:** DOB validated for format, maximum age (120 years), and future date check (no minimum age restriction)
 
 **Database Impact:** `members.dob` stored as DATE in YYYY-MM-DD format
 
