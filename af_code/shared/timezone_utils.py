@@ -29,67 +29,67 @@ class TimezoneConverter:
 
     # Map SQL Server abbreviations to IANA timezone names (for pytz)
     ABBREV_TO_IANA = {
-        'EST': 'America/New_York',
-        'EDT': 'America/New_York',
-        'CST': 'America/Chicago',
-        'CDT': 'America/Chicago',
-        'MST': 'America/Denver',
-        'MDT': 'America/Denver',
-        'PST': 'America/Los_Angeles',
-        'PDT': 'America/Los_Angeles',
-
+        "EST": "America/New_York",
+        "EDT": "America/New_York",
+        "CST": "America/Chicago",
+        "CDT": "America/Chicago",
+        "MST": "America/Denver",
+        "MDT": "America/Denver",
+        "PST": "America/Los_Angeles",
+        "PDT": "America/Los_Angeles",
         # Additional US timezones
-        'AKST': 'America/Anchorage',
-        'AKDT': 'America/Anchorage',
-        'HST': 'Pacific/Honolulu',
-        'HAST': 'Pacific/Honolulu',
-        'HADT': 'Pacific/Honolulu',
+        "AKST": "America/Anchorage",
+        "AKDT": "America/Anchorage",
+        "HST": "Pacific/Honolulu",
+        "HAST": "America/Adak",  # Hawaii-Aleutian Standard Time (Aleutian Islands)
+        "HADT": "America/Adak",  # Hawaii-Aleutian Daylight Time (Aleutian Islands)
+        "AZT": "America/Phoenix",  # Arizona Time (no DST)
     }
 
     # Map IANA timezone names to SQL Server Windows timezone names
     IANA_TO_WINDOWS = {
-        'America/New_York': 'Eastern Standard Time',
-        'America/Chicago': 'Central Standard Time',
-        'America/Denver': 'Mountain Standard Time',
-        'America/Los_Angeles': 'Pacific Standard Time',
-        'America/Phoenix': 'US Mountain Standard Time',  # Arizona (no DST)
-        'America/Anchorage': 'Alaskan Standard Time',
-        'Pacific/Honolulu': 'Hawaiian Standard Time',
-
+        "America/New_York": "Eastern Standard Time",
+        "America/Chicago": "Central Standard Time",
+        "America/Denver": "Mountain Standard Time",
+        "America/Los_Angeles": "Pacific Standard Time",
+        "America/Phoenix": "US Mountain Standard Time",  # Arizona (no DST)
+        "America/Anchorage": "Alaskan Standard Time",
+        "America/Adak": "Alaskan Standard Time",  # Hawaii-Aleutian (same Windows zone as Anchorage)
+        "Pacific/Honolulu": "Hawaiian Standard Time",
         # Additional US zones
-        'America/Detroit': 'Eastern Standard Time',
-        'America/Indiana/Indianapolis': 'US Eastern Standard Time',
-        'America/Kentucky/Louisville': 'Eastern Standard Time',
-        'America/New_Orleans': 'Central Standard Time',
-        'America/Dallas': 'Central Standard Time',
-        'America/Houston': 'Central Standard Time',
-        'America/Boise': 'Mountain Standard Time',
-        'America/Salt_Lake_City': 'Mountain Standard Time',
-        'America/Seattle': 'Pacific Standard Time',
-        'America/San_Francisco': 'Pacific Standard Time',
+        "America/Detroit": "Eastern Standard Time",
+        "America/Indiana/Indianapolis": "US Eastern Standard Time",
+        "America/Kentucky/Louisville": "Eastern Standard Time",
+        "America/New_Orleans": "Central Standard Time",
+        "America/Dallas": "Central Standard Time",
+        "America/Houston": "Central Standard Time",
+        "America/Boise": "Mountain Standard Time",
+        "America/Salt_Lake_City": "Mountain Standard Time",
+        "America/Seattle": "Pacific Standard Time",
+        "America/San_Francisco": "Pacific Standard Time",
     }
 
     # Map abbreviations directly to Windows timezone names (for SQL Server)
     ABBREV_TO_WINDOWS = {
-        'EST': 'Eastern Standard Time',
-        'EDT': 'Eastern Standard Time',
-        'CST': 'Central Standard Time',
-        'CDT': 'Central Standard Time',
-        'MST': 'Mountain Standard Time',
-        'MDT': 'Mountain Standard Time',
-        'PST': 'Pacific Standard Time',
-        'PDT': 'Pacific Standard Time',
-        'AKST': 'Alaskan Standard Time',
-        'AKDT': 'Alaskan Standard Time',
-        'HST': 'Hawaiian Standard Time',
+        "EST": "Eastern Standard Time",
+        "EDT": "Eastern Standard Time",
+        "CST": "Central Standard Time",
+        "CDT": "Central Standard Time",
+        "MST": "Mountain Standard Time",
+        "MDT": "Mountain Standard Time",
+        "PST": "Pacific Standard Time",
+        "PDT": "Pacific Standard Time",
+        "AKST": "Alaskan Standard Time",
+        "AKDT": "Alaskan Standard Time",
+        "HST": "Hawaiian Standard Time",
     }
 
     # US timezones for member_tz qualification checks
     US_TIMEZONES_IANA = {
-        'Eastern': 'America/New_York',
-        'Central': 'America/Chicago',
-        'Mountain': 'America/Denver',
-        'Pacific': 'America/Los_Angeles',
+        "Eastern": "America/New_York",
+        "Central": "America/Chicago",
+        "Mountain": "America/Denver",
+        "Pacific": "America/Los_Angeles",
     }
 
     @classmethod
@@ -110,15 +110,17 @@ class TimezoneConverter:
         """
         if not tz_input:
             logger.warning("⚠️ [TIMEZONE] Empty timezone input, defaulting to America/New_York")
-            return 'America/New_York'
+            return "America/New_York"
 
         # Already IANA format (contains /)
-        if '/' in tz_input:
+        if "/" in tz_input:
             if tz_input in pytz.all_timezones:
                 return tz_input
             else:
-                logger.warning(f"⚠️ [TIMEZONE] Unknown IANA timezone '{tz_input}', defaulting to America/New_York")
-                return 'America/New_York'
+                logger.warning(
+                    f"⚠️ [TIMEZONE] Unknown IANA timezone '{tz_input}', defaulting to America/New_York"
+                )
+                return "America/New_York"
 
         # Check if it's an abbreviation
         if tz_input in cls.ABBREV_TO_IANA:
@@ -133,8 +135,10 @@ class TimezoneConverter:
                 return iana
 
         # Unknown format, default to Eastern
-        logger.warning(f"⚠️ [TIMEZONE] Unknown timezone format '{tz_input}', defaulting to America/New_York")
-        return 'America/New_York'
+        logger.warning(
+            f"⚠️ [TIMEZONE] Unknown timezone format '{tz_input}', defaulting to America/New_York"
+        )
+        return "America/New_York"
 
     @classmethod
     def to_windows(cls, tz_input: str) -> str:
@@ -153,7 +157,7 @@ class TimezoneConverter:
         """
         if not tz_input:
             logger.warning("⚠️ [TIMEZONE] Empty timezone input, defaulting to Eastern Standard Time")
-            return 'Eastern Standard Time'
+            return "Eastern Standard Time"
 
         # Check if it's already a Windows timezone name
         if tz_input in cls.IANA_TO_WINDOWS.values():
@@ -166,15 +170,17 @@ class TimezoneConverter:
             return windows_tz
 
         # Check if it's IANA format
-        if '/' in tz_input:
+        if "/" in tz_input:
             if tz_input in cls.IANA_TO_WINDOWS:
                 windows_tz = cls.IANA_TO_WINDOWS[tz_input]
                 logger.debug(f"🔄 [TIMEZONE] Converted IANA '{tz_input}' → '{windows_tz}'")
                 return windows_tz
 
         # Unknown format, default to Eastern
-        logger.warning(f"⚠️ [TIMEZONE] Unknown timezone format '{tz_input}', defaulting to Eastern Standard Time")
-        return 'Eastern Standard Time'
+        logger.warning(
+            f"⚠️ [TIMEZONE] Unknown timezone format '{tz_input}', defaulting to Eastern Standard Time"
+        )
+        return "Eastern Standard Time"
 
     @classmethod
     def to_pytz(cls, tz_input: str) -> pytz.tzinfo.BaseTzInfo:
@@ -206,10 +212,7 @@ class TimezoneConverter:
         Returns:
             dict: {'Eastern': <pytz timezone>, 'Central': <pytz timezone>, ...}
         """
-        return {
-            name: pytz.timezone(iana)
-            for name, iana in cls.US_TIMEZONES_IANA.items()
-        }
+        return {name: pytz.timezone(iana) for name, iana in cls.US_TIMEZONES_IANA.items()}
 
     @classmethod
     def validate_timezone(cls, tz_input: str) -> bool:
