@@ -390,7 +390,7 @@ import re
 # Import shared utilities
 from af_code.shared.language_mapper import map_language_code
 from af_code.shared.business_hours_utils import add_business_days, is_business_day
-from af_code.shared.phone_utils import standardize_phone
+from af_code.shared.phone_utils import standardize_phone_device_activation
 
 # Module load verification
 logger = logging.getLogger(__name__)
@@ -1058,7 +1058,7 @@ def validate_and_cleanse_data_before_insert(
         # ===================================================================
         # Support both column names (pre and post column mapping)
         member_phone = row.get("primary_phone", "") or row.get("member_phone_number", "")
-        standardized_phone = standardize_phone(member_phone)
+        standardized_phone = standardize_phone_device_activation(member_phone)
         if not standardized_phone:
             row_errors.append(f"Invalid member_phone_number: '{member_phone}'")
         else:
@@ -1069,7 +1069,7 @@ def validate_and_cleanse_data_before_insert(
         if not device_phone or not str(device_phone).strip():
             row_errors.append("device_phone_number is required")
         else:
-            standardized_device_phone = standardize_phone(device_phone)
+            standardized_device_phone = standardize_phone_device_activation(device_phone)
             if not standardized_device_phone:
                 row_errors.append(f"Invalid device_phone_number: '{device_phone}'")
             else:

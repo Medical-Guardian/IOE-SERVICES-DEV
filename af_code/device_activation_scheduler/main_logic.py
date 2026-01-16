@@ -157,9 +157,9 @@ def create_device_activation_batch(
         logger.info("📦 [MAIN-LOGIC] ============================================")
         logger.info("📦 [MAIN-LOGIC] STEP 3: BATCH CREATION & BLAND AI SUBMISSION")
         logger.info("📦 [MAIN-LOGIC] ============================================")
-        logger.info(f"📦 [MAIN-LOGIC] Total members to batch: {len(eligible_members)}")
-        logger.info("📦 [MAIN-LOGIC] Batch size limit: 100 members per batch (Bland AI limit)")
-        logger.info("📦 [MAIN-LOGIC] Creating batches and submitting to Bland AI...")
+        logger.info(f"📦 [MAIN-LOGIC] Total eligible members: {len(eligible_members)}")
+        logger.info("📦 [MAIN-LOGIC] Batch size: 20 members per run (single batch per 15-minute cadence)")
+        logger.info("📦 [MAIN-LOGIC] Processing top 20 qualified members and submitting to Bland AI...")
 
         batch_results = batch_orchestrator.create_and_submit_batches(eligible_members)
 
