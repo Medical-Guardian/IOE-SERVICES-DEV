@@ -268,7 +268,7 @@ class BatchOrchestrator:
             # Process only top 20 qualified members per run (single batch per 15-minute cadence)
             batch_size = 20
             members_to_process = eligible_members[:batch_size]
-            
+
             remaining_count = len(eligible_members) - len(members_to_process)
 
             logger.info(
@@ -299,9 +299,7 @@ class BatchOrchestrator:
                 }
             else:
                 error_msg = result.get("error", "Unknown error")
-                logger.error(
-                    f"❌ [BATCH-ORCHESTRATOR] Batch failed: {error_msg}"
-                )
+                logger.error(f"❌ [BATCH-ORCHESTRATOR] Batch failed: {error_msg}")
 
                 return {
                     "success": False,
@@ -387,25 +385,10 @@ class BatchOrchestrator:
             logger.info("")
 
             # ============================================================
-            # PHASE 2.5: Update enrollments reaching Call 5 (NEW: 2025-12-22)
+            # PHASE 2.5: REMOVED (2026-01-17)
+            # No longer tracking call_5_timestamp separately
+            # campaign_end_date now set at enrollment (activation_start_date + 90 days)
             # ============================================================
-            logger.info("🕐 [BATCH-ORCHESTRATOR] ============================================")
-            logger.info("🕐 [BATCH-ORCHESTRATOR] PHASE 2.5: TRACK CALL 5 TIMESTAMP")
-            logger.info("🕐 [BATCH-ORCHESTRATOR] ============================================")
-            logger.info("🕐 [BATCH-ORCHESTRATOR] Checking for enrollments reaching Call 5...")
-
-            updated_count = self._update_call_5_enrollments(campaign_id)
-
-            if updated_count > 0:
-                logger.info(f"✅ [BATCH-ORCHESTRATOR] Updated {updated_count} enrollments:")
-                logger.info("   • Set call_5_timestamp to current timestamp")
-                logger.info("   • Set campaign_end_date to call_5_timestamp + 90 days")
-                logger.info(
-                    "   • These members now have 90 days from Call 5 for remaining attempts"
-                )
-            else:
-                logger.info("   ℹ️  No enrollments reached Call 5 in this batch")
-            logger.info("")
 
             # Build Bland AI batch request
             batch_request = self._build_batch_request(members, batch_id, attempt_id_map)
@@ -951,17 +934,21 @@ class BatchOrchestrator:
 
     def _update_call_5_enrollments(self, campaign_id: str) -> int:
         """
-        Update enrollments that just reached Call 5 (implements 90-day window logic)
+        DEPRECATED (2026-01-17): No longer used after 90-day window change.
 
-        Sets call_5_timestamp and campaign_end_date for enrollments where:
-        - call_5_timestamp is currently NULL (hasn't reached Call 5 yet)
-        - Total outreach_attempts count = 5 (just created 5th attempt in Phase 2)
+        Previously updated call_5_timestamp when members reached Call 5.
+        Now campaign_end_date is set at enrollment (activation_start_date + 90 days).
 
-        This triggers the 90-day window for subsequent calls (Call 6+).
+        The 90-day window now starts from activation_start_date (Call 1 eligibility)
+        instead of call_5_timestamp (Call 5), providing ~20 fewer days for activation
+        but simpler logic.
+
+        This method is kept for backward compatibility but returns 0 without executing.
 
         BusinessCaseID: BC-DA-006 (Call Frequency & Sequencing Logic)
         Created: 2025-12-22
         Updated: 2025-12-24 - Added comprehensive documentation
+        Deprecated: 2026-01-17 - 90-day window change (Call 5 + 90 → Call 1 + 90)
 
         Background:
             Device Activation call frequency differs between Calls 1-4 and Call 5+:
@@ -1013,6 +1000,18 @@ class BatchOrchestrator:
             - Called in Phase 2.5 (after attempts created, before Bland AI submission)
             - Multiple batch submissions in quick succession won't double-update (NULL check)
         """
+        # DEPRECATED: Early return to disable method without removing code
+        logger.info(
+            "🔔 [BATCH-ORCHESTRATOR] ⚠️  Call 5 tracking DISABLED "
+            "(campaign_end_date now set at enrollment)"
+        )
+        logger.info(
+            "🔔 [BATCH-ORCHESTRATOR] ℹ️  90-day window: activation_start_date + 90 days "
+            "(not call_5_timestamp + 90 days)"
+        )
+        return 0
+
+        # The code below is preserved but not executed (for reference/rollback)
         update_call_5_sql = """
         UPDATE e
         SET

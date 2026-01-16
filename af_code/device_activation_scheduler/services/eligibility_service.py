@@ -17,7 +17,7 @@ but have not yet activated them. This service identifies members ready to be cal
 2. **Call Sequence Timing**: Sufficient time has passed since last attempt (frequency rules)
 3. **Business Hours Validation**: Dual-timezone check (MG operating hours + member timezone)
 4. **Callback Queue Exclusion**: Members with pending callbacks are processed separately
-5. **90-Day Window**: Call 5+ attempts must occur within 90 days from call_5_timestamp
+5. **90-Day Window**: All calls (1-5+) must occur within 90 days from activation_start_date
 
 CALL SEQUENCE LOGIC (BC-DA-006):
 ---------------------------------
@@ -28,32 +28,35 @@ Device Activation uses two distinct call frequency patterns:
 - Call 2: Call 1 + 2 business days (if no success)
 - Call 3: Call 2 + 2 business days (if no success)
 - Call 4: Call 3 + 5 business days (if no success)
-- **NO 90-day limit** - Only frequency rules apply
 - **Max 4 attempts** total in this phase
 
 **Calls 5+ (Extended Attempts):**
 - **Frequency Calculation**: After 7 days (>7 CALENDAR days = 8+ days between attempts - counts weekends/holidays)
 - **Call Timing**: Calls ONLY on business days (Mon-Fri, excluding federal holidays)
 - Max Attempts: Unlimited
-- **90-Day Window**: call_5_timestamp + 90 days
-  - Window starts FROM Call 5 creation (NOT activation_start_date)
-  - Allows sufficient time for early attempts before enforcing hard stop
-  - campaign_end_date = call_5_timestamp + 90 days
 - Continue 8+ day calls until campaign_end_date reached
 - **Defense in Depth**: Business day validated in BOTH eligibility filter AND business hours filter
 
-**Example Timeline:**
+**90-Day Window (UPDATED 2026-01-17):**
+- **Window Start**: activation_start_date (Call 1 eligibility date, NOT call_5_timestamp)
+- **Window End**: campaign_end_date = activation_start_date + 90 days
+- **Applies To**: ALL calls (1-5+), not just Call 5+
+- **Set At**: Enrollment time (file processing), not dynamically at Call 5
+- Members have ~90 days from activation_start_date to complete device activation
+- Simpler logic than previous approach (call_5_timestamp + 90 days)
+
+**Example Timeline (UPDATED 2026-01-17):**
 ```
 Day 1:  Device Delivery
-Day 3:  Call 1 (activation_start_date = delivery + 2 biz days)
+Day 3:  Call 1 (activation_start_date = delivery + 2 biz days, campaign_end_date = Day 93)
 Day 5:  Call 2 (Call 1 + 2 biz days)
 Day 7:  Call 3 (Call 2 + 2 biz days)
 Day 12: Call 4 (Call 3 + 5 biz days)
-Day 20: Call 5 (Call 4 + 8 days) → call_5_timestamp SET, campaign_end_date = Day 110
+Day 20: Call 5 (Call 4 + 8 days)
 Day 28: Call 6 (Call 5 + 8 days)
 Day 36: Call 7 (Call 6 + 8 days)
 ...
-Day 110: Campaign ends (call_5_timestamp + 90 days), no more calls
+Day 93: Campaign ends (activation_start_date + 90 days), no more calls
 ```
 
 BUSINESS HOURS VALIDATION:
@@ -84,6 +87,7 @@ The service executes a 200+ line SQL query (ELIGIBLE_MEMBERS_QUERY) that:
    - current_status = 'ENROLLED'
    - device_activated = 0 (device not yet activated)
    - activation_start_date <= today (past Day 2)
+   - Same-day blocking: No attempts today (UTC date boundaries)
    - Frequency rules: 2/5 BUSINESS days for Calls 2-4, >7 CALENDAR days (8+ days) for Call 5+ (calls only on business days)
    - 90-day window for Call 5+ only
    - Not in callback queue (callbacks processed separately)
@@ -265,6 +269,19 @@ class EligibilityService:
 
     # SQL query to find eligible members
     ELIGIBLE_MEMBERS_QUERY = """
+    WITH TodayActiveAttempts AS (
+        -- Block same-day retries: One attempt per member per day regardless of outcome
+        -- Uses UTC date range for "today" (00:00:00 - 23:59:59 UTC)
+        SELECT DISTINCT e.member_id
+        FROM engage360.member_campaign_enrollments_enhanced e
+        INNER JOIN engage360.outreach_attempts oa ON e.enrollment_id = oa.enrollment_id
+        INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
+        INNER JOIN engage360.campaigns_enhanced c ON ob.campaign_id = c.campaign_id
+        WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
+          AND oa.attempt_ts >= CAST(CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AS DATE) AS DATETIMEOFFSET)  -- Today 00:00 UTC
+          AND oa.attempt_ts < DATEADD(day, 1, CAST(CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AS DATE) AS DATETIMEOFFSET))  -- Tomorrow 00:00 UTC
+          AND oa.disposition IN ('Completed', 'Pending', 'Failed', 'NoAnswer', 'Canceled')  -- Block all disposition types
+    )
     SELECT
         e.enrollment_id,
         e.member_id,
@@ -338,6 +355,9 @@ class EligibilityService:
         ON m.member_id = mi.member_id
         AND mi.id_type = 'monitoring_system_id'
 
+    -- Same-day blocking: Exclude members with attempts today
+    LEFT JOIN TodayActiveAttempts taa ON e.member_id = taa.member_id
+
     WHERE
         -- Campaign criteria (support both Device Activation and Operations campaigns)
         (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
@@ -350,16 +370,13 @@ class EligibilityService:
         -- Time criteria
         AND SYSDATETIMEOFFSET() >= e.activation_start_date  -- Past Day 2
 
-        -- NEW: 90-day window logic ONLY applies to Call 5+
-        -- For Calls 1-4: No 90-day check (call_5_timestamp IS NULL means haven't reached Call 5)
-        -- For Call 5+: Check if within 90 days from call_5_timestamp
-        AND (
-            -- Calls 1-4: No 90-day limit (call_5_timestamp is NULL)
-            e.call_5_timestamp IS NULL
-            OR
-            -- Call 5+: Within 90-day window from Call 5 timestamp
-            SYSDATETIMEOFFSET() <= e.campaign_end_date
-        )
+        -- Same-day blocking: No attempts today (UTC)
+        AND taa.member_id IS NULL  -- Critical: Excludes members with today's attempts
+
+        -- NEW (2026-01-17): 90-day window applies to ALL calls (1-5+)
+        -- campaign_end_date = activation_start_date + 90 days (set at enrollment)
+        -- All members must complete activation within 90 days from activation_start_date
+        AND SYSDATETIMEOFFSET() <= e.campaign_end_date
 
         -- Call frequency logic
         AND (
@@ -412,6 +429,7 @@ class EligibilityService:
             Executes ELIGIBLE_MEMBERS_QUERY to find potentially eligible members based on:
             - Enrollment status (ENROLLED, device not activated)
             - Campaign status (Active Device Activation campaign)
+            - Same-day blocking: One attempt per member per day (UTC)
             - Call frequency rules:
               * Calls 2-3: 2 BUSINESS days (excludes weekends + US federal holidays)
               * Call 4: 5 BUSINESS days (excludes weekends + US federal holidays)
@@ -528,6 +546,7 @@ class EligibilityService:
             ⚠️ [ELIGIBILITY-SERVICE] Diagnostic checklist:
                □ No members enrolled in Device Activation campaign
                □ All members have recent attempts within frequency window
+               □ All members have same-day attempts (one per day policy)
                □ All members are in callback queue (higher priority)
 
             **With Results:**
@@ -590,6 +609,7 @@ class EligibilityService:
                 logger.info("⚠️ [ELIGIBILITY-SERVICE] Diagnostic checklist:")
                 logger.info("   □ No members enrolled in Device Activation campaign")
                 logger.info("   □ All members have recent attempts within frequency window")
+                logger.info("   □ All members have same-day attempts (one per day policy)")
                 logger.info("   □ All members are in callback queue (higher priority)")
                 logger.info(
                     "   □ All members outside 90-day campaign window (activation_start_date to campaign_end_date)"
@@ -782,6 +802,13 @@ class EligibilityService:
             logger.info("✅ [ELIGIBILITY-SERVICE] Business hours validation complete")
             logger.info(f"   ✓ Eligible members: {len(eligible_members)}")
             logger.info(f"   ✗ Filtered out (outside business hours): {filtered_out_count}")
+
+            # Same-day filtering confirmation
+            logger.info("")
+            logger.info("📅 [ELIGIBILITY-SERVICE] Same-day call blocking active:")
+            logger.info("   ✓ Policy: One attempt per member per day (UTC)")
+            logger.info("   ✓ Blocks: ALL disposition types (Completed, Failed, NoAnswer, etc.)")
+            logger.info("   ✓ Members with today's attempts excluded in SQL query")
 
             # Final summary
             if len(eligible_members) > 0:

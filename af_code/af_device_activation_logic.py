@@ -1214,22 +1214,10 @@ def validate_and_cleanse_data_before_insert(
                 )
 
         # ===================================================================
-        # 7.4b. DOB Age and Future Date Validation (TC-DA-CSV-007)
+        # 7.4b. DOB Future Date Validation (TC-DA-CSV-007)
         # ===================================================================
         if dob_parsed is not None:
-            # Calculate age from DOB
             today = datetime.now().date()
-            age = (
-                today.year
-                - dob_parsed.year
-                - ((today.month, today.day) < (dob_parsed.month, dob_parsed.day))
-            )
-
-            # Validate maximum age (120 years) - data quality check
-            if age > 120:
-                row_errors.append(
-                    f"member_dob indicates age {age} (unrealistic - must be under 120): '{dob}'"
-                )
 
             # Validate not future date
             if dob_parsed > today:
@@ -2312,19 +2300,21 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             # Weekend or holiday - get next business day
             activation_start_date = add_business_days(enrollment_ts, 1).date()
 
-        # NEW LOGIC (2025-12-22): campaign_end_date is NOT set at enrollment
-        # It will be set dynamically after Call 5 is made
-        # For Calls 1-4: No 90-day limit (campaign_end_date stays NULL)
-        # For Call 5+: campaign_end_date = call_5_timestamp + 90 days (set by batch orchestrator)
-        campaign_end_date = None  # Set to NULL initially
-        call_5_timestamp = None  # Set to NULL initially (will be populated after Call 5)
+        # NEW LOGIC (2026-01-17): campaign_end_date = activation_start_date + 90 days
+        # 90-day window applies to ALL calls (1-5+), not just Call 5+
+        from datetime import timedelta
+
+        campaign_end_date = (activation_start_date + timedelta(days=90)).date()  # DATE format
+        call_5_timestamp = (
+            None  # Keep as NULL (deprecated but maintain column for backward compatibility)
+        )
 
         logger.info(
             f"📅 [TRANSFORM] Activation dates for this batch: "
             f"enrollment_ts={enrollment_ts.date()} ({enrollment_ts.strftime('%A')}), "
             f"activation_start={activation_start_date} "
             f"({'SAME DAY' if enrollment_date == activation_start_date else 'NEXT BUSINESS DAY'}), "
-            f"campaign_end=NULL (will be set after Call 5)"
+            f"campaign_end={campaign_end_date} (activation_start + 90 days)"
         )
 
         # Process enrollments using separate operations (following DTC pattern)
