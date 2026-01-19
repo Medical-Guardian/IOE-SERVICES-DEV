@@ -102,11 +102,12 @@ class TestBusinessDayAddition:
         nov_24 = datetime(2025, 11, 24, 10, 0, tzinfo=pytz.UTC)
         result = BusinessHoursValidator.add_business_days(nov_24, 5)
 
-        # Should skip:
-        # - Weekend (Nov 29-30)
-        # - Thanksgiving (Nov 27)
-        # Expected: Monday, December 1, 2025
-        expected = datetime(2025, 12, 1, 10, 0, tzinfo=pytz.UTC)
+        # Starting Nov 24 (Mon), adding 5 business days:
+        # Nov 25 (Tue): Day 1, Nov 26 (Wed): Day 2, Nov 27 (Thu): SKIP (Thanksgiving)
+        # Nov 28 (Fri): Day 3, Nov 29-30 (Sat-Sun): SKIP (Weekend)
+        # Dec 1 (Mon): Day 4, Dec 2 (Tue): Day 5
+        # Expected: Tuesday, December 2, 2025
+        expected = datetime(2025, 12, 2, 10, 0, tzinfo=pytz.UTC)
         assert result.date() == expected.date()
 
     def test_add_0_business_days(self):

@@ -19,7 +19,7 @@ import logging
 from datetime import datetime, time, timedelta
 from typing import Tuple
 import pytz
-import holidays
+from af_code.shared.custom_holidays import CustomUSHolidays
 
 logger = logging.getLogger(__name__)
 
@@ -45,8 +45,12 @@ class BusinessHoursValidator:
     BUSINESS_START_HOUR = 9  # 9:00 AM
     BUSINESS_END_HOUR = 17  # 5:00 PM (Medical Guardian end time)
 
-    # US Federal Holidays (automatically includes all federal holidays)
-    US_HOLIDAYS = holidays.US(observed=True)  # observed=True handles holidays that fall on weekends
+    # Medical Guardian Business Holidays (6 holidays only - filtered from federal holidays)
+    # Includes: New Year, Memorial Day, Independence Day, Labor Day, Thanksgiving, Christmas
+    # Excludes: MLK Day, Presidents' Day, Juneteenth, Columbus Day, Veterans Day
+    US_HOLIDAYS = CustomUSHolidays(
+        observed=True
+    )  # observed=True handles holidays that fall on weekends
 
     @classmethod
     def is_business_day(cls, check_date: datetime) -> bool:
@@ -369,7 +373,11 @@ class BusinessHoursValidator:
     @classmethod
     def get_federal_holidays(cls, year: int) -> dict:
         """
-        Get all US federal holidays for a specific year
+        Get Medical Guardian business holidays for a specific year
+
+        Only includes 6 holidays:
+        - New Year's Day, Memorial Day, Independence Day
+        - Labor Day, Thanksgiving, Christmas
 
         Args:
             year: Year to get holidays for
@@ -381,8 +389,10 @@ class BusinessHoursValidator:
             >>> holidays_2025 = get_federal_holidays(2025)
             >>> holidays_2025[datetime.date(2025, 7, 4)]
             'Independence Day'
+            >>> len(holidays_2025)
+            6
         """
-        return {date: name for date, name in holidays.US(years=year, observed=True).items()}
+        return {date: name for date, name in CustomUSHolidays(years=year, observed=True).items()}
 
     @classmethod
     def log_holiday_info(cls, start_date: datetime, end_date: datetime) -> None:
