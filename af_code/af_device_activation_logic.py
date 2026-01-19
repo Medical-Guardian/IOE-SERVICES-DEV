@@ -2304,7 +2304,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         # 90-day window applies to ALL calls (1-5+), not just Call 5+
         from datetime import timedelta
 
-        campaign_end_date = (activation_start_date + timedelta(days=90)).date()  # DATE format
+        campaign_end_date = activation_start_date + timedelta(days=90)  # DATE format
         call_5_timestamp = (
             None  # Keep as NULL (deprecated but maintain column for backward compatibility)
         )
