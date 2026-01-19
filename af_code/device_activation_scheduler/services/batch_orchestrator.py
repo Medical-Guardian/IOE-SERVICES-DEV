@@ -919,12 +919,31 @@ class BatchOrchestrator:
         for member in members:
             enrollment_id = str(member.get("enrollment_id"))
             attempt_id = str(uuid.uuid4())
+            call_attempt_number = member.get("call_attempt_number", 0)
 
             self.db_service.execute_query(
                 insert_attempt_sql,
                 (attempt_id, enrollment_id, batch_id, "Voice", "Pending"),
                 fetch_results=False,
             )
+
+            # NEW LOGIC (2026-01-19): Update campaign_end_date when first call is sent
+            # Sets 90-day window from actual first call date (not enrollment date)
+            # Ensures members get full 90 days from when call actually happens
+            if call_attempt_number == 1:
+                update_campaign_end_sql = """
+                UPDATE engage360.member_campaign_enrollments_enhanced
+                SET campaign_end_date = DATEADD(day, 90, CAST(SYSDATETIMEOFFSET() AS DATE))
+                WHERE enrollment_id = %s
+                """
+                self.db_service.execute_query(
+                    update_campaign_end_sql,
+                    (enrollment_id,),
+                    fetch_results=False,
+                )
+                logger.info(
+                    f"📅 [BATCH-ORCHESTRATOR] Updated campaign_end_date for first call: {enrollment_id}"
+                )
 
             attempt_id_map[enrollment_id] = attempt_id
 
