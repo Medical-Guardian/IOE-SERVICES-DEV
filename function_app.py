@@ -114,6 +114,18 @@ try:
 except Exception as e:
     logging.error(f"❌ Failed to import/register device_activation_bp: {str(e)}")
 
+# Device Activation Campaign Closure Scheduler
+try:
+    from functions.device_activation_campaign_closure import (
+        device_activation_closure_bp,
+    )  # Device Activation Campaign Closure
+
+    logging.info("✅ Successfully imported device_activation_closure_bp")
+    app.register_functions(device_activation_closure_bp)
+    logging.info("✅ Successfully registered Device Activation Campaign Closure Scheduler")
+except Exception as e:
+    logging.error(f"❌ Failed to import/register device_activation_closure_bp: {str(e)}")
+
 try:
     from functions.operations_device_activation_file_processor import (
         operations_device_activation_bp,
