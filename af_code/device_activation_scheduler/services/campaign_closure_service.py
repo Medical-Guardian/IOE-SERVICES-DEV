@@ -144,11 +144,10 @@ class CampaignClosureService:
                 campaign_id = enrollment["campaign_id"]
                 campaign_name = enrollment.get("campaign_name", "Unknown")
                 campaign_end_date = enrollment["campaign_end_date"]
-                member_external_id = enrollment.get("member_external_id", "Unknown")
 
                 logger.info(
                     f"🔄 [DA-CLOSURE-SVC] Processing enrollment {enrollment_id[:8]}... "
-                    f"(Member: {member_external_id}, Campaign: {campaign_name})"
+                    f"(Member ID: {str(member_id)[:8]}..., Campaign: {campaign_name})"
                 )
                 logger.info(f"📅 [DA-CLOSURE-SVC] Campaign end date: {campaign_end_date}")
 
@@ -204,8 +203,7 @@ class CampaignClosureService:
                 e.campaign_end_date,
                 e.current_status,
                 c.name as campaign_name,
-                c.campaign_type,
-                m.external_id AS member_external_id
+                c.campaign_type
             FROM engage360.member_campaign_enrollments_enhanced e
             INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
             INNER JOIN engage360.members m ON e.member_id = m.member_id

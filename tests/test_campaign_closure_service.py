@@ -57,7 +57,6 @@ class TestCampaignClosureService(unittest.TestCase):
                 "current_status": "ENROLLED",
                 "campaign_name": "Medicaid DeviceActivation",
                 "campaign_type": "Operations",
-                "member_external_id": "MED-12345",
             },
             {
                 "enrollment_id": str(uuid.uuid4()),
@@ -67,7 +66,6 @@ class TestCampaignClosureService(unittest.TestCase):
                 "current_status": "ENROLLED",
                 "campaign_name": "DTCMA DeviceActivation",
                 "campaign_type": "Operations",
-                "member_external_id": "DTC-67890",
             },
         ]
 
@@ -301,7 +299,6 @@ class TestCampaignClosureService(unittest.TestCase):
                 "campaign_end_date": date(2026, 1, 15),
                 "current_status": "ENROLLED",
                 "campaign_name": "Medicaid DeviceActivation",
-                "member_external_id": "MED-12345",
             },
             {
                 "enrollment_id": str(uuid.uuid4()),
@@ -310,7 +307,6 @@ class TestCampaignClosureService(unittest.TestCase):
                 "campaign_end_date": date(2026, 1, 10),
                 "current_status": "ENROLLED",
                 "campaign_name": "DTCMA DeviceActivation",
-                "member_external_id": "DTC-67890",
             },
         ]
 
@@ -351,7 +347,6 @@ class TestCampaignClosureService(unittest.TestCase):
                 "campaign_end_date": date(2026, 1, 15),
                 "current_status": "ENROLLED",
                 "campaign_name": "Medicaid DeviceActivation",
-                "member_external_id": "MED-12345",
             },
             {
                 "enrollment_id": str(uuid.uuid4()),
@@ -360,7 +355,6 @@ class TestCampaignClosureService(unittest.TestCase):
                 "campaign_end_date": date(2026, 1, 10),
                 "current_status": "ENROLLED",
                 "campaign_name": "DTCMA DeviceActivation",
-                "member_external_id": "DTC-67890",
             },
         ]
 
@@ -396,7 +390,6 @@ class TestCampaignClosureService(unittest.TestCase):
                 "campaign_end_date": date(2026, 1, 15),
                 "current_status": "ENROLLED",
                 "campaign_name": "Medicaid DeviceActivation",
-                "member_external_id": "MED-12345",
             }
         ]
 
