@@ -431,9 +431,9 @@ class EligibilityService:
             - Campaign status (Active Device Activation campaign)
             - Same-day blocking: One attempt per member per day (UTC)
             - Call frequency rules:
-              * Calls 2-3: 2 BUSINESS days (excludes weekends + US federal holidays)
-              * Call 4: 5 BUSINESS days (excludes weekends + US federal holidays)
-              * Call 5+: 7 CALENDAR days (includes weekends + holidays)
+              * Calls 2-3: AFTER 2 BUSINESS days (excludes weekends + US federal holidays)
+              * Call 4: AFTER 5 BUSINESS days (excludes weekends + US federal holidays)
+              * Call 5+: AFTER 7 CALENDAR days (includes weekends + holidays)
             - 90-day window for Call 5+ (call_5_timestamp + 90 days)
             - Callback queue exclusion (callbacks processed separately)
 
@@ -689,13 +689,13 @@ class EligibilityService:
             )
             logger.info("📅 [ELIGIBILITY-SERVICE] Call 1: No filter (first call)")
             logger.info(
-                "📅 [ELIGIBILITY-SERVICE] Call 2-3: Require 2 business days since last attempt"
+                "📅 [ELIGIBILITY-SERVICE] Call 2-3: Require AFTER 2 business days since last attempt"
             )
             logger.info(
-                "📅 [ELIGIBILITY-SERVICE] Call 4: Require 5 business days since last attempt"
+                "📅 [ELIGIBILITY-SERVICE] Call 4: Require AFTER 5 business days since last attempt"
             )
             logger.info(
-                "📅 [ELIGIBILITY-SERVICE] Call 5+: >7 calendar days (8+ days) frequency (SQL)"
+                "📅 [ELIGIBILITY-SERVICE] Call 5+: AFTER 7 calendar days (8+ days) frequency (SQL)"
             )
             logger.info(
                 "📅 [ELIGIBILITY-SERVICE] Call 5+: Business day validation (Python - current day check)"
@@ -704,30 +704,35 @@ class EligibilityService:
             business_day_filtered_members = []
             now_utc = datetime.now(pytz.UTC)
 
+            # Check if current day is a business day (applies to ALL calls including Call 1)
+            if not is_business_day(now_utc):
+                logger.warning(
+                    f"⚠️ [ELIGIBILITY-SERVICE] Scheduler ran on non-business day. "
+                    f"No calls will be scheduled. Current time: {now_utc.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+                )
+                logger.warning(
+                    "⚠️ [ELIGIBILITY-SERVICE] Device Activation calls only made on business days "
+                    "(Mon-Fri, excluding federal holidays)"
+                )
+                return []
+
             for member in potential_members:
                 call_attempt_number = member.get("call_attempt_number", 1)
                 last_attempt_date = member.get("last_attempt_date")
 
-                # Call 1: No previous attempts, always include
+                # Call 1: No previous attempts, always include (current day already validated above)
                 if call_attempt_number == 1:
                     business_day_filtered_members.append(member)
                     continue
 
-                # Call 5+: Check current day is a business day (no frequency calculation needed)
-                # Frequency uses >7 CALENDAR days (8+ days, SQL), but calls only on business days
+                # Call 5+: Current day business day check already done above
+                # Frequency uses AFTER 7 CALENDAR days (8+ days, SQL), calls only on business days
                 if call_attempt_number >= 5:
-                    # Check if TODAY is a business day (excludes weekends and federal holidays)
-                    if is_business_day(now_utc):
-                        logger.debug(
-                            f"✅ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
-                            f"Current day is a business day - ELIGIBLE"
-                        )
-                        business_day_filtered_members.append(member)
-                    else:
-                        logger.debug(
-                            f"❌ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
-                            f"Current day is NOT a business day (weekend or holiday) - SKIPPED"
-                        )
+                    logger.debug(
+                        f"✅ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
+                        f"Current day is a business day - ELIGIBLE"
+                    )
+                    business_day_filtered_members.append(member)
                     continue
 
                 # Call 2-4: Check business days
@@ -741,32 +746,32 @@ class EligibilityService:
                 # Calculate business days since last attempt
                 business_days = get_business_days_between(last_attempt_date, now_utc)
 
-                # Call 2-3: Need 2 business days
+                # Call 2-3: Need AFTER 2 business days (> 2, not >= 2)
                 if call_attempt_number in [2, 3]:
-                    if business_days >= 2:
+                    if business_days > 2:
                         logger.debug(
                             f"✅ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
-                            f"{business_days} business days (>= 2 required) - ELIGIBLE"
+                            f"{business_days} business days (> 2 required) - ELIGIBLE"
                         )
                         business_day_filtered_members.append(member)
                     else:
                         logger.debug(
                             f"❌ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call {call_attempt_number}: "
-                            f"{business_days} business days (< 2 required) - SKIPPED"
+                            f"{business_days} business days (<= 2, need > 2) - SKIPPED"
                         )
 
-                # Call 4: Need 5 business days
+                # Call 4: Need AFTER 5 business days (> 5, not >= 5)
                 elif call_attempt_number == 4:
-                    if business_days >= 5:
+                    if business_days > 5:
                         logger.debug(
                             f"✅ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call 4: "
-                            f"{business_days} business days (>= 5 required) - ELIGIBLE"
+                            f"{business_days} business days (> 5 required) - ELIGIBLE"
                         )
                         business_day_filtered_members.append(member)
                     else:
                         logger.debug(
                             f"❌ [ELIGIBILITY-SERVICE] Member {member.get('member_id')} Call 4: "
-                            f"{business_days} business days (< 5 required) - SKIPPED"
+                            f"{business_days} business days (<= 5, need > 5) - SKIPPED"
                         )
 
             business_day_filtered_count = len(potential_members) - len(
