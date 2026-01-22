@@ -1,6 +1,6 @@
 # 🚀 IOE Services Platform
 
-> **Intelligence Orchestration Engine** - Enterprise-grade IOE Services for automated healthcare campaign processing, call management, and AI-powered customer interactions at Medical Guardian.
+> **Intelligence Orchestration Engine** - Enterprise-grade IOE Services for automated healthcare campaign processing, device activation campaign processing, call management, and AI-powered customer interactions at Medical Guardian.
 
 **Platform Architecture**: Each IOE Service runs as an individual Azure Function within the IOE Services platform, providing scalable and independent microservices for healthcare automation.
 
@@ -21,7 +21,7 @@
 
 ## 📖 Overview
 
-The **IOE (Intelligence Orchestration Engine) Services Platform** is a comprehensive serverless solution designed to automate and optimize healthcare customer engagement workflows at Medical Guardian. This enterprise-grade platform consists of multiple intelligent services that process DTC (Direct-to-Consumer) wellness campaigns, partner campaign files, manage intro call scheduling, and integrate with Bland AI for intelligent voice interactions.
+The **IOE (Intelligence Orchestration Engine) Services Platform** is a comprehensive serverless solution designed to automate and optimize healthcare customer engagement workflows at Medical Guardian. This enterprise-grade platform consists of multiple intelligent services that process DTC (Direct-to-Consumer) wellness campaigns, partner campaign files, device activation campaigns, manage intro call scheduling, and integrate with Bland AI for intelligent voice interactions.
 
 **What is IOE?**  
 IOE stands for **Intelligence Orchestration Engine** - a smart system that coordinates and manages different healthcare processes automatically. Think of it as a digital conductor that orchestrates various healthcare services to work together seamlessly.
@@ -35,8 +35,9 @@ Each IOE Service runs as an independent Azure Function within the IOE Services p
 
 ### 🎯 Key Features
 
-- **📁 Automated File Processing** - DTC wellness and partner campaign file processing with validation
-- **📞 Smart Call Scheduling** - Automated intro call scheduling with timezone optimization
+- **📁 Automated File Processing** - DTC wellness, partner campaign, and device activation file processing with validation
+- **📞 Smart Call Scheduling** - Automated intro call and device activation call scheduling with timezone optimization
+- **📱 Device Activation Management** - 90-day campaign windows with business hours validation and call frequency rules
 - **🤖 AI Voice Integration** - Bland AI webhook processing for intelligent customer interactions
 - **🛡️ Enterprise Security** - Azure Key Vault integration and comprehensive data validation
 - **📊 Real-time Monitoring** - Complete observability with Azure Application Insights
@@ -56,17 +57,28 @@ Each IOE Service runs as an independent Azure Function within the IOE Services p
 ├── 📄 requirements.txt                  # Python dependencies and packages
 ├── 📄 local.settings.json               # Local development environment settings
 │
-├── 🎯 services/                         # IOE Service triggers and entry points (each runs as Azure Function)
+├── 🎯 functions/                        # Azure Function triggers and entry points
 │   ├── dtc_file_processor.py           # File Processing Service - monitors and processes DTC wellness files
 │   ├── partner_file_processor.py       # Partner Integration Service - handles partner campaign files
 │   ├── dtc_intro_call_scheduler.py     # Call Scheduling Service - manages intro call scheduling
-│   └── bland_ai_webhook.py             # AI Integration Service - processes Bland AI webhook data
+│   ├── bland_ai_webhook.py             # AI Integration Service - processes Bland AI webhook data
+│   ├── device_activation_scheduler.py                    # Device Activation Scheduler - schedules device activation calls
+│   ├── operations_device_activation_file_processor.py    # Operations Device Activation File Processor - processes device activation enrollment files
+│   └── device_activation_campaign_closure.py             # Device Activation Campaign Closure - auto-unenrolls members after 90 days
 │
 ├── 🧠 af_code/                         # Core application logic and business rules
 │   ├── af_dtc_logic.py                 # DTC campaign processing business logic
 │   ├── af_partner_logic.py             # Partner campaign processing logic
+│   ├── af_device_activation_logic.py                     # Device Activation campaign processing logic
 │   │
-│   ├── 🤖 bland_ai_webhook/            # Bland AI integration module
+│   ├── 📱 device_activation_scheduler/                   # Device Activation scheduling module
+│   │   └── services/
+│   │       ├── eligibility_service.py  # Member qualification and frequency rules
+│   │       ├── batch_orchestrator.py   # Batch creation and Bland AI submission
+│   │       ├── campaign_qualifier.py   # Campaign and member qualification logic
+│   │       └── callback_scheduler.py   # Callback scheduling logic
+│   │
+│   ├── 🤖 bland_ai_webhook/            # Bland AI integration module (shared across all campaigns)
 │   │   ├── webhook_handler.py          # Main webhook request processor
 │   │   ├── models/                     # Data models and validation schemas
 │   │   │   ├── mapped_call_data.py     # Call data mapping models
@@ -90,9 +102,18 @@ Each IOE Service runs as an independent Azure Function within the IOE Services p
 │   │       ├── config.py               # Configuration constants and settings
 │   │       └── logging_config.py       # Structured logging configuration
 │   │
-│   └── 📞 af_dtc_intro_call/           # DTC intro call management
-│       ├── services/                   # Call scheduling services
-│       └── utils/                      # Call management utilities
+│   ├── 📞 af_dtc_intro_call/           # DTC intro call management
+│   │   ├── services/                   # Call scheduling services
+│   │   └── utils/                      # Call management utilities
+│   │
+│   └── 🔧 shared/                      # Shared utilities across all campaigns
+│       ├── bland_ai_client.py          # Shared Bland AI API client
+│       ├── business_hours_utils.py     # Business hours validation (Device Activation)
+│       ├── custom_holidays.py          # US federal holidays (Device Activation)
+│       ├── filename_validators.py      # Filename pattern validation (Device Activation)
+│       ├── language_mapper.py          # Language code conversion utility
+│       ├── phone_utils.py              # Phone number validation and standardization
+│       └── timezone_utils.py           # Timezone conversion and validation
 │
 └── 📁 __pycache__/                     # Python bytecode cache
     └── [Compiled Python files]
@@ -109,7 +130,7 @@ The IOE platform implements comprehensive business case traceability to ensure e
 | **BusinessCaseID** | **Functional Area** | **Description** | **Components** |
 |---|---|---|---|
 | **BC-101** | Webhook Processing | Real-time Bland AI webhook handling, validation, and routing | `bland_ai_webhook/` module |
-| **BC-102** | Disposition Mapping | Status translation and call outcome processing | `status_mapper.py`, disposition logic |
+| **BC-102** | Webhook Processing (Shared) | Status translation and call outcome processing (DTC, Partner, Device Activation) | `status_mapper.py`, disposition logic |
 | **BC-103** | Database Operations | Atomic data operations, connection management, queries | `database_*.py` files |
 | **BC-104** | Business Rules Engine | Enrollment logic, campaign-specific decision making | `business_rules_engine.py` |
 | **BC-105** | DTC Call Scheduling | Member qualification, time window management, batch creation | `af_dtc_intro_call/` module |
@@ -118,6 +139,14 @@ The IOE platform implements comprehensive business case traceability to ensure e
 | **BC-108** | Configuration Management | Settings, secrets, environment-specific configs | `config_manager.py`, `config.py` |
 | **BC-109** | File Processing | ETL pipelines, partner file validation, data transformation | `dtc_file_processor.py`, partner logic |
 | **BC-110** | Time & Scheduling | Timezone handling, time windows, scheduling logic | `time_window_helper.py` |
+| **BC-DA-001** | Device Activation Orchestration | Core scheduling and batch creation for device activation calls | `device_activation_scheduler/` module |
+| **BC-DA-002** | Device Activation File Processing | CSV file processing, validation, ETL pipeline for device activation | `operations_device_activation_file_processor.py` |
+| **BC-DA-003** | Business Hours Validation | Dual-timezone business hours and holiday calculations | `business_hours_utils.py`, `custom_holidays.py` |
+| **BC-DA-004** | Batch Orchestration | Batch creation, Bland AI submission, 3-phase tracking | `batch_orchestrator.py` |
+| **BC-DA-005** | Eligibility & Frequency Logic | Member qualification, frequency rules, same-day blocking | `eligibility_service.py` |
+| **BC-DA-006** | Call Frequency & Sequencing | Call 1-4 business day logic, Call 5+ weekly scheduling | `eligibility_service.py` |
+| **BC-DA-007** | Campaign Closure | 90-day auto-unenrollment, distributed locking | `device_activation_campaign_closure.py` |
+| **BC-DA-008** | Operations File Processor | Hardcoded campaign ID routing, operations container | `operations_device_activation_file_processor.py` |
 
 ### Supporting Business Cases
 
@@ -150,7 +179,7 @@ def map_webhook_to_internal_format(self, webhook_data: Dict[str, Any]) -> Mapped
 
 ## 🔧 IOE Services Overview
 
-The IOE platform consists of four main intelligent services. Each service runs as an independent Azure Function within the IOE Services platform, with different triggers and purposes:
+The IOE platform consists of seven main intelligent services. Each service runs as an independent Azure Function within the IOE Services platform, with different triggers and purposes:
 
 ### 1. 📁 **File Processing Service** (`dtc_file_processor.py`)
 **What it does**: Automatically processes customer wellness data files  
@@ -183,14 +212,50 @@ The IOE platform consists of four main intelligent services. Each service runs a
 - ✅ Schedules the calls and sends reminders
 
 ### 4. 🤖 **AI Integration Service** (`bland_ai_webhook.py`)
-**What it does**: Processes real-time data from AI voice calls  
-**How it works**: Receives instant updates when AI calls complete  
-**Azure Function Trigger**: HTTP Webhook Trigger (real-time)  
+**What it does**: Processes real-time data from AI voice calls
+**How it works**: Receives instant updates when AI calls complete
+**Azure Function Trigger**: HTTP Webhook Trigger (real-time)
 **Example**: When an AI voice call finishes:
 - ✅ Receives the call results instantly via webhook
 - ✅ Updates customer status based on call outcome
 - ✅ Triggers follow-up actions (like scheduling callbacks)
 - ✅ Records conversation summaries and disposition codes
+
+### 5. 📱 **Device Activation Services**
+
+The Device Activation campaign system consists of three specialized Azure Functions that work together to manage the 90-day device activation campaign lifecycle:
+
+#### 5a. Device Activation Scheduler (`device_activation_scheduler.py`)
+**What it does**: Automatically schedules device activation calls for new members
+**How it works**: Runs every 15 minutes to find eligible members
+**Azure Function Trigger**: Timer Trigger (every 15 minutes) + HTTP Trigger (manual)
+**Example**: Every 15 minutes:
+- ✅ Finds members eligible for device activation calls
+- ✅ Checks business hours (9 AM - 5 PM EST + member timezone)
+- ✅ Creates batches of up to 20 members
+- ✅ Submits to Bland AI for automated calls
+- ✅ Tracks call frequency (Calls 1-4: business days, Call 5+: weekly)
+
+#### 5b. Operations Device Activation File Processor (`operations_device_activation_file_processor.py`)
+**What it does**: Processes device activation enrollment files from operations
+**How it works**: Watches for CSV files with device and member information
+**Azure Function Trigger**: Blob Storage Trigger
+**Example**: When file uploaded to fs-ops/landing:
+- ✅ Validates filename pattern (MedicalGuardian_DeviceActivation{Medicaid|DTCMA}_YYYYMMDD_DELTA.csv)
+- ✅ Processes 27 required columns (member, device, campaign data)
+- ✅ Creates/updates member and device records
+- ✅ Enrolls members in Device Activation campaigns
+- ✅ Routes to hardcoded campaign IDs (Medicaid, DTC/MA)
+
+#### 5c. Device Activation Campaign Closure (`device_activation_campaign_closure.py`)
+**What it does**: Automatically closes 90-day device activation campaigns
+**How it works**: Runs hourly to unenroll members past 90-day window
+**Azure Function Trigger**: Timer Trigger (hourly) + HTTP Trigger (manual)
+**Example**: Every hour:
+- ✅ Finds enrollments where campaign_end_date expired
+- ✅ Updates status to 'UNENROLLED'
+- ✅ Logs status change to history table
+- ✅ Uses distributed locking to prevent concurrent runs
 
 ---
 
@@ -288,7 +353,71 @@ Partner campaigns enforce the same "one attempt per day" policy:
 - **Simplified logic** - Easier to understand and maintain
 - **Resource optimization** - Better distribution across member base
 
-### 4. 🤖 Bland AI Voice Integration
+### 4. 📱 Device Activation Campaign Processing
+
+**Business Context**: Automatically schedule and manage device activation calls for Medical Guardian members who received new medical alert devices. The system makes scheduled calls over a 90-day window to help members activate their devices and ensure they understand device features.
+
+**Workflow**:
+1. **File Ingestion**: Monitor `fs-ops/landing/` for device activation CSV files
+2. **Validation**: Enforce strict naming patterns for Medicaid and DTC/MA campaigns
+3. **Enrollment Creation**: Create member enrollments with 90-day campaign window
+4. **Scheduler Execution**: Every 15 minutes, find eligible members
+5. **Batch Creation**: Create batches of up to 20 members per run
+6. **Call Submission**: Submit batches to Bland AI for automated calls
+7. **Webhook Processing**: Update member status based on call outcomes
+8. **Campaign Closure**: Hourly check for expired 90-day windows
+
+**Triggers**:
+- **File Processor**: Blob Storage Trigger
+  - **Container**: `fs-ops/landing/`
+  - **Pattern**: `MedicalGuardian_DeviceActivation{Medicaid|DTCMA}_YYYYMMDD_DELTA.csv`
+  - **Connection**: `AzureWebJobsStorage`
+- **Scheduler**: Timer Trigger (every 15 minutes) + HTTP (manual)
+  - **Schedule**: `0 */15 * * * *` (every 15 minutes)
+  - **HTTP**: `/api/create_device_activation_batch`
+- **Campaign Closure**: Timer Trigger (hourly) + HTTP (manual)
+  - **Schedule**: `0 0 * * * *` (every hour)
+  - **HTTP**: `/api/device_activation_campaign_closure`
+
+**Validations**:
+- Filename pattern matching (Medicaid vs DTC/MA)
+- 27 required CSV columns
+- Phone number format (E.164, 11 digits)
+- Timezone validation (IANA format, supports 13 US timezones)
+- Address validation (5-part address)
+- Device UDI validation (5-50 alphanumeric characters)
+- Campaign ID routing (hardcoded UUIDs)
+
+**Call Frequency Rules**:
+- **Call 1**: activation_start_date (delivery_date + 2 business days)
+- **Call 2-3**: 2 business days after previous call
+- **Call 4**: 5 business days after Call 3
+- **Call 5+**: 7 calendar days (weekly), business days only
+- **Same-Day Blocking**: One attempt per member per day
+- **90-Day Window**: From activation_start_date to campaign_end_date
+
+**Business Hours Validation**:
+- **Medical Guardian Hours**: 9 AM - 5 PM EST
+- **Member Hours**: 9 AM - 5 PM in member's timezone
+- **Dual Validation**: Both MG and member must be within hours
+- **Excludes**: Weekends, US federal holidays (6 business-critical holidays)
+
+**Campaign Closure Logic**:
+- **Trigger**: campaign_end_date < current time
+- **Action**: Update enrollment status to 'UNENROLLED'
+- **Frequency**: Hourly check via timer trigger
+- **Distributed Locking**: Prevents concurrent execution
+- **History Tracking**: Logs all status changes
+
+**Hardcoded Campaign IDs**:
+1. **Device Activation - Medicaid**
+   - Campaign ID: `0F69659B-491B-40E2-88C3-ABC7D87385B2`
+   - Filename: `MedicalGuardian_DeviceActivationMedicaid_YYYYMMDD_DELTA.csv`
+2. **Device Activation - DTC/MA**
+   - Campaign ID: `BA865458-60F9-4EBB-9FB5-D195B532CF5A`
+   - Filename: `MedicalGuardian_DeviceActivationDTCMA_YYYYMMDD_DELTA.csv`
+
+### 5. 🤖 Bland AI Voice Integration
 
 **Business Context**: Process real-time webhook data from Bland AI voice interactions to update customer records and trigger follow-up actions.
 
@@ -432,7 +561,10 @@ The platform now supports comprehensive disposition tag mapping for granular cal
 | `dtc_file_processor.py` | **Blob Storage Trigger** | Processes DTC wellness campaign files for customer eligibility |
 | `partner_file_processor.py` | **Blob Storage Trigger** | Handles partner campaign file ingestion and validation |
 | `dtc_intro_call_scheduler.py` | **Timer + HTTP Trigger** | Schedules intro calls for new wellness program participants |
-| `bland_ai_webhook.py` | **HTTP Webhook Trigger** | Processes real-time AI voice interaction data |
+| `bland_ai_webhook.py` | **HTTP Webhook Trigger** | Processes real-time AI voice interaction data (shared across campaigns) |
+| `device_activation_scheduler.py` | **Timer + HTTP Trigger** | Schedules device activation calls, creates batches every 15 minutes |
+| `operations_device_activation_file_processor.py` | **Blob Storage Trigger** | Processes device activation enrollment files from operations |
+| `device_activation_campaign_closure.py` | **Timer + HTTP Trigger** | Auto-unenrolls members after 90-day campaign window expires |
 
 ### Business Logic Layer
 
