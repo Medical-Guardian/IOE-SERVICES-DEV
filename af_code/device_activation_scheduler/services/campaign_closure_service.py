@@ -146,7 +146,7 @@ class CampaignClosureService:
                 campaign_end_date = enrollment["campaign_end_date"]
 
                 logger.info(
-                    f"🔄 [DA-CLOSURE-SVC] Processing enrollment {enrollment_id[:8]}... "
+                    f"🔄 [DA-CLOSURE-SVC] Processing enrollment {str(enrollment_id)[:8]}... "
                     f"(Member ID: {str(member_id)[:8]}..., Campaign: {campaign_name})"
                 )
                 logger.info(f"📅 [DA-CLOSURE-SVC] Campaign end date: {campaign_end_date}")
@@ -161,11 +161,11 @@ class CampaignClosureService:
                     campaigns_affected.add(campaign_name)
                     members_unenrolled.add(member_id)
                     logger.info(
-                        f"✅ [DA-CLOSURE-SVC] Successfully closed enrollment {enrollment_id[:8]}..."
+                        f"✅ [DA-CLOSURE-SVC] Successfully closed enrollment {str(enrollment_id)[:8]}..."
                     )
                 else:
                     logger.warning(
-                        f"⚠️ [DA-CLOSURE-SVC] Failed to close enrollment {enrollment_id[:8]}..."
+                        f"⚠️ [DA-CLOSURE-SVC] Failed to close enrollment {str(enrollment_id)[:8]}..."
                     )
 
             except Exception as e:
@@ -306,7 +306,7 @@ class CampaignClosureService:
             self.db_service.execute_transaction(queries)
 
             logger.debug(
-                f"✅ [DA-CLOSURE-SVC] Updated enrollment {enrollment_id[:8]}... to UNENROLLED"
+                f"✅ [DA-CLOSURE-SVC] Updated enrollment {str(enrollment_id)[:8]}... to UNENROLLED"
             )
             logger.debug(f"✅ [DA-CLOSURE-SVC] Created audit history record {history_id[:8]}...")
 
