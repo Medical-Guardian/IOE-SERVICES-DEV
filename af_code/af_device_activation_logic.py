@@ -399,6 +399,38 @@ logger.info("🔄 [MODULE-LOAD] Device Activation file processing with business 
 
 
 # ============================================================================
+# PANDAS/SQL UTILITIES
+# ============================================================================
+
+
+def safe_value(value, default=None):
+    """
+    Convert pandas NaN/NA values to None for SQL compatibility.
+
+    Prevents pymssql from converting NaN to the string "nan" when inserting to SQL Server.
+
+    Args:
+        value: Value from pandas DataFrame (may be NaN, None, or actual value)
+        default: Default value to return if value is NaN/None (default: None)
+
+    Returns:
+        None if value is NaN/NA, otherwise returns value (or default if value is None)
+
+    Examples:
+        safe_value(np.nan) → None
+        safe_value(pd.NA) → None
+        safe_value("") → ""
+        safe_value("test@example.com") → "test@example.com"
+        safe_value(None, "default") → "default"
+    """
+    if pd.isna(value):
+        return None
+    if value is None:
+        return default
+    return value
+
+
+# ============================================================================
 # BLOB STORAGE UTILITIES
 # ============================================================================
 
@@ -1863,49 +1895,49 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
                     insert_query,
                     (
                         context.file_batch_id,
-                        row["row_number_in_file"],
+                        safe_value(row.get("row_number_in_file")),
                         context.uploaded_by_user,
                         datetime.now(timezone.utc),
-                        row["processing_status"],
-                        row["validation_status"],
-                        row.get("error_message", ""),
+                        safe_value(row.get("processing_status")),
+                        safe_value(row.get("validation_status")),
+                        safe_value(row.get("error_message"), ""),
                         # Campaign metadata
-                        row.get("partner_name", "Medical Guardian"),
-                        row.get("campaign_name_source", ""),
+                        safe_value(row.get("partner_name"), "Medical Guardian"),
+                        safe_value(row.get("campaign_name_source"), ""),
                         # Member identity
-                        row.get("salesforce_account_id", ""),
-                        row.get("salesforce_account_number", ""),
-                        row.get("org_id"),  # NEW: org_id from partner lookup
-                        row.get("first_name_clean", ""),
-                        row.get("last_name_clean", ""),
-                        row.get("primary_phone_clean", ""),
-                        row.get("email", ""),  # Fixed: was "member_email"
+                        safe_value(row.get("salesforce_account_id"), ""),
+                        safe_value(row.get("salesforce_account_number"), ""),
+                        safe_value(row.get("org_id")),
+                        safe_value(row.get("first_name_clean"), ""),
+                        safe_value(row.get("last_name_clean"), ""),
+                        safe_value(row.get("primary_phone_clean"), ""),
+                        safe_value(row.get("email"), ""),
                         # Address (combined)
-                        row.get("service_address_clean", ""),
-                        row.get("city", ""),  # Fixed: was "member_address_city"
-                        row.get("state", ""),  # Fixed: was "member_address_state"
-                        row.get("zip", ""),  # Fixed: was "member_address_zip"
-                        row.get("address_country", "US"),  # FIX ISSUE #11: Add address_country
+                        safe_value(row.get("service_address_clean"), ""),
+                        safe_value(row.get("city"), ""),
+                        safe_value(row.get("state"), ""),
+                        safe_value(row.get("zip"), ""),
+                        safe_value(row.get("address_country"), "US"),
                         # Demographics
-                        row.get("dob_clean", None),
-                        row.get("timezone_clean", ""),
-                        row.get("language_pref_clean", "EN"),
+                        safe_value(row.get("dob_clean")),
+                        safe_value(row.get("timezone_clean"), ""),
+                        safe_value(row.get("language_pref_clean"), "EN"),
                         # Member brand
-                        row.get("brand_clean", ""),  # member_brand for staging.member_brand
+                        safe_value(row.get("brand_clean"), ""),
                         # Device info
-                        row.get("device_udi", ""),
-                        row.get("device_name", ""),
-                        row.get("device_name_clean", ""),  # device brand for staging.brand
-                        row.get("device_phone_clean", ""),
-                        row.get("is_device_callable_clean", None),
+                        safe_value(row.get("device_udi"), ""),
+                        safe_value(row.get("device_name"), ""),
+                        safe_value(row.get("device_name_clean"), ""),
+                        safe_value(row.get("device_phone_clean"), ""),
+                        safe_value(row.get("is_device_callable_clean")),
                         # Device status (original values from CSV)
-                        df.at[idx, "fall_detection_clean"],
-                        df.at[idx, "powersaver_mode_clean"],
+                        safe_value(df.at[idx, "fall_detection_clean"]),
+                        safe_value(df.at[idx, "powersaver_mode_clean"]),
                         # Campaign tracking (FIX ISSUE #4: Convert empty strings to NULL)
-                        row.get("campaign_parameters", "") or None,
-                        row.get("monitoring_system_id", "") or None,
-                        row.get("enrollment_status", "ENROLL"),
-                        row.get("unenrollment_reason", "") or None,
+                        safe_value(row.get("campaign_parameters")) or None,
+                        safe_value(row.get("monitoring_system_id")) or None,
+                        safe_value(row.get("enrollment_status"), "ENROLL"),
+                        safe_value(row.get("unenrollment_reason")) or None,
                     ),
                 )
                 inserted_count += 1
