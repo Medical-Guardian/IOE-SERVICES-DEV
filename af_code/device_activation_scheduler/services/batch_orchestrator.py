@@ -266,7 +266,7 @@ class BatchOrchestrator:
 
         try:
             # Process only top 20 qualified members per run (single batch per 15-minute cadence)
-            batch_size = 20
+            batch_size = 45
             members_to_process = eligible_members[:batch_size]
 
             remaining_count = len(eligible_members) - len(members_to_process)
