@@ -46,6 +46,7 @@ import re  # For special character cleaning
 
 # Import shared utilities
 from af_code.shared.language_mapper import map_language_code, validate_language_code
+from af_code.shared.phone_utils import standardize_phone
 
 # MODULE LOAD VERIFICATION - This will execute when the module is first imported
 logger = logging.getLogger(__name__)
@@ -330,50 +331,6 @@ def get_dtc_schema() -> DataFrameSchema:
 
 # DTC Validation Functions
 # ========================
-
-
-def standardize_phone(phone: str) -> Optional[str]:
-    """
-    Standardize phone number to E.164 format.
-
-    Args:
-        phone: Raw phone number string
-
-    Returns:
-        Standardized phone number in E.164 format or None if invalid
-    """
-    if not phone or pd.isna(phone):
-        return None
-
-    # Convert to string and strip whitespace
-    phone_str = str(phone).strip()
-
-    # If already in E.164 format (starts with +), validate and return
-    if phone_str.startswith("+"):
-        # Remove + and any non-numeric characters after it
-        digits_only = "".join(c for c in phone_str[1:] if c.isdigit())
-        # E.164 format allows 11-15 digits after the +
-        if 11 <= len(digits_only) <= 15:
-            return f"+{digits_only}"
-        else:
-            return None
-
-    # Remove all non-numeric characters
-    digits_only = "".join(c for c in phone_str if c.isdigit())
-
-    # Handle different phone number formats
-    if len(digits_only) == 10 and digits_only[0] in "23456789":
-        # Standard 10-digit US number
-        return f"+1{digits_only}"
-    elif len(digits_only) == 11 and digits_only[0] == "1" and digits_only[1] in "23456789":
-        # 11-digit number starting with 1
-        return f"+{digits_only}"
-    elif 11 <= len(digits_only) <= 15:
-        # International number without + prefix
-        # For numbers that don't fit US patterns but are valid international lengths
-        return f"+{digits_only}"
-
-    return None
 
 
 def validate_timezone(timezone_str: str) -> Optional[str]:
@@ -698,6 +655,48 @@ def extract(file_path: str, context: DTCProcessingContext) -> Tuple[pd.DataFrame
         )
 
 
+# ============================================================================
+# PANDAS/SQL UTILITIES
+# ============================================================================
+
+
+def safe_value(value, default=None):
+    """
+    Convert pandas NaN/NA values to None for SQL compatibility.
+
+    Prevents pymssql from converting NaN to the string "nan" when inserting to SQL Server.
+
+    Args:
+        value: Value from pandas DataFrame (may be NaN, None, or actual value)
+        default: Default value to return if value is NaN/None (default: None)
+
+    Returns:
+        None if value is NaN/NA, otherwise returns value (or default if value is None)
+
+    Note:
+        This is critical for pymssql compatibility. pymssql's executemany()
+        cannot properly serialize numpy.nan or pandas.NA, leading to
+        SQL Server error 207 "Invalid column name 'nan'".
+
+    Reference:
+        Fixes issue where row.get(col, None) returns numpy.nan instead of None
+        when pandas Series contains NaN values. Same fix used in Device Activation
+        (commit 0d99f8f).
+
+    Examples:
+        safe_value(np.nan) → None
+        safe_value(pd.NA) → None
+        safe_value("") → ""
+        safe_value("test@example.com") → "test@example.com"
+        safe_value(None, "default") → "default"
+    """
+    if pd.isna(value):
+        return None
+    if value is None:
+        return default
+    return value
+
+
 def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> ProcessingResult:
     """
     Step 2: Load raw data into staging table with light validation.
@@ -826,6 +825,8 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
         ]
         # Prepare data for insertion - ensure all columns exist and are in the right order
         insert_data = []
+        nan_conversion_count = 0  # Track NaN to None conversions for monitoring
+
         for _, row in df_for_insert.iterrows():
             row_data = []
             for col in staging_columns:
@@ -834,37 +835,47 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
                 elif col == "source_filename":
                     row_data.append(context.source_filename)
                 elif col == "row_number_in_file":
-                    row_data.append(row.get("row_number_in_file", 1))
+                    row_data.append(safe_value(row.get("row_number_in_file", 1)))
                 elif col == "load_timestamp":
                     row_data.append(datetime.now(timezone.utc))
                 elif col == "file_load_date":
                     row_data.append(datetime.now(timezone.utc).date())
                 elif col == "processing_status":
-                    row_data.append(row.get("processing_status", "PENDING"))
+                    row_data.append(safe_value(row.get("processing_status", "PENDING")))
                 elif col == "error_message":
-                    row_data.append(row.get("error_message", None))
+                    row_data.append(safe_value(row.get("error_message", None)))
                 elif col == "campaign_id":
-                    row_data.append(getattr(context, "campaign_id", None))
+                    row_data.append(safe_value(getattr(context, "campaign_id", None)))
                 # 🔥 ADD MISSING FIELD HANDLERS:
                 elif col == "file_size_bytes":
-                    row_data.append(context.file_size_bytes)
+                    row_data.append(safe_value(context.file_size_bytes))
                 elif col == "total_rows_in_file":
-                    row_data.append(row.get("total_rows_in_file", len(df_for_insert)))
+                    row_data.append(safe_value(row.get("total_rows_in_file", len(df_for_insert))))
                 elif col == "uploaded_by_user":
-                    row_data.append(context.uploaded_by_user)
+                    row_data.append(safe_value(context.uploaded_by_user))
                 elif col == "cleansing_started_ts":
-                    row_data.append(row.get("cleansing_started_ts", None))
+                    row_data.append(safe_value(row.get("cleansing_started_ts", None)))
                 elif col == "cleansing_completed_ts":
-                    row_data.append(row.get("cleansing_completed_ts", None))
+                    row_data.append(safe_value(row.get("cleansing_completed_ts", None)))
                 elif col == "enrollment_started_ts":
-                    row_data.append(row.get("enrollment_started_ts", None))
+                    row_data.append(safe_value(row.get("enrollment_started_ts", None)))
                 else:
                     # Get the value from the row, defaulting to None if not present
                     value = row.get(col, None)
-                    # 🔥 CRITICAL: All values are now guaranteed clean from validation
-                    row_data.append(value)
+                    # 🔥 CRITICAL FIX: Convert NaN to None for SQL compatibility
+                    # Prevents pymssql error 207 "Invalid column name 'nan'"
+                    if pd.isna(value):
+                        nan_conversion_count += 1
+                        logger.debug(f"Converted NaN to None for column: {col}")
+                    row_data.append(safe_value(value))
 
             insert_data.append(tuple(row_data))
+
+        # Log NaN conversion summary for monitoring
+        if nan_conversion_count > 0:
+            logger.warning(
+                f"⚠️ Converted {nan_conversion_count} NaN values to None for SQL compatibility"
+            )
 
         # Build the INSERT SQL with proper parameter placeholders
         placeholders = ",".join(["%s" for _ in staging_columns])
