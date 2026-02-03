@@ -182,10 +182,10 @@ def map_webhook_to_internal_format(self, webhook_data: Dict[str, Any]) -> Mapped
 The IOE platform consists of seven main intelligent services. Each service runs as an independent Azure Function within the IOE Services platform, with different triggers and purposes:
 
 ### 1. 📁 **File Processing Service** (`dtc_file_processor.py`)
-**What it does**: Automatically processes customer wellness data files  
-**How it works**: Watches for new CSV files containing customer information  
-**Azure Function Trigger**: Blob Storage Trigger  
-**Example**: When a file named `MedicalGuardian_DTCWellness_20241015_Delta.csv` is uploaded:
+**What it does**: Automatically processes customer wellness data files
+**How it works**: Watches for new CSV files containing customer information
+**Azure Function Trigger**: Blob Storage Trigger
+**Example**: When a file named `medical_guardian_dtc_wellness_20260202.csv` is uploaded:
 - ✅ Validates the file format and naming convention
 - ✅ Checks customer data quality and phone number formats (E.164 with 11-15 digits)
 - ✅ Updates the database with new customer information
@@ -267,7 +267,7 @@ The Device Activation campaign system consists of three specialized Azure Functi
 
 **Workflow**:
 1. **File Detection**: Monitor `fs-dtc/landing/` blob container for new files
-2. **Validation**: Enforce naming convention `MedicalGuardian_DTCWellness_*_Delta.csv`
+2. **Validation**: Enforce naming convention `medical_guardian_dtc_wellness_YYYYMMDD.csv`
 3. **Data Processing**: Parse CSV files with customer wellness data
 4. **Database Updates**: Insert/update customer eligibility records
 5. **Reporting**: Generate processing reports and error logs
@@ -275,7 +275,7 @@ The Device Activation campaign system consists of three specialized Azure Functi
 **Triggers**:
 - **Type**: Blob Storage Trigger
 - **Container**: `fs-dtc/landing/`
-- **Pattern**: `MedicalGuardian_DTCWellness_*_Delta.csv`
+- **Pattern**: `medical_guardian_dtc_wellness_YYYYMMDD.csv`
 - **Connection**: `AzureWebJobsStorage`
 
 **Validations**:
@@ -842,7 +842,7 @@ curl https://ioe-services-app.azurewebsites.net/api/health
 
 ```python
 # File naming validation
-VALID_DTC_PATTERN = r"MedicalGuardian_DTCWellness_\d{8}_Delta\.csv"
+VALID_DTC_PATTERN = r"medical_guardian_dtc_wellness_\d{8}\.csv"
 
 # CSV schema validation
 DTC_SCHEMA = pa.DataFrameSchema({

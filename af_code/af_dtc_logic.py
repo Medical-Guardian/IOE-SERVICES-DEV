@@ -181,7 +181,7 @@ class ProcessingConfig:
     retry_delay_seconds: int = 5
     auto_notify: bool = True
     timeout_seconds: int = 300
-    expected_filename_pattern: str = "MedicalGuardian_DTCWellness_*_Delta.csv"
+    expected_filename_pattern: str = "medical_guardian_dtc_wellness_YYYYMMDD.csv"
 
 
 @dataclass
@@ -2603,17 +2603,29 @@ def process_dtc_file_complete(
     logger.info(f"Batch ID:           {file_batch_id}")
     logger.info(f"Source file:        {source_filename}")
     logger.info(f"Error threshold:    {error_threshold_pct}%")
-    logger.info("Expected pattern:   MedicalGuardian_DTCWellness_*_Delta.csv")
+    logger.info("Expected pattern:   medical_guardian_dtc_wellness_YYYYMMDD.csv")
 
     # -------------------------------------------------------------------------
-    # Validate filename
+    # Validate filename using shared validator
     # -------------------------------------------------------------------------
-    if not source_filename.startswith(
-        "MedicalGuardian_DTCWellness_"
-    ) or not source_filename.endswith("_Delta.csv"):
-        msg = f"Invalid filename pattern. Expected MedicalGuardian_DTCWellness_*_Delta.csv, got {source_filename}"
+    from af_code.shared.filename_validators import validate_dtc_wellness_filename
+
+    is_valid, error_msg, date_str, pattern_type = validate_dtc_wellness_filename(
+        source_filename, allow_legacy=True  # Phase 1: Accept both patterns
+    )
+
+    if not is_valid:
+        msg = f"Invalid filename pattern. {error_msg}. Got: {source_filename}"
         logger.error(f"❌ {msg}")
         return False, msg, {"error": msg}
+
+    # Log pattern type for monitoring
+    if pattern_type == "LEGACY":
+        logger.warning(f"⚠️ Processing LEGACY pattern: {source_filename}")
+        logger.warning("   This pattern will be deprecated soon")
+        logger.warning("   Please update to: medical_guardian_dtc_wellness_YYYYMMDD.csv")
+    else:
+        logger.info(f"✅ Processing NEW pattern: {source_filename} (date: {date_str})")
 
     # -------------------------------------------------------------------------
     # Fetch DB conn string from Key Vault
@@ -2658,10 +2670,11 @@ def process_dtc_file_complete(
         # Seed the parent log row FIRST - outside transaction
         # ---------------------------------------------------------------------
         # Determine file_type based on filename pattern
+        # Support both old CamelCase and new snake_case patterns
         file_type = "DTC_WELLNESS"  # Default for DTC wellness files
         if "Partner" in source_filename or "Roster" in source_filename:
             file_type = "PARTNER_ROSTER"
-        elif "DTCWellness" in source_filename:
+        elif "DTCWellness" in source_filename or "dtc_wellness" in source_filename:
             file_type = "DTC_WELLNESS"
 
         # Initialize the master log entry FIRST (with autocommit)
@@ -2887,7 +2900,7 @@ if __name__ == "__main__":
 
     # Example usage for DTC processing
     success, message, details = process_dtc_file_complete(
-        file_path="/path/to/MedicalGuardian_DTCWellness_20250519_Delta.csv",
+        file_path="/path/to/medical_guardian_dtc_wellness_20260202.csv",
         connection_string=CONNECTION_STRING,
         uploaded_by_user="admin@medicalguardian.com",
         error_threshold_pct=10.0,
