@@ -312,6 +312,7 @@ class EligibilityService:
         e.activation_start_date,
         e.campaign_end_date,
         e.call_5_timestamp,  -- Timestamp when Call 5 was made (NULL until Call 5)
+        e.transfer_phone_number,
         c.name AS campaign_name,
         c.operating_tz,
         c.operating_start_time,

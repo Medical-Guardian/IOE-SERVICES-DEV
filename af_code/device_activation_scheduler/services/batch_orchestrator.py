@@ -727,6 +727,7 @@ class BatchOrchestrator:
                 "first_name": member.get("first_name"),
                 "last_name": member.get("last_name"),
                 "primary_phone": member.get("primary_phone"),
+                "transfer_phone_number": member.get("transfer_phone_number") or "",
                 "email": member.get("email"),
                 "dob": member.get("dob").strftime("%m-%d-%Y") if member.get("dob") else "",
                 # Address (from members table)

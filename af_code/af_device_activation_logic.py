@@ -972,6 +972,7 @@ def get_device_activation_schema() -> Optional[DataFrameSchema]:
             "powersaver_mode": Column(
                 str, nullable=False
             ),  # REQUIRED - CHANGED from battery_status
+            "transfer_phone_number": Column(str, nullable=True),  # OPTIONAL
             # Campaign tracking
             "campaign_parameters": Column(str, nullable=True),  # OPTIONAL
             "monitoring_system_id": Column(str, nullable=False),  # REQUIRED
@@ -1106,6 +1107,21 @@ def validate_and_cleanse_data_before_insert(
                 row_errors.append(f"Invalid device_phone_number: '{device_phone}'")
             else:
                 df.at[idx, "device_phone_clean"] = standardized_device_phone
+
+        # Transfer phone validation (optional - does NOT cause row error)
+        transfer_phone_raw = row.get("transfer_phone_number", "")
+        if transfer_phone_raw:
+            transfer_phone_clean = standardize_phone_device_activation(transfer_phone_raw)
+            if not transfer_phone_clean:
+                # Log warning but do NOT add to row_errors
+                logger.warning(
+                    f"Row {idx}: Invalid transfer_phone_number: '{transfer_phone_raw}'. Setting to NULL."
+                )
+                transfer_phone_clean = None
+        else:
+            transfer_phone_clean = None
+
+        df.at[idx, "transfer_phone_clean"] = transfer_phone_clean
 
         # ===================================================================
         # 4. Name Validation and Proper Casing
@@ -1870,6 +1886,7 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
             device_udi, device_name, brand,
             device_phone_number, is_device_callable,
             fall_detection, powersaver_mode,
+            transfer_phone_number,
             campaign_parameters, monitoring_system_id,
             enrollment_status, unenrollment_reason
         ) VALUES (
@@ -1883,6 +1900,7 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
             %s, %s, %s,
             %s, %s,
             %s, %s,
+            %s,
             %s, %s,
             %s, %s
         )
@@ -1933,6 +1951,8 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
                         # Device status (original values from CSV)
                         safe_value(df.at[idx, "fall_detection_clean"]),
                         safe_value(df.at[idx, "powersaver_mode_clean"]),
+                        # Transfer phone (optional)
+                        safe_value(row.get("transfer_phone_clean")),
                         # Campaign tracking (FIX ISSUE #4: Convert empty strings to NULL)
                         safe_value(row.get("campaign_parameters")) or None,
                         safe_value(row.get("monitoring_system_id")) or None,
@@ -2362,7 +2382,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                         %s AS campaign_id,
                         %s AS activation_start_date,
                         %s AS campaign_end_date,
-                        %s AS call_5_timestamp
+                        %s AS call_5_timestamp,
+                        stg.transfer_phone_number
                     FROM engage360_stg.stg_device_activation_delta stg
                     JOIN engage360.members m
                         ON m.org_id = stg.org_id
@@ -2390,6 +2411,9 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                             ELSE tgt.call_5_timestamp
                         END,
 
+                        -- Update transfer phone number
+                        transfer_phone_number = src.transfer_phone_number,
+
                         -- Re-enroll if previously UNENROLLED
                         current_status = CASE
                             WHEN tgt.current_status = 'UNENROLLED' THEN 'ENROLLED'
@@ -2411,7 +2435,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 WHEN NOT MATCHED THEN
                     INSERT (
                         enrollment_id, member_id, campaign_id, enrollment_ts, current_status,
-                        activation_start_date, campaign_end_date, call_5_timestamp, device_activated
+                        activation_start_date, campaign_end_date, call_5_timestamp, transfer_phone_number, device_activated
                     )
                     VALUES (
                         NEWID(),
@@ -2422,6 +2446,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                         src.activation_start_date,
                         src.campaign_end_date,
                         src.call_5_timestamp,
+                        src.transfer_phone_number,
                         0
                     );
                 """
@@ -2444,6 +2469,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 UPDATE e
                 SET e.activation_start_date = %s,
                     e.campaign_end_date = %s,
+                    e.transfer_phone_number = stg.transfer_phone_number,
                     e.enrollment_ts = SYSDATETIMEOFFSET()
                 FROM engage360.member_campaign_enrollments_enhanced e
                 JOIN engage360.members m ON e.member_id = m.member_id
