@@ -2274,6 +2274,33 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
 
         logger.info("✅ No duplicate devices found")
 
+        # 🔄 STEP 1: Retire ALL prior devices for members getting NEW devices
+        logger.info("Retiring prior devices for members with new device_udi...")
+
+        device_retirement_sql = f"""
+        UPDATE engage360.member_devices
+        SET service_status = 'Out of Service',
+            updated_ts = SYSDATETIMEOFFSET()
+        FROM engage360.member_devices md
+        JOIN engage360.members m ON md.member_id = m.member_id
+        JOIN {context.config.staging_table} stg
+            ON m.org_id = stg.org_id
+            AND m.salesforce_account_number = stg.salesforce_account_number
+        WHERE stg.file_batch_id = %s
+          AND stg.processing_status = 'TRANSFORMING'
+          AND stg.device_udi IS NOT NULL
+          AND LTRIM(RTRIM(stg.device_udi)) != ''
+          AND md.device_id != stg.device_udi
+          AND md.service_status = 'In Service';
+        """
+
+        cursor = db_manager.execute_with_retry(
+            context.connection, device_retirement_sql, (str(context.file_batch_id),)
+        )
+        retired_count = cursor.rowcount
+        logger.info(f"🔄 Retired {retired_count} prior devices to 'Out of Service' status")
+
+        # 🔁 STEP 2: MERGE new devices with service_status='In Service'
         device_sql = f"""
         MERGE engage360.member_devices AS tgt
         USING (
@@ -2284,8 +2311,8 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 stg.is_device_callable_clean AS is_device_callable,
                 stg.device_name
             FROM {context.config.staging_table} stg
-            JOIN engage360.members m 
-                ON m.org_id = stg.org_id 
+            JOIN engage360.members m
+                ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
             WHERE stg.file_batch_id = %s
               AND stg.processing_status = 'TRANSFORMING'
@@ -2296,16 +2323,55 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             UPDATE SET
                 device_phone_number = ISNULL(src.device_phone_number, tgt.device_phone_number),
                 is_device_callable = ISNULL(src.is_device_callable, tgt.is_device_callable),
-                device_name = ISNULL(src.device_name, tgt.device_name)
+                device_name = ISNULL(src.device_name, tgt.device_name),
+                service_status = 'In Service',
+                updated_ts = SYSDATETIMEOFFSET()
         WHEN NOT MATCHED THEN
-            INSERT (device_id, member_id, device_phone_number, is_device_callable, device_name, created_ts)
-            VALUES (src.device_udi, src.member_id, src.device_phone_number, src.is_device_callable, src.device_name, SYSDATETIMEOFFSET());
+            INSERT (device_id, member_id, device_phone_number, is_device_callable, device_name, service_status, created_ts)
+            VALUES (src.device_udi, src.member_id, src.device_phone_number, src.is_device_callable, src.device_name, 'In Service', SYSDATETIMEOFFSET());
         """
         cursor = db_manager.execute_with_retry(
             context.connection, device_sql, (str(context.file_batch_id),)
         )
         devices_affected = cursor.rowcount
-        logger.info(f"Devices merge affected {devices_affected} rows")
+        logger.info(
+            f"✅ Devices merge affected {devices_affected} rows (upserted with 'In Service' status)"
+        )
+
+        # ✅ STEP 3: Verify exactly one 'In Service' device per member
+        verification_sql = f"""
+        WITH MultiActiveDevices AS (
+            SELECT m.member_id, COUNT(*) as active_device_count
+            FROM engage360.members m
+            JOIN {context.config.staging_table} stg
+                ON m.org_id = stg.org_id
+                AND m.salesforce_account_number = stg.salesforce_account_number
+            JOIN engage360.member_devices md ON m.member_id = md.member_id
+            WHERE stg.file_batch_id = %s
+              AND stg.processing_status = 'TRANSFORMING'
+              AND md.service_status = 'In Service'
+            GROUP BY m.member_id
+            HAVING COUNT(*) > 1
+        )
+        SELECT COUNT(*) as members_with_multi_active_devices FROM MultiActiveDevices;
+        """
+
+        cursor = db_manager.execute_with_retry(
+            context.connection, verification_sql, (str(context.file_batch_id),)
+        )
+        multi_active_count = cursor.fetchone()[0]
+
+        if multi_active_count > 0:
+            logger.error(
+                f"❌ Data quality check FAILED: {multi_active_count} members have multiple 'In Service' devices"
+            )
+            raise ValueError(
+                f"Device lifecycle violation: {multi_active_count} members have multiple active devices"
+            )
+
+        logger.info(
+            "✅ Device lifecycle verification passed: Exactly one 'In Service' device per member"
+        )
 
         # 🔥 UPDATE: Track member and enrollment IDs
         update_tracking_sql = f"""

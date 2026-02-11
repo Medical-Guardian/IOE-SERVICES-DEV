@@ -8,7 +8,7 @@ KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL")
 DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
 
 # Verify critical environment variables
-logger.info(f"🔍 [DTC-CONFIG] Environment check:")
+logger.info("🔍 [DTC-CONFIG] Environment check:")
 logger.info(f"   KEY_VAULT_URL: {'✅ Set' if KEY_VAULT_URL else '❌ Missing'}")
 logger.info(f"   DB_SECRET_NAME: {'✅ Set' if DB_SECRET_NAME else '❌ Missing'}")
 
@@ -68,9 +68,11 @@ SELECT
     mce.enrollment_id,
     cfg.call_type -- Added this field
 FROM engage360.outreach_attempts oa
-JOIN engage360.member_campaign_enrollments_enhanced mce ON oa.enrollment_id = mce.enrollment_id  
+JOIN engage360.member_campaign_enrollments_enhanced mce ON oa.enrollment_id = mce.enrollment_id
 JOIN engage360.members m ON mce.member_id = m.member_id
-LEFT JOIN engage360.member_devices md ON m.member_id = md.member_id
+LEFT JOIN engage360.member_devices md
+    ON m.member_id = md.member_id
+    AND md.service_status = 'In Service'
 -- Joined to get the active call configuration for the campaign
 LEFT JOIN engage360.campaign_call_configs_enhanced cfg ON mce.campaign_id = cfg.campaign_id AND cfg.config_status = 'active'
 WHERE oa.batch_id = %s AND oa.disposition = 'Pending'
