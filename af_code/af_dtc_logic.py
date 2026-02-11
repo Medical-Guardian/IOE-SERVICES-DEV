@@ -1300,12 +1300,7 @@ def validate_and_cleanse_data_before_insert(
                     df_clean.loc[idx, "member_dob"] = None
                     df_clean.loc[idx, "dob_clean"] = None
                 else:
-                    # Validate reasonable age range (18-120 years old)
-                    today = datetime.now().date()
-                    age = (today - parsed_date).days / 365.25
-                    if age < 18 or age > 120:
-                        row_errors.append(f"member_dob indicates unrealistic age: {age:.1f} years")
-
+                    # Age validation removed - accept any valid date
                     df_clean.loc[idx, "member_dob"] = parsed_date.strftime("%Y-%m-%d")
                     df_clean.loc[idx, "dob_clean"] = parsed_date
             except Exception as e:
