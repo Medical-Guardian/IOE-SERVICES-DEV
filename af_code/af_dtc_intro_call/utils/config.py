@@ -47,13 +47,13 @@ VALUES (%s, %s, 'Voice', SYSUTCDATETIME(), 'Pending', 0, %s)
 
 # --- CHANGE: Added a JOIN to get call_type_code and ensured all member fields are selected ---
 GET_MEMBERS_WITH_ATTEMPTS_QUERY = """
-SELECT 
+SELECT
     m.member_id,
     m.salesforce_account_number,
     m.first_name,
     m.last_name,
     m.primary_phone,
-    m.Channel,  -- Member's routing preference (phone/device)
+    mce.channel,  -- Enrollment-level channel (phone/device)
     m.language_pref,
     m.dob,
     m.address_street,
@@ -63,8 +63,8 @@ SELECT
     md.device_id as device_udi,
     md.device_phone_number,  -- Device phone number
     md.is_device_callable,
-    oa.attempt_id, 
-    mce.campaign_id, 
+    oa.attempt_id,
+    mce.campaign_id,
     mce.enrollment_id,
     cfg.call_type -- Added this field
 FROM engage360.outreach_attempts oa
@@ -106,22 +106,28 @@ SELECT
     m.timezone,
     mce.enrollment_id,
     mce.preferred_window,
+    mce.channel,
     c.name as campaign_name,
     c.campaign_id,
     c.call_days_of_week,
-    ISNULL(failed_attempts.failed_count, 0) as todays_failed_attempts
+    ISNULL(failed_attempts.failed_count, 0) as todays_failed_attempts,
+    md.device_phone_number,
+    md.is_device_callable
 FROM
     engage360.members AS m
 JOIN
-    engage360.member_campaign_enrollments_enhanced AS mce ON m.member_id = mce.member_id  
+    engage360.member_campaign_enrollments_enhanced AS mce ON m.member_id = mce.member_id
 JOIN
     engage360.campaigns_enhanced AS c ON mce.campaign_id = c.campaign_id
+LEFT JOIN
+    engage360.member_devices md ON m.member_id = md.member_id
+    AND md.service_status = 'In Service'
 LEFT JOIN (
-    SELECT 
+    SELECT
         oa.enrollment_id,
         COUNT(*) as failed_count
     FROM engage360.outreach_attempts oa
-    WHERE oa.attempt_ts >= @TodayStartUtc 
+    WHERE oa.attempt_ts >= @TodayStartUtc
       AND oa.attempt_ts < @TodayEndUtc
       AND oa.disposition != 'Completed'
     GROUP BY oa.enrollment_id
@@ -132,6 +138,11 @@ WHERE
     AND m.timezone IS NOT NULL
     AND mce.preferred_window IS NOT NULL
     AND c.campaign_id = %s
+    AND (
+        -- Channel validation: enforce device status
+        mce.channel != 'device'  -- Phone channel: always eligible
+        OR (mce.channel = 'device' AND md.device_id IS NOT NULL)  -- Device channel: must have active device
+    )
     AND NOT EXISTS (
         -- Check for ANY DTC outreach attempts for this member today (intro OR wellness)
         SELECT 1
@@ -142,7 +153,7 @@ WHERE
               '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro Campaign
               'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness Campaign
           )
-          AND oa.attempt_ts >= @TodayStartUtc 
+          AND oa.attempt_ts >= @TodayStartUtc
           AND oa.attempt_ts < @TodayEndUtc
     );
 """
@@ -158,22 +169,28 @@ SELECT
     m.timezone,
     mce.enrollment_id,
     mce.preferred_window,
+    mce.channel,
     c.name as campaign_name,
     c.campaign_id,
     c.call_days_of_week,
-    ISNULL(failed_attempts.failed_count, 0) as todays_failed_attempts
+    ISNULL(failed_attempts.failed_count, 0) as todays_failed_attempts,
+    md.device_phone_number,
+    md.is_device_callable
 FROM
     engage360.members AS m
 JOIN
-    engage360.member_campaign_enrollments_enhanced AS mce ON m.member_id = mce.member_id  
+    engage360.member_campaign_enrollments_enhanced AS mce ON m.member_id = mce.member_id
 JOIN
     engage360.campaigns_enhanced AS c ON mce.campaign_id = c.campaign_id
+LEFT JOIN
+    engage360.member_devices md ON m.member_id = md.member_id
+    AND md.service_status = 'In Service'
 LEFT JOIN (
-    SELECT 
+    SELECT
         oa.enrollment_id,
         COUNT(*) as failed_count
     FROM engage360.outreach_attempts oa
-    WHERE oa.attempt_ts >= @TodayStartUtc 
+    WHERE oa.attempt_ts >= @TodayStartUtc
       AND oa.attempt_ts < @TodayEndUtc
       AND oa.disposition != 'Completed'
     GROUP BY oa.enrollment_id
@@ -184,6 +201,11 @@ WHERE
     AND m.timezone IS NOT NULL
     AND mce.preferred_window IS NOT NULL
     AND c.campaign_id = %s
+    AND (
+        -- Channel validation: enforce device status
+        mce.channel != 'device'  -- Phone channel: always eligible
+        OR (mce.channel = 'device' AND md.device_id IS NOT NULL)  -- Device channel: must have active device
+    )
     AND EXISTS (
         -- Ensure intro campaign is UNENROLLED (intro call completed)
         SELECT 1
@@ -202,7 +224,7 @@ WHERE
               '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro Campaign
               'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness Campaign
           )
-          AND oa.attempt_ts >= @TodayStartUtc 
+          AND oa.attempt_ts >= @TodayStartUtc
           AND oa.attempt_ts < @TodayEndUtc
     );
 """

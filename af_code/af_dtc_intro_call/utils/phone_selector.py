@@ -47,31 +47,31 @@ def get_target_phone(member_data: Dict, contact_pref: str) -> Optional[str]:
         ... }, "device")
         "+15559876543"
 
-        >>> # Member preference mode - respects member's Channel setting
+        >>> # Member preference mode - respects enrollment-level channel setting
         >>> get_target_phone({
         ...     "primary_phone": "+15551234567",
         ...     "device_phone_number": "+15559876543",
-        ...     "Channel": "device",
+        ...     "channel": "device",
         ...     "is_device_callable": True
         ... }, "member_preference")
         "+15559876543"
     """
     primary_phone = member_data.get("primary_phone")
     device_phone = member_data.get("device_phone_number")
-    member_channel = member_data.get("Channel")
+    member_channel = member_data.get("channel")  # Enrollment-level channel
     is_callable = member_data.get("is_device_callable")
     member_id = member_data.get("member_id", "unknown")
 
     logger.info(f"📞 [PHONE-SELECTOR] Member {member_id}: contact_pref={contact_pref}")
     logger.info(f"   Primary phone: {primary_phone}")
     logger.info(f"   Device phone: {device_phone}")
-    logger.info(f"   Member Channel: {member_channel}")
+    logger.info(f"   Enrollment channel: {member_channel}")
     logger.info(f"   Device callable: {is_callable}")
 
     # Handle auto -> member_preference conversion
     if contact_pref == "auto":
         contact_pref = "member_preference"
-        logger.info(f"   Converted 'auto' to 'member_preference'")
+        logger.info("   Converted 'auto' to 'member_preference'")
 
     # OPTION 1: Phone Only (campaign forces phone)
     if contact_pref == "phone":
@@ -90,7 +90,9 @@ def get_target_phone(member_data: Dict, contact_pref: str) -> Optional[str]:
             if validated:
                 logger.info(f"✅ [PHONE-SELECTOR] Using device phone: {validated}")
                 return validated
-        logger.warning(f"⚠️ [PHONE-SELECTOR] Member {member_id}: No valid device phone available (or not callable)")
+        logger.warning(
+            f"⚠️ [PHONE-SELECTOR] Member {member_id}: No valid device phone available (or not callable)"
+        )
         return None
 
     # OPTION 3: Member Preference (respect member's Channel setting)
@@ -108,22 +110,15 @@ def get_target_phone(member_data: Dict, contact_pref: str) -> Optional[str]:
                 logger.info(f"✅ [PHONE-SELECTOR] Using member's preferred device: {validated}")
                 return validated
 
-        # Fallback to primary phone if preference not available
-        logger.info(f"ℹ️ [PHONE-SELECTOR] Member {member_id}: Preference not available, trying fallbacks")
-        if primary_phone:
-            validated = standardize_phone(primary_phone)
-            if validated:
-                logger.info(f"✅ [PHONE-SELECTOR] Using fallback primary phone: {validated}")
-                return validated
-
-        # Fallback to device if primary not available
-        if device_phone and is_callable:
-            validated = standardize_phone(device_phone)
-            if validated:
-                logger.info(f"✅ [PHONE-SELECTOR] Using fallback device phone: {validated}")
-                return validated
-
-        logger.warning(f"⚠️ [PHONE-SELECTOR] Member {member_id}: No valid phone number available (tried both)")
+        # No fallback - return None with clear warning
+        logger.warning(
+            f"⚠️ [PHONE-SELECTOR] Member {member_id} INELIGIBLE: "
+            f"Enrollment channel='{member_channel}' but channel unavailable. "
+            f"primary_phone={bool(primary_phone)}, "
+            f"device_phone={bool(device_phone)}, "
+            f"device_callable={bool(is_callable)}. "
+            f"No fallback - respecting member preference."
+        )
         return None
 
     # Invalid contact_pref value

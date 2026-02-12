@@ -726,32 +726,15 @@ class BatchOrchestrator:
                         f"⚠️ [BATCH-ORCHESTRATOR] Invalid device phone format for member {member.member_id}: {member.device_phone_number}"
                     )
 
-            # Fallback to available number (phone first, then device if callable)
-            if member.primary_phone:
-                validated_phone = standardize_phone(member.primary_phone)
-                if validated_phone:
-                    logger.debug(
-                        f"📞 [BATCH-ORCHESTRATOR] Fallback to validated primary phone: {validated_phone}"
-                    )
-                    return validated_phone
-                else:
-                    logger.warning(
-                        f"⚠️ [BATCH-ORCHESTRATOR] Invalid primary phone format for member {member.member_id}: {member.primary_phone}"
-                    )
-
-            if member.device_phone_number and member.is_device_callable:
-                validated_phone = standardize_phone(member.device_phone_number)
-                if validated_phone:
-                    logger.debug(
-                        f"📞 [BATCH-ORCHESTRATOR] Fallback to validated device: {validated_phone}"
-                    )
-                    return validated_phone
-                else:
-                    logger.warning(
-                        f"⚠️ [BATCH-ORCHESTRATOR] Invalid device phone format for member {member.member_id}: {member.device_phone_number}"
-                    )
-
-            logger.debug("📞 [BATCH-ORCHESTRATOR] No valid fallback options available")
+            # No fallback - return None with clear warning
+            logger.warning(
+                f"⚠️ [BATCH-ORCHESTRATOR] Member {member.member_id} INELIGIBLE: "
+                f"Enrollment channel='{member.channel}' but channel unavailable. "
+                f"primary_phone={bool(member.primary_phone)}, "
+                f"device_phone={bool(member.device_phone_number)}, "
+                f"device_callable={bool(member.is_device_callable)}. "
+                f"No fallback - respecting enrollment preference."
+            )
             return None
 
         logger.warning(

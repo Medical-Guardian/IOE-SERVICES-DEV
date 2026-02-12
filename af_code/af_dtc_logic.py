@@ -2070,10 +2070,11 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                        WHEN 'PM' THEN 'PM12-1'
                        WHEN 'EV' THEN 'EV4-5'
                        ELSE NULL
-                   END AS preferred_window
+                   END AS preferred_window,
+                   stg.channel_type_clean AS channel
             FROM {context.config.staging_table} stg
-            JOIN engage360.members m 
-                ON m.org_id = stg.org_id 
+            JOIN engage360.members m
+                ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
             WHERE stg.file_batch_id = %s
               AND stg.processing_status = 'TRANSFORMING'
@@ -2081,19 +2082,20 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
               -- Exclude members who already have wellness enrollments (handled above)
               AND NOT EXISTS (
                   SELECT 1 FROM engage360.member_campaign_enrollments_enhanced existing
-                  WHERE existing.member_id = m.member_id 
+                  WHERE existing.member_id = m.member_id
                     AND existing.campaign_id = %s
               )
         ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
         WHEN MATCHED THEN
-            UPDATE SET 
+            UPDATE SET
                 current_status = CASE WHEN tgt.current_status = 'UNENROLLED' THEN 'ENROLLED' ELSE tgt.current_status END,
                 enrollment_ts = CASE WHEN tgt.current_status = 'UNENROLLED' THEN SYSDATETIMEOFFSET() ELSE tgt.enrollment_ts END,
                 preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
+                channel = ISNULL(src.channel, tgt.channel),
                 unenrollment_reason = CASE WHEN tgt.current_status = 'UNENROLLED' THEN NULL ELSE tgt.unenrollment_reason END
         WHEN NOT MATCHED THEN
-            INSERT (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, preferred_window)
-            VALUES (NEWID(), src.member_id, src.campaign_id, SYSDATETIMEOFFSET(), 'ENROLLED', src.preferred_window);
+            INSERT (enrollment_id, member_id, campaign_id, enrollment_ts, current_status, preferred_window, channel)
+            VALUES (NEWID(), src.member_id, src.campaign_id, SYSDATETIMEOFFSET(), 'ENROLLED', src.preferred_window, src.channel);
         """
         cursor = db_manager.execute_with_retry(
             context.connection,
@@ -2146,24 +2148,26 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         update_enrollments_sql = f"""
         MERGE engage360.member_campaign_enrollments_enhanced AS tgt
         USING (
-            SELECT m.member_id, 
+            SELECT m.member_id,
                    CASE LTRIM(RTRIM(UPPER(stg.checkin_time)))
                        WHEN 'AM' THEN 'AM9-10'
                        WHEN 'PM' THEN 'PM12-1'
                        WHEN 'EV' THEN 'EV4-5'
                        ELSE NULL
-                   END AS preferred_window
+                   END AS preferred_window,
+                   stg.channel_type_clean AS channel
             FROM {context.config.staging_table} stg
-            JOIN engage360.members m 
-                ON m.org_id = stg.org_id 
+            JOIN engage360.members m
+                ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
             WHERE stg.file_batch_id = %s
               AND stg.processing_status = 'TRANSFORMING'
               AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UPDATE'
         ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = %s
         WHEN MATCHED THEN
-            UPDATE SET 
-                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window);
+            UPDATE SET
+                preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
+                channel = ISNULL(src.channel, tgt.channel);
                 -- Remove: current_status = 'PENDING' - preserve existing status
         """
         cursor = db_manager.execute_with_retry(
