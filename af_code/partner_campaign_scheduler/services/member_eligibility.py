@@ -67,16 +67,18 @@ class MemberEligibilityService:
 
         for member_data in members_data:
             member_timezone = member_data["timezone"]
-            contact_method = member_data["Channel"] or "unspecified"
+            enrollment_channel = member_data["Channel"] or "unspecified"  # ✅ Now enrollment-level
+            active_device_count = member_data.get("active_device_count", 0)
+            device_service_status = member_data.get("device_service_status")
 
             # Track statistics
             if member_timezone not in timezone_stats:
                 timezone_stats[member_timezone] = 0
             timezone_stats[member_timezone] += 1
 
-            if contact_method not in contact_method_stats:
-                contact_method_stats[contact_method] = 0
-            contact_method_stats[contact_method] += 1
+            if enrollment_channel not in contact_method_stats:
+                contact_method_stats[enrollment_channel] = 0
+            contact_method_stats[enrollment_channel] += 1
 
             eligible_member = EligibleMember(
                 member_id=member_data["member_id"],
@@ -86,7 +88,7 @@ class MemberEligibilityService:
                 last_name=member_data["last_name"],
                 primary_phone=member_data["primary_phone"],
                 device_phone_number=member_data["device_phone_number"],  # From member_devices
-                channel=member_data["Channel"],  # Use existing Channel field
+                channel=member_data["Channel"],  # ✅ Enrollment-level channel
                 is_device_callable=member_data.get("is_device_callable"),
                 timezone=member_timezone,
                 preferred_window=member_data["preferred_window"],
@@ -105,9 +107,10 @@ class MemberEligibilityService:
                 dob=member_data.get("dob"),
             )
 
-            # Log detailed member qualification data
+            # ✅ Log detailed member qualification data with enrollment-level channel info
             logger.info(f"✅ [MEMBER-ELIGIBILITY] Member qualified: {member_data['member_id']}")
             logger.info(f"   👤 Name: {member_data['first_name']} {member_data['last_name']}")
+            logger.info(f"   🆔 Enrollment ID: {member_data['enrollment_id']}")
             logger.info(
                 f"   🌍 Timezone: {member_timezone} (campaign mode: {campaign.timezone_flag})"
             )
@@ -119,10 +122,16 @@ class MemberEligibilityService:
             )
             logger.info(f"   ⏳ Time window: {member_data.get('preferred_window')}")
             logger.info(
-                f"   📞 Contact method: {contact_method} (campaign requires: {campaign.contact_pref})"
+                f"   📞 Enrollment channel: {enrollment_channel} (campaign contact_pref: {campaign.contact_pref})"  # ✅ Updated
             )
             logger.info(
-                f"   📱 Primary phone: {member_data.get('primary_phone')}, Device: {member_data.get('device_phone_number')} (callable: {member_data.get('is_device_callable')})"
+                f"   📱 Primary phone: {member_data.get('primary_phone')}, "
+                f"Device: {member_data.get('device_phone_number')} "
+                f"(callable: {member_data.get('is_device_callable')}, status: {device_service_status})"
+            )
+            logger.info(
+                f"   🔧 Device status: {active_device_count} active devices, "
+                f"service_status={device_service_status}"  # ✅ New device status logging
             )
             logger.info(
                 f"   🔁 Frequency: Last attempt {member_data.get('last_attempt_ts') or 'Never'}, Total: {member_data.get('total_attempts', 0)}, Limit: {campaign.frequency_value} {campaign.frequency_unit}"
@@ -131,7 +140,8 @@ class MemberEligibilityService:
                 f"   🩺 Care gaps: {member_data.get('member_care_gap_parameters') or 'None'}"
             )
             logger.info(
-                "   ✅ Passed SQL filters: FrequencyCheck, No TodayActiveAttempts, TimezoneEligible, TimeWindow, DayOfWeek"
+                "   ✅ Passed SQL filters: FrequencyCheck, No TodayActiveAttempts, TimezoneEligible, "
+                "TimeWindow, DayOfWeek, ChannelDeviceStatus"  # ✅ Added device status filter
             )
 
             eligible_members.append(eligible_member)
@@ -247,7 +257,6 @@ class MemberEligibilityService:
                     m.first_name,
                     m.last_name,
                     m.primary_phone,
-                    m.Channel,  -- Use existing Channel field
                     m.language_pref,  -- Language preference for request_data
                     m.address_street,  -- Address fields for request_data
                     m.address_city,
@@ -256,6 +265,7 @@ class MemberEligibilityService:
                     m.dob,  -- Date of birth for request_data
                     md.device_phone_number,  -- From member_devices table
                     md.is_device_callable,
+                    md.service_status,  -- Device service status for validation
                     -- Calculate member's current time based on timezone_flag
                     CASE
                         WHEN @timezone_flag = 'member_tz' THEN
@@ -333,9 +343,23 @@ CASE m.timezone
                             DATENAME(WEEKDAY, SYSDATETIMEOFFSET() AT TIME ZONE @operating_tz)
                     END as member_current_day
                 FROM engage360.members m
-                LEFT JOIN engage360.member_devices md ON m.member_id = md.member_id 
+                LEFT JOIN engage360.member_devices md ON m.member_id = md.member_id
                     AND md.is_device_callable = 1
                 WHERE m.timezone IS NOT NULL
+            ),
+            EnrollmentDeviceStatus AS (
+                -- Count active devices per enrollment for channel='device' validation
+                SELECT
+                    mce.enrollment_id,
+                    mce.member_id,
+                    mce.channel AS enrollment_channel,  -- ✅ Enrollment-level channel
+                    COUNT(CASE WHEN md.service_status = 'In Service' THEN 1 END) AS active_device_count,
+                    COUNT(md.device_id) AS total_device_count
+                FROM engage360.member_campaign_enrollments_enhanced mce
+                LEFT JOIN engage360.member_devices md ON mce.member_id = md.member_id
+                WHERE mce.campaign_id = @campaign_id
+                  AND mce.current_status = 'Active'
+                GROUP BY mce.enrollment_id, mce.member_id, mce.channel
             ),
             RankedMembers AS (
                 -- Use ROW_NUMBER to deduplicate instead of DISTINCT (avoids ORDER BY conflicts)
@@ -346,12 +370,14 @@ CASE m.timezone
                     mce.current_status,
                     mce.preferred_window,
                     mce.member_care_gap_parameters,  -- JSON string with care gap flags
+                    mce.channel AS Channel,  -- ✅ Use enrollment-level channel (aliased for compatibility)
                     te.first_name,
                     te.last_name,
                     te.primary_phone,
-                    te.Channel,  -- Use existing Channel field
                     te.device_phone_number,  -- From member_devices
                     te.is_device_callable,
+                    te.service_status AS device_service_status,  -- Device service status
+                    eds.active_device_count,  -- Active device count for logging
                     te.timezone,
                     te.language_pref,  -- DTC-style demographic fields
                     te.address_street,
@@ -372,6 +398,7 @@ CASE m.timezone
                     ) as rn
                 FROM engage360.member_campaign_enrollments_enhanced mce
                 INNER JOIN TimezoneEligible te ON mce.member_id = te.member_id
+                INNER JOIN EnrollmentDeviceStatus eds ON mce.enrollment_id = eds.enrollment_id  -- ✅ Join device status
                 LEFT JOIN FrequencyCheck fc ON mce.member_id = fc.member_id
                 LEFT JOIN TodayActiveAttempts taa ON mce.member_id = taa.member_id
                 WHERE mce.campaign_id = @campaign_id
@@ -385,14 +412,19 @@ CASE m.timezone
                       )
                   )
                   AND (
-                      -- Enhanced contact preference logic using existing Channel field
+                      -- ✅ UPDATED: Enhanced contact preference logic using ENROLLMENT-LEVEL channel
                       (@contact_pref = 'phone' AND te.primary_phone IS NOT NULL)
-                      OR (@contact_pref = 'device' AND te.device_phone_number IS NOT NULL AND te.is_device_callable = 1)
+                      OR (@contact_pref = 'device' AND te.device_phone_number IS NOT NULL AND te.is_device_callable = 1 AND te.service_status = 'In Service')
                       OR (@contact_pref = 'member_preference' AND (
-                          (te.Channel = 'phone' AND te.primary_phone IS NOT NULL)
-                          OR (te.Channel = 'device' AND te.device_phone_number IS NOT NULL AND te.is_device_callable = 1)
-                          OR (te.Channel IS NULL AND (te.primary_phone IS NOT NULL OR (te.device_phone_number IS NOT NULL AND te.is_device_callable = 1)))
+                          (mce.channel = 'phone' AND te.primary_phone IS NOT NULL)
+                          OR (mce.channel = 'device' AND te.device_phone_number IS NOT NULL AND te.is_device_callable = 1 AND te.service_status = 'In Service')
+                          OR (mce.channel IS NULL AND (te.primary_phone IS NOT NULL OR (te.device_phone_number IS NOT NULL AND te.is_device_callable = 1 AND te.service_status = 'In Service')))
                       ))
+                  )
+                  -- ✅ NEW: Channel='device' validation - must have active device
+                  AND (
+                      mce.channel != 'device'  -- Phone channel or NULL: always eligible
+                      OR (mce.channel = 'device' AND eds.active_device_count > 0)  -- Device channel: must have active device
                   )
                   -- Timezone-aware operating hours check
                   AND te.member_current_time BETWEEN @start_time AND @end_time

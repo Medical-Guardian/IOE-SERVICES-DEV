@@ -1664,6 +1664,119 @@ def validate_and_cleanse_data_before_insert(
     else:
         logger.info("ℹ️ [VALIDATION] No validated rows to check for duplicates")
 
+    # ===================================================================
+    # DATABASE CROSS-CHECK: Check for device ownership conflicts
+    # ===================================================================
+    logger.info("🔐 [DEVICE-OWNERSHIP] Checking for device ownership conflicts with database...")
+
+    validated_rows = df[df["validation_status"] == "VALIDATED"].copy()
+
+    if len(validated_rows) > 0:
+        # Get unique device_udi values from this batch
+        device_udis = validated_rows["device_udi"].unique().tolist()
+
+        if len(device_udis) > 0:
+            # Query database for existing device ownership
+            placeholders = ",".join(["%s"] * len(device_udis))
+            ownership_check_sql = f"""
+            SELECT
+                md.device_id AS device_udi,
+                md.member_id AS existing_member_id,
+                m.salesforce_account_number AS existing_account
+            FROM engage360.member_devices md
+            JOIN engage360.members m ON md.member_id = m.member_id
+            WHERE md.device_id IN ({placeholders});
+            """
+
+            cursor = context.db_service.execute_query(
+                ownership_check_sql, tuple(device_udis), fetch_results=True
+            )
+            existing_devices = cursor.fetchall()
+
+            # Build lookup: device_udi → (existing_member_id, existing_account)
+            existing_ownership = {row[0]: (str(row[1]), row[2]) for row in existing_devices}
+
+            conflicts = []
+
+            # Check each validated row
+            for idx, row in validated_rows.iterrows():
+                device_udi = row["device_udi"]
+                incoming_member_id = str(row["member_id"])
+                incoming_account = row["salesforce_account_number"]
+
+                if device_udi in existing_ownership:
+                    existing_member_id, existing_account = existing_ownership[device_udi]
+
+                    # Check if member_id is DIFFERENT
+                    if existing_member_id != incoming_member_id:
+                        conflict = {
+                            "device_udi": device_udi,
+                            "incoming_member_id": incoming_member_id,
+                            "incoming_account": incoming_account,
+                            "existing_member_id": existing_member_id,
+                            "existing_account": existing_account,
+                            "row_index": idx,
+                        }
+                        conflicts.append(conflict)
+
+            if conflicts:
+                logger.error(
+                    f"❌ [DEVICE-OWNERSHIP] Found {len(conflicts)} device ownership conflicts"
+                )
+
+                for conflict in conflicts:
+                    device_udi = conflict["device_udi"]
+                    incoming_member = conflict["incoming_member_id"]
+                    incoming_account = conflict["incoming_account"]
+                    existing_member = conflict["existing_member_id"]
+                    existing_account = conflict["existing_account"]
+                    idx = conflict["row_index"]
+
+                    error_msg = (
+                        f"Device ownership conflict: device_udi='{device_udi}' already assigned to "
+                        f"member_id={existing_member} (account={existing_account}). "
+                        f"Cannot reassign to member_id={incoming_member} (account={incoming_account})."
+                    )
+
+                    # Mark row as FAILED
+                    df.at[idx, "validation_status"] = "FAILED"
+
+                    # Prepend to existing error message if any
+                    existing_error = df.at[idx, "error_message"]
+                    if existing_error:
+                        df.at[idx, "error_message"] = f"{error_msg}; {existing_error}"
+                    else:
+                        df.at[idx, "error_message"] = error_msg
+
+                    # Update error_details with machine-readable format
+                    error_details_entry = (
+                        f"DEVICE_OWNERSHIP_CONFLICT|existing_member={existing_member}"
+                    )
+                    existing_details = df.at[idx, "error_details"]
+                    if existing_details:
+                        df.at[idx, "error_details"] = f"{error_details_entry}\n{existing_details}"
+                    else:
+                        df.at[idx, "error_details"] = error_details_entry
+
+                    validation_errors_count += 1
+
+                    logger.error(f"❌ [DEVICE-OWNERSHIP] Row {idx}: {error_msg}")
+
+                # Recalculate error rate after device ownership validation
+                error_rate = (validation_errors_count / total_rows * 100) if total_rows > 0 else 0
+                logger.info(
+                    f"📊 [DEVICE-OWNERSHIP] Updated error count: "
+                    f"{validation_errors_count}/{total_rows} errors ({error_rate:.1f}%)"
+                )
+            else:
+                logger.info(
+                    "✅ [DEVICE-OWNERSHIP] No cross-member device conflicts found with database"
+                )
+        else:
+            logger.info("ℹ️ [DEVICE-OWNERSHIP] No device_udi values to check")
+    else:
+        logger.info("ℹ️ [DEVICE-OWNERSHIP] No validated rows to check for database conflicts")
+
     return df
 
 

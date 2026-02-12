@@ -14,7 +14,9 @@ class EligibleMember:
     last_name: str
     primary_phone: Optional[str]
     device_phone_number: Optional[str]  # From member_devices table
-    channel: Optional[str]  # Use existing members.Channel field
+    channel: Optional[
+        str
+    ]  # ✅ Enrollment-level channel (from member_campaign_enrollments_enhanced.channel)
     is_device_callable: Optional[bool]  # From member_devices
     timezone: str
     preferred_window: Optional[str]

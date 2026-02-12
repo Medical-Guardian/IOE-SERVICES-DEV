@@ -2295,6 +2295,107 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         retired_count = cursor.rowcount
         logger.info(f"🔄 Retired {retired_count} prior devices to 'Out of Service' status")
 
+        # 🔐 STEP 1.5: Validate device ownership - prevent cross-member device reassignment
+        logger.info("🔐 Validating device ownership to prevent cross-member conflicts...")
+
+        device_ownership_validation_sql = f"""
+        -- Check for cross-member device conflicts
+        WITH ExistingDeviceOwners AS (
+            SELECT
+                stg.device_udi,
+                m.member_id AS incoming_member_id,
+                m.salesforce_account_number AS incoming_account,
+                md.member_id AS existing_member_id,
+                m_existing.salesforce_account_number AS existing_account,
+                stg.row_number
+            FROM {context.config.staging_table} stg
+            JOIN engage360.members m
+                ON m.org_id = stg.org_id
+                AND m.salesforce_account_number = stg.salesforce_account_number
+            JOIN engage360.member_devices md
+                ON stg.device_udi = md.device_id
+            JOIN engage360.members m_existing
+                ON md.member_id = m_existing.member_id
+            WHERE stg.file_batch_id = %s
+              AND stg.processing_status = 'TRANSFORMING'
+              AND stg.device_udi IS NOT NULL
+              AND LTRIM(RTRIM(stg.device_udi)) != ''
+              AND md.member_id != m.member_id  -- Different member!
+        )
+        SELECT
+            device_udi,
+            incoming_member_id,
+            incoming_account,
+            existing_member_id,
+            existing_account,
+            row_number
+        FROM ExistingDeviceOwners;
+        """
+
+        cursor = db_manager.execute_with_retry(
+            context.connection,
+            device_ownership_validation_sql,
+            (str(context.file_batch_id),),
+        )
+        conflict_results = cursor.fetchall()
+
+        if conflict_results:
+            # Build detailed error message for each conflict
+            conflict_count = len(conflict_results)
+            logger.error(f"❌ [DEVICE-OWNERSHIP] Found {conflict_count} device ownership conflicts")
+
+            for row in conflict_results:
+                device_udi = row[0]
+                incoming_member = row[1]
+                incoming_account = row[2]
+                existing_member = row[3]
+                existing_account = row[4]
+                row_number = row[5]
+
+                error_msg = (
+                    f"Device ownership conflict: device_udi='{device_udi}' already assigned to "
+                    f"member_id={existing_member} (account={existing_account}). "
+                    f"Cannot reassign to member_id={incoming_member} (account={incoming_account})."
+                )
+
+                logger.error(f"❌ [DEVICE-OWNERSHIP] Row {row_number}: {error_msg}")
+
+                # Mark affected row as VALIDATION_ERROR in staging table
+                update_sql = f"""
+                UPDATE {context.config.staging_table}
+                SET processing_status = 'VALIDATION_ERROR',
+                    error_message = %s,
+                    updated_ts = SYSDATETIMEOFFSET()
+                WHERE file_batch_id = %s
+                  AND device_udi = %s
+                  AND processing_status = 'TRANSFORMING';
+                """
+                db_manager.execute_with_retry(
+                    context.connection,
+                    update_sql,
+                    (error_msg, str(context.file_batch_id), device_udi),
+                )
+
+                # Log to DTC validation error table
+                insert_error_sql = """
+                INSERT INTO engage360.dtc_validation_error_details_row
+                (file_id, row_number, field_name, error_message, created_ts)
+                VALUES (%s, %s, %s, %s, SYSDATETIMEOFFSET());
+                """
+                db_manager.execute_with_retry(
+                    context.connection,
+                    insert_error_sql,
+                    (str(context.file_id), row_number, "device_udi", error_msg),
+                )
+
+            # Raise exception to stop processing
+            raise ValueError(
+                f"Device ownership validation failed: {conflict_count} device(s) have cross-member conflicts. "
+                f"See logs for details. Processing halted to prevent data corruption."
+            )
+
+        logger.info("✅ [DEVICE-OWNERSHIP] No cross-member device conflicts found")
+
         # 🔁 STEP 2: MERGE new devices with service_status='In Service'
         device_sql = f"""
         MERGE engage360.member_devices AS tgt
