@@ -2307,7 +2307,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 m.salesforce_account_number AS incoming_account,
                 md.member_id AS existing_member_id,
                 m_existing.salesforce_account_number AS existing_account,
-                stg.row_number
+                stg.row_number_in_file
             FROM {context.config.staging_table} stg
             JOIN engage360.members m
                 ON m.org_id = stg.org_id
@@ -2328,7 +2328,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             incoming_account,
             existing_member_id,
             existing_account,
-            row_number
+            row_number_in_file
         FROM ExistingDeviceOwners;
         """
 
