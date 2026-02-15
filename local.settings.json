@@ -1,8 +1,0 @@
-{
-  "IsEncrypted": false,
-  "Values": {
-    "FUNCTIONS_WORKER_RUNTIME": "python",
-    "SERVICE_BUS_CONNECTION_STRING": "Endpoint=sb://ioe-postcall-analysis.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=oF3RdVbWT1uvHcZk+Ju2QhMpBJBEORout+ASbHtd4pE="
-  },
-  "ConnectionStrings": {}
-}
