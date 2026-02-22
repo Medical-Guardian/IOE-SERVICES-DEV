@@ -39,7 +39,8 @@ on:
 env:
   AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
   PYTHON_VERSION: '3.12'
-  FUNCTIONAPP_NAME: 'IOE-function'
+  FUNCTIONAPP_NAME: 'IOE-SERVICES-DEV'
+  FUNCTIONAPP_HOSTNAME: 'ioe-services-dev-ckcmgmc6g5gzaxhj.southcentralus-01.azurewebsites.net'
   ARTIFACT_NAME: 'azure-function-app'
 
 jobs:
@@ -572,7 +573,7 @@ jobs:
       contents: read
     environment:
       name: Production
-      url: https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net
+      url: https://${{ env.FUNCTIONAPP_HOSTNAME }}
 
     steps:
       # -----------------------------------------------------------------------
@@ -613,7 +614,7 @@ jobs:
           echo "🚀 Deployment Information"
           echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
           echo "📱 Function App: ${{ env.FUNCTIONAPP_NAME }}"
-          echo "🌐 URL: https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net"
+          echo "🌐 URL: https://${{ env.FUNCTIONAPP_HOSTNAME }}"
           echo "🎰 Slot: Production"
           echo "🐍 Python Version: ${{ env.PYTHON_VERSION }}"
           echo "📝 Commit: ${{ github.sha }}"
@@ -641,7 +642,7 @@ jobs:
 
           MAX_RETRIES=5
           RETRY_COUNT=0
-          HEALTH_URL="https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net/api/"
+          HEALTH_URL="https://${{ env.FUNCTIONAPP_HOSTNAME }}/api/"
 
           echo "🌐 Checking: $HEALTH_URL"
 
@@ -696,7 +697,7 @@ jobs:
           echo "║  Status:       ${{ job.status }}                              "
           echo "║                                                               ║"
           echo "║  URLs:                                                        ║"
-          echo "║  🌐 App: https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net"
+          echo "║  🌐 App: https://${{ env.FUNCTIONAPP_HOSTNAME }}"
           echo "║  🔧 SCM: https://${{ env.FUNCTIONAPP_NAME }}.scm.azurewebsites.net"
           echo "║                                                               ║"
           echo "║  Deployment Info:                                             ║"
