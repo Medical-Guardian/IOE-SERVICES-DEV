@@ -1,14 +1,25 @@
 import logging
+import struct
 import pyodbc
 from typing import List, Dict, Optional, Any
+
+from azure.identity import DefaultAzureCredential
 
 from af_code.bland_ai_webhook.services.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 
+# pyodbc attribute for passing a pre-obtained AAD access token to the ODBC driver
+_SQL_COPT_SS_ACCESS_TOKEN = 1256
+
 
 def _get_pyodbc_connection(conn_str: str) -> pyodbc.Connection:
-    """Create pyodbc connection using Managed Identity via ActiveDirectoryMsi."""
+    """Create pyodbc connection using AAD access token via DefaultAzureCredential.
+
+    Uses the Azure Identity SDK to obtain the token (same path as Key Vault access),
+    then injects it via SQL_COPT_SS_ACCESS_TOKEN. This avoids the ODBC driver's own
+    ActiveDirectoryMsi implementation, which does not work on Azure Functions Consumption plan.
+    """
     params = {}
     for part in conn_str.split(";"):
         if "=" in part:
@@ -18,17 +29,21 @@ def _get_pyodbc_connection(conn_str: str) -> pyodbc.Connection:
     server = params.get("Server", "").replace("tcp:", "").split(",")[0]
     database = params.get("Database", "") or params.get("Initial Catalog", "")
 
+    # Acquire AAD token using the Azure Identity SDK (respects Function MSI endpoint)
+    credential = DefaultAzureCredential()
+    token = credential.get_token("https://database.windows.net/.default")
+    token_bytes = token.token.encode("UTF-16-LE")
+    token_struct = struct.pack(f"<I{len(token_bytes)}s", len(token_bytes), token_bytes)
+
     connection_string = (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
         f"Server=tcp:{server},1433;"
         f"Database={database};"
-        "Authentication=ActiveDirectoryMsi;"
         "Encrypt=yes;"
         "TrustServerCertificate=no;"
         "Connection Timeout=30;"
-        "Login Timeout=30;"
     )
-    return pyodbc.connect(connection_string)
+    return pyodbc.connect(connection_string, attrs_before={_SQL_COPT_SS_ACCESS_TOKEN: token_struct})
 
 
 def _fetchall_as_dicts(cursor: pyodbc.Cursor) -> list[dict]:

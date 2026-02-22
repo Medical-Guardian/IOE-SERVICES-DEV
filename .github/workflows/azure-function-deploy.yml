@@ -641,7 +641,7 @@ jobs:
 
           MAX_RETRIES=5
           RETRY_COUNT=0
-          HEALTH_URL="https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net"
+          HEALTH_URL="https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net/api/"
 
           echo "🌐 Checking: $HEALTH_URL"
 
@@ -649,7 +649,9 @@ jobs:
             echo ""
             echo "🔍 Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES"
 
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              --connect-timeout 15 --max-time 30 "$HEALTH_URL")
+            [ -z "$HTTP_CODE" ] && HTTP_CODE="000"
 
             echo "   HTTP Response Code: $HTTP_CODE"
 
