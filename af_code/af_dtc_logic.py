@@ -54,6 +54,10 @@ from af_code.shared.language_mapper import map_language_code, validate_language_
 from af_code.shared.phone_utils import standardize_phone
 from af_code.shared.schema_config import IOE_SCHEMA, IOE_SCHEMA_STG
 
+# DTC blob container — matches the blob trigger path "fs-dtc/landing/{name}"
+# Override via Azure App Setting DTC_CONTAINER_NAME if needed (no redeploy required)
+DTC_CONTAINER_NAME: str = os.environ.get("DTC_CONTAINER_NAME", "fs-dtc")
+
 # MODULE LOAD VERIFICATION - This will execute when the module is first imported
 logger = logging.getLogger(__name__)
 logger.info("🔄 [MODULE-LOAD] af_dtc_logic.py loading - VERSION: 2025-10-16-DEBUG-v2")
@@ -581,9 +585,9 @@ def extract(file_path: str, context: DTCProcessingContext) -> Tuple[pd.DataFrame
 
         # Read CSV file
         # df = pd.read_csv(file_path, dtype=str, keep_default_na=False)
-        # df = download_blob_as_dataframe(f"{source_filename}", container_name=os.environ["AZURE_CONTAINER_NAME"])
+        # df = download_blob_as_dataframe(f"{source_filename}", container_name=DTC_CONTAINER_NAME)
         df = download_blob_as_dataframe(
-            f"landing/{context.source_filename}", os.environ["AZURE_CONTAINER_NAME"]
+            f"landing/{context.source_filename}", DTC_CONTAINER_NAME
         )
 
         # Replace empty strings with None for proper NULL handling
@@ -2871,7 +2875,7 @@ def process_dtc_file_complete(
                     source_filename,
                     "landing",
                     "staging",
-                    os.environ["AZURE_CONTAINER_NAME"],
+                    DTC_CONTAINER_NAME,
                     logger,
                 )
             except Exception as move_error:
@@ -2917,7 +2921,7 @@ def process_dtc_file_complete(
                     source_filename,
                     "staging",
                     "processed",
-                    os.environ["AZURE_CONTAINER_NAME"],
+                    DTC_CONTAINER_NAME,
                     logger,
                 )
             except Exception as move_error:
@@ -3002,7 +3006,7 @@ def process_dtc_file_complete(
                 source_filename,
                 "staging",
                 "error",
-                os.environ["AZURE_CONTAINER_NAME"],
+                DTC_CONTAINER_NAME,
                 logger,
             )
         except Exception as mv:
