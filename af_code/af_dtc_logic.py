@@ -460,10 +460,9 @@ def proper_case(name: str) -> Optional[str]:
 
 # Database Connection Management
 # ==============================
-def _get_pyodbc_connection() -> pyodbc.Connection:
+def _get_pyodbc_connection(conn_str: str) -> pyodbc.Connection:
     """Create pyodbc connection using Managed Identity via ActiveDirectoryMsi."""
-    conn_str = os.environ.get("SqlConnectionString", "")
-
+    # conn_str is passed in from DatabaseManager (sourced from Key Vault)
     params = {}
     for part in conn_str.split(";"):
         if "=" in part:
@@ -475,7 +474,7 @@ def _get_pyodbc_connection() -> pyodbc.Connection:
 
     connection_string = (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
-        f"Server={server};"
+        f"Server=tcp:{server},1433;"
         f"Database={database};"
         "Authentication=ActiveDirectoryMsi;"
         "Encrypt=yes;"
@@ -492,6 +491,7 @@ class DatabaseManager:
 
     def __init__(self, secret_or_conn: str = "", key_vault_url_env: str = "KEY_VAULT_URL"):
         self.logger = logging.getLogger("dtc_file_processor")
+        self.conn_str = secret_or_conn
         self.logger.debug("Initialized with pyodbc Managed Identity connection.")
 
     @retry(
@@ -503,7 +503,7 @@ class DatabaseManager:
         """Establish and return a DB connection using pyodbc."""
         try:
             self.logger.info("Attempting database connection with pyodbc (Managed Identity)...")
-            conn = _get_pyodbc_connection()
+            conn = _get_pyodbc_connection(self.conn_str)
             conn.autocommit = False
             self.logger.info("Database connection established successfully")
             return conn
