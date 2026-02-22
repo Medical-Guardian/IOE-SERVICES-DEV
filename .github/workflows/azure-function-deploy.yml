@@ -602,7 +602,6 @@ jobs:
         id: deploy
         with:
           app-name: ${{ env.FUNCTIONAPP_NAME }}
-          slot-name: 'Production'
           package: release.zip
           publish-profile: ${{ secrets.AZURE_DEV_FUNCTION_PUBLISH_PROFILE }}
           scm-do-build-during-deployment: true
