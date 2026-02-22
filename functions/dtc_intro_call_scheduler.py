@@ -6,6 +6,7 @@ import json
 # Import the main logic function and services from the af_code directory
 from af_code.af_dtc_intro_call.main_logic import create_bland_ai_batch_call
 from af_code.af_dtc_intro_call.services.database_service import DatabaseService
+from af_code.bland_ai_webhook.services.config_manager import ConfigManager
 from af_code.af_dtc_intro_call.services.member_service import MemberQualificationService
 from af_code.af_dtc_intro_call.services.blandai_service import BlandAIService
 
@@ -21,7 +22,7 @@ def timer_dtc_intro_call(timer: func.TimerRequest) -> None:
 
     try:
         # Initialize services
-        db_service = DatabaseService()
+        db_service = DatabaseService(ConfigManager())
         member_service = MemberQualificationService(db_service)
         bland_service = BlandAIService(db_service)
 
@@ -57,7 +58,7 @@ def http_dtc_intro_call(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         # Initialize services
-        db_service = DatabaseService()
+        db_service = DatabaseService(ConfigManager())
         member_service = MemberQualificationService(db_service)
         bland_service = BlandAIService(db_service)
 

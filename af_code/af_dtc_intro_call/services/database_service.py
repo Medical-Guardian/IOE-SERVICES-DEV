@@ -1,15 +1,14 @@
 import logging
 import pyodbc
-import os
 from typing import List, Dict, Optional, Any
+
+from af_code.bland_ai_webhook.services.config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 
 
-def _get_pyodbc_connection() -> pyodbc.Connection:
+def _get_pyodbc_connection(conn_str: str) -> pyodbc.Connection:
     """Create pyodbc connection using Managed Identity via ActiveDirectoryMsi."""
-    conn_str = os.environ.get("SqlConnectionString", "")
-
     params = {}
     for part in conn_str.split(";"):
         if "=" in part:
@@ -21,7 +20,7 @@ def _get_pyodbc_connection() -> pyodbc.Connection:
 
     connection_string = (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
-        f"Server={server};"
+        f"Server=tcp:{server},1433;"
         f"Database={database};"
         "Authentication=ActiveDirectoryMsi;"
         "Encrypt=yes;"
@@ -43,7 +42,8 @@ def _fetchall_as_dicts(cursor: pyodbc.Cursor) -> list[dict]:
 class DatabaseService:
     """Service for database operations using pyodbc with Managed Identity."""
 
-    def __init__(self):
+    def __init__(self, config_manager: ConfigManager):
+        self.config_manager = config_manager
         logger.info(
             "🔧 [DatabaseService] Initializing database service with pyodbc (Managed Identity)"
         )
@@ -56,7 +56,8 @@ class DatabaseService:
 
         conn = None
         try:
-            conn = _get_pyodbc_connection()
+            conn_str = self.config_manager.get_db_connection_string()
+            conn = _get_pyodbc_connection(conn_str)
             conn.autocommit = True
             with conn.cursor() as cursor:
                 cursor.execute(query, params if params else None)

@@ -9,6 +9,7 @@ import json
 from af_code.af_dtc_intro_call.main_logic import create_bland_ai_batch_call
 from af_code.af_dtc_intro_call.services.database_service import DatabaseService
 from af_code.af_dtc_intro_call.services.member_service import MemberQualificationService
+from af_code.bland_ai_webhook.services.config_manager import ConfigManager
 
 # --- CHANGE: Import the new, specialized service for the wellness check ---
 from af_code.af_dtc_wellness_check.services.blandai_service_wellness import (
@@ -34,7 +35,7 @@ def timer_dtc_wellness_check(timer: func.TimerRequest) -> None:
 
     try:
         # Initialize services
-        db_service = DatabaseService()
+        db_service = DatabaseService(ConfigManager())
         member_service = MemberQualificationService(db_service)
         # --- CHANGE: Instantiate the new BlandAIServiceWellness ---
         bland_service = BlandAIServiceWellness(db_service)
@@ -73,7 +74,7 @@ def http_dtc_wellness_check(req: func.HttpRequest) -> func.HttpResponse:
             )
 
         # Initialize services
-        db_service = DatabaseService()
+        db_service = DatabaseService(ConfigManager())
         member_service = MemberQualificationService(db_service)
         # --- CHANGE: Instantiate the new BlandAIServiceWellness ---
         bland_service = BlandAIServiceWellness(db_service)
