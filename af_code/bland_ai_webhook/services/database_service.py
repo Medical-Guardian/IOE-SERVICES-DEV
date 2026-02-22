@@ -13,13 +13,20 @@ def _get_pyodbc_connection(conn_str: str) -> pyodbc.Connection:
     Matches the working connection approach in Test_AI-dbdev/function_app.py.
     """
     params = {}
+    raw_server = ""
     for part in conn_str.split(";"):
+        part = part.strip()
         if "=" in part:
             key, value = part.split("=", 1)
             params[key.strip()] = value.strip()
+        elif part.startswith("tcp:") and not raw_server:
+            # Capture bare tcp:host,port segment (no "Server=" key prefix)
+            raw_server = part
 
-    server = params.get("Server", "").replace("tcp:", "").split(",")[0]
-    database = params.get("Database", "")
+    # Prefer explicit "Server=" key; fall back to the bare tcp: segment
+    server = (params.get("Server", "") or raw_server).replace("tcp:", "").split(",")[0]
+    # Support both "Database=" (ODBC) and "Initial Catalog=" (ADO.NET) key names
+    database = params.get("Database", "") or params.get("Initial Catalog", "")
 
     logger.info(f"🔌 [DB-SERVICE] Connecting to server='{server}' database='{database}'")
 
