@@ -75,7 +75,7 @@ def get_campaign_id_from_csv(blob_content: bytes) -> tuple:
 
 
 @bp.function_name(name="ProcessDeviceActivationBlob")
-@bp.blob_trigger(arg_name="myblob", path="fs-ops/landing/{name}", connection="AzureWebJobsStorage")
+@bp.blob_trigger(arg_name="myblob", path="fs-ops/landing/{name}", connection="BLOB_STORAGE_CONNECTION")
 def process_blob(myblob: func.InputStream):
     """
     Azure Function blob trigger for Device Activation CSV files.

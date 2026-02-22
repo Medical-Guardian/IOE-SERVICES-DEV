@@ -23,7 +23,7 @@ operations_device_activation_bp = func.Blueprint()
 
 @operations_device_activation_bp.function_name(name="operations_device_activation_file_processor")
 @operations_device_activation_bp.blob_trigger(
-    arg_name="blob", path="fs-ops/landing/{name}", connection="AzureWebJobsStorage"
+    arg_name="blob", path="fs-ops/landing/{name}", connection="BLOB_STORAGE_CONNECTION"
 )
 def operations_device_activation_file_processor(blob: func.InputStream):
     """

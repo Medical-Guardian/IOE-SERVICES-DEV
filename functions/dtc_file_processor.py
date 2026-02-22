@@ -8,7 +8,7 @@ bp = func.Blueprint()
 
 
 @bp.function_name(name="ProcessDTCCampaignBlob")
-@bp.blob_trigger(arg_name="myblob", path="fs-dtc/landing/{name}", connection="AzureWebJobsStorage")
+@bp.blob_trigger(arg_name="myblob", path="fs-dtc/landing/{name}", connection="BLOB_STORAGE_CONNECTION")
 def process_blob(myblob: func.InputStream):
     """
     Triggered by a new file in the 'landing' folder.

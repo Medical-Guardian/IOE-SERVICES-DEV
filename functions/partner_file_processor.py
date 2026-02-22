@@ -10,7 +10,7 @@ bp = func.Blueprint()
 @bp.blob_trigger(
     arg_name="myblob",
     path="fs-partner/landing/{name}",
-    connection="AzureWebJobsStorage",
+    connection="BLOB_STORAGE_CONNECTION",
 )
 def process_partner_campaign_blob(myblob: func.InputStream):
     """
