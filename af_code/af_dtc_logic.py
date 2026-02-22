@@ -464,13 +464,21 @@ def _get_pyodbc_connection(conn_str: str) -> pyodbc.Connection:
     """Create pyodbc connection using Managed Identity via ActiveDirectoryMsi."""
     # conn_str is passed in from DatabaseManager (sourced from Key Vault)
     params = {}
+    raw_server = ""
     for part in conn_str.split(";"):
+        part = part.strip()
         if "=" in part:
             key, value = part.split("=", 1)
             params[key.strip()] = value.strip()
+        elif part.startswith("tcp:") and not raw_server:
+            # Capture bare tcp:host,port segment (no "Server=" key prefix)
+            raw_server = part
 
-    server = params.get("Server", "").replace("tcp:", "").split(",")[0]
+    # Prefer explicit "Server=" key; fall back to the bare tcp: segment
+    server = (params.get("Server", "") or raw_server).replace("tcp:", "").split(",")[0]
     database = params.get("Database", "") or params.get("Initial Catalog", "")
+
+    logger.info(f"🔌 [DTC-DB] Connecting to server='{server}' database='{database}'")
 
     connection_string = (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
@@ -482,7 +490,9 @@ def _get_pyodbc_connection(conn_str: str) -> pyodbc.Connection:
         "Connection Timeout=30;"
         "Login Timeout=30;"
     )
-    return pyodbc.connect(connection_string)
+    conn = pyodbc.connect(connection_string)
+    logger.info(f"✅ [DTC-DB] TCP connection established to '{server}'")
+    return conn
 
 
 class DatabaseManager:
