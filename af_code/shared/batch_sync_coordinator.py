@@ -230,10 +230,11 @@ class BatchSyncCoordinator:
         Acquire distributed lock using database ACID properties
         """
         query = f"""
+            SET NOCOUNT ON;
             DECLARE @lock_acquired BIT = 0;
-            
+
             -- Clean up expired locks first
-            DELETE FROM {IOE_SCHEMA}.system_locks 
+            DELETE FROM {IOE_SCHEMA}.system_locks
             WHERE lock_expiry <= SYSDATETIMEOFFSET();
             
             -- Try to acquire new lock
@@ -267,6 +268,11 @@ class BatchSyncCoordinator:
                 fetch_results=True,
             )
 
+            if not result:
+                logger.warning(
+                    "⚠️ [BATCH-COORDINATOR] Lock query returned no rows — treating as not acquired"
+                )
+                return False
             acquired = result[0]["acquired"] == 1
 
             if acquired:

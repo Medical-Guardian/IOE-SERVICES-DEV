@@ -336,6 +336,7 @@ class CampaignClosureService:
             bool: True if lock acquired, False if already held
         """
         query = f"""
+            SET NOCOUNT ON;
             DECLARE @lock_acquired BIT = 0;
 
             -- Clean up expired locks first
@@ -373,6 +374,11 @@ class CampaignClosureService:
                 fetch_results=True,
             )
 
+            if not result:
+                logger.warning(
+                    "⚠️ [DA-CLOSURE-SVC] Lock query returned no rows — treating as not acquired"
+                )
+                return False
             acquired = result[0]["acquired"] == 1
 
             if acquired:
