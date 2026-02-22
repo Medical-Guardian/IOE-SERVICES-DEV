@@ -3,7 +3,7 @@ Unit tests for business_hours_utils.py
 
 Tests holiday detection, business day calculations, and dual-timezone business hours validation.
 
-BusinessCaseID: BC-TBD (Device Activation System)
+BusinessCaseID: BC-DA-003 (Business Hours Tests)
 """
 
 import pytest

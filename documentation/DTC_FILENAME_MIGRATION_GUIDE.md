@@ -189,10 +189,10 @@ Both patterns enforce strict calendar date validation:
 
 **Verification Steps:**
 1. Check Azure Function logs for expected warnings/errors
-2. Query `engage360_stg.file_processing_log` table:
+2. Query `ioe_stg.file_processing_log` table:
    ```sql
    SELECT TOP 10 source_filename, current_status, created_ts
-   FROM engage360_stg.file_processing_log
+   FROM ioe_stg.file_processing_log
    ORDER BY created_ts DESC
    ```
 3. Verify files moved to `processed/` or `error/` folders in blob storage
@@ -457,7 +457,7 @@ traces
 - `CSV_TESTING_GUIDE.md` - File processing testing procedures
 - `DTC_CALL_FLOW.md` - DTC wellness campaign workflow
 - `DTC_DATABASE_OPERATIONS_COMPLETE_FLOW.md` - Database operations
-- `ENGAGE360_TABLE_USAGE_REFERENCE.md` - Database schema reference
+- `IOE_TABLE_USAGE_REFERENCE.md` - Database schema reference
 
 ---
 
@@ -466,7 +466,7 @@ traces
 **No schema changes required.**
 
 The `source_filename` column stores filenames as-is (VARCHAR):
-- Table: `engage360_stg.file_processing_log`
+- Table: `ioe_stg.file_processing_log`
 - Column: `source_filename VARCHAR(500)`
 - Impact: None - column already supports both patterns
 
@@ -482,7 +482,7 @@ SELECT
         WHEN source_filename LIKE 'MedicalGuardian_DTCWellness_%_Delta.csv' THEN 'LEGACY'
         ELSE 'UNKNOWN'
     END AS pattern_type
-FROM engage360_stg.file_processing_log
+FROM ioe_stg.file_processing_log
 WHERE file_type = 'DTC_WELLNESS'
     AND created_ts >= DATEADD(day, -7, GETDATE())
 ORDER BY created_ts DESC

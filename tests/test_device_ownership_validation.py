@@ -14,6 +14,8 @@ from datetime import datetime
 from unittest.mock import Mock, MagicMock, patch
 import pandas as pd
 
+from af_code.shared.schema_config import IOE_SCHEMA, IOE_SCHEMA_STG
+
 
 # ============================================================================
 # Test Data Fixtures
@@ -94,7 +96,7 @@ def test_dtc_device_ownership_conflict(test_member_a, test_member_b, test_device
     mock_context = Mock()
     mock_context.file_batch_id = uuid.uuid4()
     mock_context.file_id = uuid.uuid4()
-    mock_context.config.staging_table = "engage360_stg.stg_dtc_wellness_delta"
+    mock_context.config.staging_table = f"{IOE_SCHEMA_STG}.stg_dtc_wellness_delta"
     mock_context.connection = Mock()
 
     # Test: Validation query should detect conflict
@@ -110,12 +112,12 @@ def test_dtc_device_ownership_conflict(test_member_a, test_member_b, test_device
                 m_existing.salesforce_account_number AS existing_account,
                 stg.row_number
             FROM {mock_context.config.staging_table} stg
-            JOIN engage360.members m
+            JOIN {IOE_SCHEMA}.members m
                 ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
-            JOIN engage360.member_devices md
+            JOIN {IOE_SCHEMA}.member_devices md
                 ON stg.device_udi = md.device_id
-            JOIN engage360.members m_existing
+            JOIN {IOE_SCHEMA}.members m_existing
                 ON md.member_id = m_existing.member_id
             WHERE stg.file_batch_id = %s
               AND stg.processing_status = 'TRANSFORMING'
@@ -205,8 +207,8 @@ def test_device_activation_ownership_conflict(test_member_a, test_member_b, test
         md.device_id AS device_udi,
         md.member_id AS existing_member_id,
         m.salesforce_account_number AS existing_account
-    FROM engage360.member_devices md
-    JOIN engage360.members m ON md.member_id = m.member_id
+    FROM {IOE_SCHEMA}.member_devices md
+    JOIN {IOE_SCHEMA}.members m ON md.member_id = m.member_id
     WHERE md.device_id IN ({placeholders});
     """
 
@@ -232,9 +234,9 @@ def test_device_activation_ownership_conflict(test_member_a, test_member_b, test
                 )
                 df.at[idx, "validation_status"] = "FAILED"
                 df.at[idx, "error_message"] = error_msg
-                df.at[
-                    idx, "error_details"
-                ] = f"DEVICE_OWNERSHIP_CONFLICT|existing_member={existing_member_id}"
+                df.at[idx, "error_details"] = (
+                    f"DEVICE_OWNERSHIP_CONFLICT|existing_member={existing_member_id}"
+                )
 
     # Verify results
     assert df.at[0, "validation_status"] == "FAILED"
@@ -292,7 +294,9 @@ def test_device_ownership_no_conflict_same_member(test_member_a, test_device):
     device_udis = validated_rows["device_udi"].unique().tolist()
 
     cursor = mock_context.db_service.execute_query(
-        "SELECT * FROM member_devices WHERE device_id IN (%s)", tuple(device_udis), fetch_results=True
+        "SELECT * FROM member_devices WHERE device_id IN (%s)",
+        tuple(device_udis),
+        fetch_results=True,
     )
     existing_devices = cursor.fetchall()
 
@@ -361,7 +365,9 @@ def test_device_ownership_no_conflict_new_device(test_member_b):
     device_udis = validated_rows["device_udi"].unique().tolist()
 
     cursor = mock_context.db_service.execute_query(
-        "SELECT * FROM member_devices WHERE device_id IN (%s)", tuple(device_udis), fetch_results=True
+        "SELECT * FROM member_devices WHERE device_id IN (%s)",
+        tuple(device_udis),
+        fetch_results=True,
     )
     existing_devices = cursor.fetchall()
 
@@ -415,7 +421,7 @@ def test_device_ownership_error_logging(test_member_a, test_member_b, test_devic
     mock_context = Mock()
     mock_context.file_batch_id = uuid.uuid4()
     mock_context.file_id = uuid.uuid4()
-    mock_context.config.staging_table = "engage360_stg.stg_dtc_wellness_delta"
+    mock_context.config.staging_table = f"{IOE_SCHEMA_STG}.stg_dtc_wellness_delta"
     mock_context.connection = Mock()
 
     # Simulate error logging
@@ -433,8 +439,8 @@ def test_device_ownership_error_logging(test_member_a, test_member_b, test_devic
         )
 
         # Log to validation error table
-        insert_error_sql = """
-        INSERT INTO engage360.dtc_validation_error_details_row
+        insert_error_sql = f"""
+        INSERT INTO {IOE_SCHEMA}.dtc_validation_error_details_row
         (file_id, row_number, field_name, error_message, created_ts)
         VALUES (%s, %s, %s, %s, SYSDATETIMEOFFSET());
         """

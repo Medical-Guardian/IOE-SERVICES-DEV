@@ -3,7 +3,7 @@ Unit tests for Device Activation CSV file processing logic.
 
 Tests validation functions, ETL pipeline phases, and business day calculations.
 
-BusinessCaseID: BC-TBD (Device Activation System)
+BusinessCaseID: BC-DA-002 (File Processing Tests)
 Updated: 2025-12-15 - Updated for 27-column CSV format and new enrollment logic
 """
 
@@ -116,29 +116,67 @@ class TestPhoneNumberValidation:
         assert standardize_phone_device_activation("555123") is None, "6 digits"
         assert standardize_phone_device_activation("5551234") is None, "7 digits"
         assert standardize_phone_device_activation("55512345") is None, "8 digits"
-        assert standardize_phone_device_activation("555123456") is None, "9 digits - REJECTED (< 10)"
+        assert (
+            standardize_phone_device_activation("555123456") is None
+        ), "9 digits - REJECTED (< 10)"
 
         # 10 digits: ALL should add +1 prefix (NEW RULE - previously rejected)
-        assert standardize_phone_device_activation("2551234567") == "+12551234567", "10 digits, area code 2"
-        assert standardize_phone_device_activation("3551234567") == "+13551234567", "10 digits, area code 3"
-        assert standardize_phone_device_activation("4551234567") == "+14551234567", "10 digits, area code 4"
-        assert standardize_phone_device_activation("5551234567") == "+15551234567", "10 digits, area code 5"
-        assert standardize_phone_device_activation("6551234567") == "+16551234567", "10 digits, area code 6"
-        assert standardize_phone_device_activation("7551234567") == "+17551234567", "10 digits, area code 7"
-        assert standardize_phone_device_activation("8551234567") == "+18551234567", "10 digits, area code 8"
-        assert standardize_phone_device_activation("9551234567") == "+19551234567", "10 digits, area code 9"
-        assert standardize_phone_device_activation("0551234567") == "+10551234567", "10 digits, area code 0 - ACCEPTED (add +1)"
-        assert standardize_phone_device_activation("1551234567") == "+11551234567", "10 digits, area code 1 - ACCEPTED (add +1)"
+        assert (
+            standardize_phone_device_activation("2551234567") == "+12551234567"
+        ), "10 digits, area code 2"
+        assert (
+            standardize_phone_device_activation("3551234567") == "+13551234567"
+        ), "10 digits, area code 3"
+        assert (
+            standardize_phone_device_activation("4551234567") == "+14551234567"
+        ), "10 digits, area code 4"
+        assert (
+            standardize_phone_device_activation("5551234567") == "+15551234567"
+        ), "10 digits, area code 5"
+        assert (
+            standardize_phone_device_activation("6551234567") == "+16551234567"
+        ), "10 digits, area code 6"
+        assert (
+            standardize_phone_device_activation("7551234567") == "+17551234567"
+        ), "10 digits, area code 7"
+        assert (
+            standardize_phone_device_activation("8551234567") == "+18551234567"
+        ), "10 digits, area code 8"
+        assert (
+            standardize_phone_device_activation("9551234567") == "+19551234567"
+        ), "10 digits, area code 9"
+        assert (
+            standardize_phone_device_activation("0551234567") == "+10551234567"
+        ), "10 digits, area code 0 - ACCEPTED (add +1)"
+        assert (
+            standardize_phone_device_activation("1551234567") == "+11551234567"
+        ), "10 digits, area code 1 - ACCEPTED (add +1)"
 
         # 11 digits: Valid if starts with 1, then add + prefix
-        assert standardize_phone_device_activation("12551234567") == "+12551234567", "11 digits, country 1, area 2"
-        assert standardize_phone_device_activation("13551234567") == "+13551234567", "11 digits, country 1, area 3"
-        assert standardize_phone_device_activation("14551234567") == "+14551234567", "11 digits, country 1, area 4"
-        assert standardize_phone_device_activation("15551234567") == "+15551234567", "11 digits, country 1, area 5"
-        assert standardize_phone_device_activation("16551234567") == "+16551234567", "11 digits, country 1, area 6"
-        assert standardize_phone_device_activation("17551234567") == "+17551234567", "11 digits, country 1, area 7"
-        assert standardize_phone_device_activation("18551234567") == "+18551234567", "11 digits, country 1, area 8"
-        assert standardize_phone_device_activation("19551234567") == "+19551234567", "11 digits, country 1, area 9"
+        assert (
+            standardize_phone_device_activation("12551234567") == "+12551234567"
+        ), "11 digits, country 1, area 2"
+        assert (
+            standardize_phone_device_activation("13551234567") == "+13551234567"
+        ), "11 digits, country 1, area 3"
+        assert (
+            standardize_phone_device_activation("14551234567") == "+14551234567"
+        ), "11 digits, country 1, area 4"
+        assert (
+            standardize_phone_device_activation("15551234567") == "+15551234567"
+        ), "11 digits, country 1, area 5"
+        assert (
+            standardize_phone_device_activation("16551234567") == "+16551234567"
+        ), "11 digits, country 1, area 6"
+        assert (
+            standardize_phone_device_activation("17551234567") == "+17551234567"
+        ), "11 digits, country 1, area 7"
+        assert (
+            standardize_phone_device_activation("18551234567") == "+18551234567"
+        ), "11 digits, country 1, area 8"
+        assert (
+            standardize_phone_device_activation("19551234567") == "+19551234567"
+        ), "11 digits, country 1, area 9"
         # 11-digit numbers starting with 1 but invalid area code - still accepted (just adds +)
         assert (
             standardize_phone_device_activation("10551234567") == "+10551234567"
@@ -161,8 +199,12 @@ class TestPhoneNumberValidation:
         assert (
             standardize_phone_device_activation("195551234567") is None
         ), "12 digits starting with 1 - INVALID (US overlength)"
-        assert standardize_phone_device_activation("441234567890") == "+441234567890", "12 digits (UK) - VALID"
-        assert standardize_phone_device_activation("521234567890") == "+521234567890", "12 digits (Mexico) - VALID"
+        assert (
+            standardize_phone_device_activation("441234567890") == "+441234567890"
+        ), "12 digits (UK) - VALID"
+        assert (
+            standardize_phone_device_activation("521234567890") == "+521234567890"
+        ), "12 digits (Mexico) - VALID"
 
         # 13 digits: Special case - if starts with 001, accept as-is (no +), otherwise add +
         assert (
@@ -171,14 +213,26 @@ class TestPhoneNumberValidation:
         assert (
             standardize_phone_device_activation("1555123456789") is None
         ), "13 digits starting with 1 - INVALID (US overlength)"
-        assert standardize_phone_device_activation("8612345678901") == "+8612345678901", "13 digits (China) - VALID (add +)"
-        assert standardize_phone_device_activation("86123456789012") == "+86123456789012", "14 digits - VALID"
-        assert standardize_phone_device_activation("861234567890123") == "+861234567890123", "15 digits - VALID"
+        assert (
+            standardize_phone_device_activation("8612345678901") == "+8612345678901"
+        ), "13 digits (China) - VALID (add +)"
+        assert (
+            standardize_phone_device_activation("86123456789012") == "+86123456789012"
+        ), "14 digits - VALID"
+        assert (
+            standardize_phone_device_activation("861234567890123") == "+861234567890123"
+        ), "15 digits - VALID"
 
         # 16+ digits: Too long, should reject
-        assert standardize_phone_device_activation("8612345678901234") is None, "16 digits - too long"
-        assert standardize_phone_device_activation("86123456789012345") is None, "17 digits - too long"
-        assert standardize_phone_device_activation("12345678901234567890") is None, "20 digits - too long"
+        assert (
+            standardize_phone_device_activation("8612345678901234") is None
+        ), "16 digits - too long"
+        assert (
+            standardize_phone_device_activation("86123456789012345") is None
+        ), "17 digits - too long"
+        assert (
+            standardize_phone_device_activation("12345678901234567890") is None
+        ), "20 digits - too long"
 
     def test_standardize_phone_invalid_area_codes(self):
         """Test EXACT scenarios - Device Activation rules"""
@@ -198,17 +252,35 @@ class TestPhoneNumberValidation:
         assert result == "+11812365141", "E.164 format with 11 digits - ACCEPTED AS-IS"
 
         # Additional area code variations - 10 digits should add +1 (NEW RULE)
-        assert standardize_phone_device_activation("1005551234") == "+11005551234", "Area code 100 - 10 digits, add +1"
-        assert standardize_phone_device_activation("1115551234") == "+11115551234", "Area code 111 - 10 digits, add +1"
-        assert standardize_phone_device_activation("1235551234") == "+11235551234", "Area code 123 - 10 digits, add +1"
-        assert standardize_phone_device_activation("1555551234") == "+11555551234", "Area code 155 - 10 digits, add +1"
-        assert standardize_phone_device_activation("1995551234") == "+11995551234", "Area code 199 - 10 digits, add +1"
+        assert (
+            standardize_phone_device_activation("1005551234") == "+11005551234"
+        ), "Area code 100 - 10 digits, add +1"
+        assert (
+            standardize_phone_device_activation("1115551234") == "+11115551234"
+        ), "Area code 111 - 10 digits, add +1"
+        assert (
+            standardize_phone_device_activation("1235551234") == "+11235551234"
+        ), "Area code 123 - 10 digits, add +1"
+        assert (
+            standardize_phone_device_activation("1555551234") == "+11555551234"
+        ), "Area code 155 - 10 digits, add +1"
+        assert (
+            standardize_phone_device_activation("1995551234") == "+11995551234"
+        ), "Area code 199 - 10 digits, add +1"
 
         # Area code 0 variations - 10 digits should add +1 (NEW RULE)
-        assert standardize_phone_device_activation("0005551234") == "+10005551234", "Area code 000 - 10 digits, add +1"
-        assert standardize_phone_device_activation("0115551234") == "+10115551234", "Area code 011 - 10 digits, add +1"
-        assert standardize_phone_device_activation("0555551234") == "+10555551234", "Area code 055 - 10 digits, add +1"
-        assert standardize_phone_device_activation("0995551234") == "+10995551234", "Area code 099 - 10 digits, add +1"
+        assert (
+            standardize_phone_device_activation("0005551234") == "+10005551234"
+        ), "Area code 000 - 10 digits, add +1"
+        assert (
+            standardize_phone_device_activation("0115551234") == "+10115551234"
+        ), "Area code 011 - 10 digits, add +1"
+        assert (
+            standardize_phone_device_activation("0555551234") == "+10555551234"
+        ), "Area code 055 - 10 digits, add +1"
+        assert (
+            standardize_phone_device_activation("0995551234") == "+10995551234"
+        ), "Area code 099 - 10 digits, add +1"
 
     def test_standardize_phone_all_valid_area_codes(self):
         """Test EVERY valid area code starting digit (2-9)"""
@@ -328,7 +400,9 @@ class TestPhoneNumberValidation:
 
         # Format 4: With spaces (10 digits - should add +1)
         assert standardize_phone_device_activation("555 123 4567") == "+15551234567"
-        assert standardize_phone_device_activation("555  123  4567") == "+15551234567"  # Multiple spaces
+        assert (
+            standardize_phone_device_activation("555  123  4567") == "+15551234567"
+        )  # Multiple spaces
 
         # Format 5: With dots (10 digits - should add +1)
         assert standardize_phone_device_activation("555.123.4567") == "+15551234567"
@@ -341,8 +415,12 @@ class TestPhoneNumberValidation:
         assert standardize_phone_device_activation("+1 555 123 4567") == "+15551234567"
         assert standardize_phone_device_activation("+1-555-123-4567") == "+15551234567"
         assert standardize_phone_device_activation("+1 (555) 123-4567") == "+15551234567"
-        assert standardize_phone_device_activation("1-555-123-4567") == "+15551234567"  # 11 digits, add +
-        assert standardize_phone_device_activation("1 (555) 123-4567") == "+15551234567"  # 11 digits, add +
+        assert (
+            standardize_phone_device_activation("1-555-123-4567") == "+15551234567"
+        )  # 11 digits, add +
+        assert (
+            standardize_phone_device_activation("1 (555) 123-4567") == "+15551234567"
+        )  # 11 digits, add +
 
         # Format 8: 13 digits starting with 001 - should accept as-is (no +)
         result = standardize_phone_device_activation("0015551234567")
@@ -363,7 +441,9 @@ class TestPhoneNumberValidation:
         # Special characters (should be stripped)
         assert standardize_phone_device_activation("#555-123-4567") == "+15551234567", "Hash symbol"
         assert standardize_phone_device_activation("*555-123-4567") == "+15551234567", "Asterisk"
-        assert standardize_phone_device_activation("ext. 555-123-4567") == "+15551234567", "Text prefix"
+        assert (
+            standardize_phone_device_activation("ext. 555-123-4567") == "+15551234567"
+        ), "Text prefix"
         # Note: Extension digits become part of number (13 digits = international)
         result = standardize_phone_device_activation("555-123-4567 x123")
         assert result == "+5551234567123", "Extension digits included as international"
@@ -380,12 +460,20 @@ class TestPhoneNumberValidation:
         assert standardize_phone_device_activation("2222222222") == "+12222222222", "All 2s"
         assert standardize_phone_device_activation("5555555555") == "+15555555555", "All 5s"
         assert standardize_phone_device_activation("9999999999") == "+19999999999", "All 9s"
-        assert standardize_phone_device_activation("0000000000") is None, "All 0s - invalid area code"
-        assert standardize_phone_device_activation("1111111111") is None, "All 1s - invalid area code"
+        assert (
+            standardize_phone_device_activation("0000000000") is None
+        ), "All 0s - invalid area code"
+        assert (
+            standardize_phone_device_activation("1111111111") is None
+        ), "All 1s - invalid area code"
 
         # Boundary patterns
-        assert standardize_phone_device_activation("2000000000") == "+12000000000", "Area 200, rest zeros"
-        assert standardize_phone_device_activation("9999999999") == "+19999999999", "Area 999, rest nines"
+        assert (
+            standardize_phone_device_activation("2000000000") == "+12000000000"
+        ), "Area 200, rest zeros"
+        assert (
+            standardize_phone_device_activation("9999999999") == "+19999999999"
+        ), "Area 999, rest nines"
 
     def test_standardize_phone_international_numbers(self):
         """Test international phone number handling"""
@@ -493,9 +581,15 @@ def test_standardize_phone_overlength_us_numbers():
     """
 
     # VALID US numbers (EXACTLY 11 digits)
-    assert standardize_phone_device_activation("+15551234567") == "+15551234567", "Valid US: 11 digits (1 + 10)"
-    assert standardize_phone_device_activation("+14155551234") == "+14155551234", "Valid US: 11 digits (1 + 10)"
-    assert standardize_phone_device_activation("+12025551234") == "+12025551234", "Valid US: 11 digits (1 + 10)"
+    assert (
+        standardize_phone_device_activation("+15551234567") == "+15551234567"
+    ), "Valid US: 11 digits (1 + 10)"
+    assert (
+        standardize_phone_device_activation("+14155551234") == "+14155551234"
+    ), "Valid US: 11 digits (1 + 10)"
+    assert (
+        standardize_phone_device_activation("+12025551234") == "+12025551234"
+    ), "Valid US: 11 digits (1 + 10)"
 
     # INVALID US numbers (12 digits - QA REPORTED BUG)
     assert (
@@ -528,12 +622,18 @@ def test_standardize_phone_overlength_us_numbers():
         standardize_phone_device_activation("+1555123456") is None
     ), "10 digits: +1 plus 9 digits - TOO SHORT for US (QA Bug #1)"
 
-    assert standardize_phone_device_activation("+155512345") is None, "9 digits: +1 plus 8 digits - TOO SHORT for US"
+    assert (
+        standardize_phone_device_activation("+155512345") is None
+    ), "9 digits: +1 plus 8 digits - TOO SHORT for US"
 
     # Edge case: +1 followed by invalid area code + extra digits
-    assert standardize_phone_device_activation("+11555123456") is None, "12 digits with invalid area code 155"
+    assert (
+        standardize_phone_device_activation("+11555123456") is None
+    ), "12 digits with invalid area code 155"
 
-    assert standardize_phone_device_activation("+10555123456") is None, "12 digits with invalid area code 055"
+    assert (
+        standardize_phone_device_activation("+10555123456") is None
+    ), "12 digits with invalid area code 055"
 
 
 def test_standardize_phone_international_vs_us():
@@ -635,19 +735,41 @@ def test_standardize_phone_us_every_length_0_to_20():
     assert standardize_phone_device_activation("155512345") is None, "9 digits"
 
     # Length 10: INVALID (US needs country code)
-    assert standardize_phone_device_activation("+155512345") is None, "10 digits starting with +1 - too short"
+    assert (
+        standardize_phone_device_activation("+155512345") is None
+    ), "10 digits starting with +1 - too short"
 
     # Length 11: VALID (ONLY if area code 2-9)
-    assert standardize_phone_device_activation("+12551234567") == "+12551234567", "11 digits - area 2 - VALID"
-    assert standardize_phone_device_activation("+13551234567") == "+13551234567", "11 digits - area 3 - VALID"
-    assert standardize_phone_device_activation("+14551234567") == "+14551234567", "11 digits - area 4 - VALID"
-    assert standardize_phone_device_activation("+15551234567") == "+15551234567", "11 digits - area 5 - VALID"
-    assert standardize_phone_device_activation("+16551234567") == "+16551234567", "11 digits - area 6 - VALID"
-    assert standardize_phone_device_activation("+17551234567") == "+17551234567", "11 digits - area 7 - VALID"
-    assert standardize_phone_device_activation("+18551234567") == "+18551234567", "11 digits - area 8 - VALID"
-    assert standardize_phone_device_activation("+19551234567") == "+19551234567", "11 digits - area 9 - VALID"
-    assert standardize_phone_device_activation("+10551234567") is None, "11 digits - area 0 - INVALID"
-    assert standardize_phone_device_activation("+11551234567") is None, "11 digits - area 1 - INVALID"
+    assert (
+        standardize_phone_device_activation("+12551234567") == "+12551234567"
+    ), "11 digits - area 2 - VALID"
+    assert (
+        standardize_phone_device_activation("+13551234567") == "+13551234567"
+    ), "11 digits - area 3 - VALID"
+    assert (
+        standardize_phone_device_activation("+14551234567") == "+14551234567"
+    ), "11 digits - area 4 - VALID"
+    assert (
+        standardize_phone_device_activation("+15551234567") == "+15551234567"
+    ), "11 digits - area 5 - VALID"
+    assert (
+        standardize_phone_device_activation("+16551234567") == "+16551234567"
+    ), "11 digits - area 6 - VALID"
+    assert (
+        standardize_phone_device_activation("+17551234567") == "+17551234567"
+    ), "11 digits - area 7 - VALID"
+    assert (
+        standardize_phone_device_activation("+18551234567") == "+18551234567"
+    ), "11 digits - area 8 - VALID"
+    assert (
+        standardize_phone_device_activation("+19551234567") == "+19551234567"
+    ), "11 digits - area 9 - VALID"
+    assert (
+        standardize_phone_device_activation("+10551234567") is None
+    ), "11 digits - area 0 - INVALID"
+    assert (
+        standardize_phone_device_activation("+11551234567") is None
+    ), "11 digits - area 1 - INVALID"
 
     # Length 12: INVALID for US (+1 + 11 digits)
     assert standardize_phone_device_activation("+181236514113") is None, "12 digits - QA BUG #2"
@@ -678,39 +800,83 @@ def test_standardize_phone_every_country_code():
     """
 
     # Country code +1: US/Canada - EXACTLY 11 digits
-    assert standardize_phone_device_activation("+15551234567") == "+15551234567", "US: 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+15551234567") == "+15551234567"
+    ), "US: 11 digits - VALID"
     assert standardize_phone_device_activation("+181236514113") is None, "US: 12 digits - INVALID"
     assert standardize_phone_device_activation("+1555123456789") is None, "US: 13 digits - INVALID"
 
     # Country codes +2 to +9: Single-digit codes (rare, but test them)
-    assert standardize_phone_device_activation("+21234567890") == "+21234567890", "Country +2: 11 digits - VALID"
-    assert standardize_phone_device_activation("+31234567890") == "+31234567890", "Country +3: 11 digits - VALID"
-    assert standardize_phone_device_activation("+41234567890") == "+41234567890", "Country +4: 11 digits - VALID"
-    assert standardize_phone_device_activation("+51234567890") == "+51234567890", "Country +5: 11 digits - VALID"
-    assert standardize_phone_device_activation("+61234567890") == "+61234567890", "Country +6: 11 digits - VALID"
-    assert standardize_phone_device_activation("+71234567890") == "+71234567890", "Country +7: 11 digits - VALID"
-    assert standardize_phone_device_activation("+81234567890") == "+81234567890", "Country +8: 11 digits - VALID"
-    assert standardize_phone_device_activation("+91234567890") == "+91234567890", "Country +9: 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+21234567890") == "+21234567890"
+    ), "Country +2: 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+31234567890") == "+31234567890"
+    ), "Country +3: 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+41234567890") == "+41234567890"
+    ), "Country +4: 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+51234567890") == "+51234567890"
+    ), "Country +5: 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+61234567890") == "+61234567890"
+    ), "Country +6: 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+71234567890") == "+71234567890"
+    ), "Country +7: 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+81234567890") == "+81234567890"
+    ), "Country +8: 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+91234567890") == "+91234567890"
+    ), "Country +9: 11 digits - VALID"
 
     # Common 2-digit country codes
-    assert standardize_phone_device_activation("+201234567890") == "+201234567890", "Egypt +20: 12 digits - VALID"
-    assert standardize_phone_device_activation("+331234567890") == "+331234567890", "France +33: 12 digits - VALID"
-    assert standardize_phone_device_activation("+441234567890") == "+441234567890", "UK +44: 12 digits - VALID"
-    assert standardize_phone_device_activation("+491234567890") == "+491234567890", "Germany +49: 12 digits - VALID"
-    assert standardize_phone_device_activation("+521234567890") == "+521234567890", "Mexico +52: 12 digits - VALID"
-    assert standardize_phone_device_activation("+551234567890") == "+551234567890", "Brazil +55: 12 digits - VALID"
-    assert standardize_phone_device_activation("+611234567890") == "+611234567890", "Australia +61: 12 digits - VALID"
-    assert standardize_phone_device_activation("+811234567890") == "+811234567890", "Japan +81: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+201234567890") == "+201234567890"
+    ), "Egypt +20: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+331234567890") == "+331234567890"
+    ), "France +33: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+441234567890") == "+441234567890"
+    ), "UK +44: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+491234567890") == "+491234567890"
+    ), "Germany +49: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+521234567890") == "+521234567890"
+    ), "Mexico +52: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+551234567890") == "+551234567890"
+    ), "Brazil +55: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+611234567890") == "+611234567890"
+    ), "Australia +61: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+811234567890") == "+811234567890"
+    ), "Japan +81: 12 digits - VALID"
     assert (
         standardize_phone_device_activation("+821234567890") == "+821234567890"
     ), "South Korea +82: 12 digits - VALID"
-    assert standardize_phone_device_activation("+861234567890") == "+861234567890", "China +86: 12 digits - VALID"
-    assert standardize_phone_device_activation("+911234567890") == "+911234567890", "India +91: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+861234567890") == "+861234567890"
+    ), "China +86: 12 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+911234567890") == "+911234567890"
+    ), "India +91: 12 digits - VALID"
 
     # 3-digit country codes (less common)
-    assert standardize_phone_device_activation("+3701234567890") == "+3701234567890", "+370: 13 digits - VALID"
-    assert standardize_phone_device_activation("+3801234567890") == "+3801234567890", "+380: 13 digits - VALID"
-    assert standardize_phone_device_activation("+9701234567890") == "+9701234567890", "+970: 13 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+3701234567890") == "+3701234567890"
+    ), "+370: 13 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+3801234567890") == "+3801234567890"
+    ), "+380: 13 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+9701234567890") == "+9701234567890"
+    ), "+970: 13 digits - VALID"
 
 
 def test_standardize_phone_every_format_with_overlength():
@@ -759,10 +925,14 @@ def test_standardize_phone_edge_cases_overlength():
     """
 
     # Exactly at boundary: 11 digits (VALID)
-    assert standardize_phone_device_activation("+15551234567") == "+15551234567", "Exactly 11 digits - VALID"
+    assert (
+        standardize_phone_device_activation("+15551234567") == "+15551234567"
+    ), "Exactly 11 digits - VALID"
 
     # One over boundary: 12 digits (INVALID)
-    assert standardize_phone_device_activation("+181236514113") is None, "Exactly 12 digits - INVALID"
+    assert (
+        standardize_phone_device_activation("+181236514113") is None
+    ), "Exactly 12 digits - INVALID"
 
     # One under boundary: 10 digits (INVALID)
     assert standardize_phone_device_activation("+1555123456") is None, "Exactly 10 digits - INVALID"
@@ -770,22 +940,30 @@ def test_standardize_phone_edge_cases_overlength():
     # Repeated digits with overlength
     assert standardize_phone_device_activation("+12222222222") == "+12222222222", "11 twos - VALID"
     assert standardize_phone_device_activation("+122222222222") is None, "12 twos - INVALID"
-    assert standardize_phone_device_activation("+11111111111") is None, "11 ones - INVALID (area code 111)"
+    assert (
+        standardize_phone_device_activation("+11111111111") is None
+    ), "11 ones - INVALID (area code 111)"
     assert standardize_phone_device_activation("+111111111111") is None, "12 ones - INVALID"
 
     # Leading zeros in subscriber number (after area code)
     assert (
         standardize_phone_device_activation("+12550000000") == "+12550000000"
     ), "11 digits, zeros after area - VALID"
-    assert standardize_phone_device_activation("+125500000000") is None, "12 digits, zeros after area - INVALID"
+    assert (
+        standardize_phone_device_activation("+125500000000") is None
+    ), "12 digits, zeros after area - INVALID"
 
     # Maximum valid US (11 digits, highest area code)
     assert standardize_phone_device_activation("+19999999999") == "+19999999999", "11 nines - VALID"
     assert standardize_phone_device_activation("+199999999999") is None, "12 nines - INVALID"
 
     # Minimum valid US (11 digits, lowest valid area code)
-    assert standardize_phone_device_activation("+12000000000") == "+12000000000", "Area 200, rest zeros - VALID"
-    assert standardize_phone_device_activation("+120000000000") is None, "Area 200, too many zeros - INVALID"
+    assert (
+        standardize_phone_device_activation("+12000000000") == "+12000000000"
+    ), "Area 200, rest zeros - VALID"
+    assert (
+        standardize_phone_device_activation("+120000000000") is None
+    ), "Area 200, too many zeros - INVALID"
 
 
 def test_standardize_phone_pandas_overlength():
@@ -1556,7 +1734,7 @@ class TestPowerSaverModeValidation:
 
 
 class TestDOBAgeRangeValidation:
-    """Test DOB validation (max age 120 years, no future dates) - TC-DA-CSV-007"""
+    """Test DOB validation (no future dates) - TC-DA-CSV-007"""
 
     @pytest.fixture
     def minimal_context(self):
@@ -1609,26 +1787,6 @@ class TestDOBAgeRangeValidation:
         df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
         assert df_result.at[0, "validation_status"] == "VALIDATED"
         assert pd.isna(df_result.at[0, "error_message"]) or df_result.at[0, "error_message"] == ""
-
-    def test_valid_dob_age_120_boundary(self, minimal_context, minimal_row_data):
-        """TC-DA-CSV-007-03: Valid DOB - exactly 120 years old (upper boundary)"""
-        today = date.today()
-        dob = today.replace(year=today.year - 120)
-        minimal_row_data["member_dob"] = dob.strftime("%Y-%m-%d")
-        df = pd.DataFrame([minimal_row_data])
-        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
-        assert df_result.at[0, "validation_status"] == "VALIDATED"
-
-    def test_invalid_dob_too_old(self, minimal_context, minimal_row_data):
-        """TC-DA-CSV-007-05: Invalid DOB - 121 years old (unrealistic)"""
-        today = date.today()
-        dob = today.replace(year=today.year - 121)
-        minimal_row_data["member_dob"] = dob.strftime("%Y-%m-%d")
-        df = pd.DataFrame([minimal_row_data])
-        df_result = validate_and_cleanse_data_before_insert(df, minimal_context)
-        assert df_result.at[0, "validation_status"] == "VALIDATION_ERROR"
-        assert "age 121" in df_result.at[0, "error_message"]
-        assert "unrealistic" in df_result.at[0, "error_message"]
 
     def test_invalid_dob_future_date(self, minimal_context, minimal_row_data):
         """TC-DA-CSV-007-06: Invalid DOB - future date"""

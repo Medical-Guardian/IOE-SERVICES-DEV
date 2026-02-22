@@ -13,9 +13,9 @@ Date: 2025-12-18
 """
 
 import logging
-import re
 import azure.functions as func
 from af_code.af_device_activation_logic import process_device_activation_file_complete
+from af_code.shared.filename_validators import validate_device_activation_filename
 
 # Create blueprint for Operations Device Activation
 operations_device_activation_bp = func.Blueprint()
@@ -57,52 +57,63 @@ def operations_device_activation_file_processor(blob: func.InputStream):
     logging.info("   📂 Container: fs-ops/landing")
 
     # ===================================================================
-    # STEP 1: Validate File Naming Pattern
+    # STEP 1: Validate File Naming Pattern with Date Validation
     # ===================================================================
-    filename_patterns = [
-        r"MedicalGuardian_DeviceActivationMedicaid_\d{8}_DELTA\.csv",
-        r"MedicalGuardian_DeviceActivationDTCMA_\d{8}_DELTA\.csv",
-    ]
-
     # Extract just the filename from the full blob path
     filename = blob.name.split("/")[-1]
-    filename_match = any(re.match(pattern, filename) for pattern in filename_patterns)
 
-    if not filename_match:
+    # Validate filename pattern with calendar date validation
+    is_valid, error_message, date_str, campaign_type = validate_device_activation_filename(filename)
+
+    if not is_valid:
         logging.warning(
-            f"⚠️ [OPS-DEVICE-ACTIVATION] Skipping file with unexpected name format: {blob.name}"
+            f"⚠️ [OPS-DEVICE-ACTIVATION] Skipping file with invalid name format: {blob.name}"
         )
+        logging.warning(f"   Error: {error_message}")
         logging.info("   Expected patterns:")
         logging.info("   - MedicalGuardian_DeviceActivationMedicaid_YYYYMMDD_DELTA.csv")
         logging.info("   - MedicalGuardian_DeviceActivationDTCMA_YYYYMMDD_DELTA.csv")
+        logging.info("   Example: MedicalGuardian_DeviceActivationMedicaid_20260105_DELTA.csv")
+        logging.info(
+            "   Note: YYYYMMDD must be a valid calendar date (rejects Feb 30, month 13, Apr 31, etc.)"
+        )
         return
 
     logging.info("✅ [OPS-DEVICE-ACTIVATION] Filename pattern validated successfully")
+    logging.info(f"   Filename: {filename}")
+    logging.info(f"   📅 Extracted date: {date_str}")
+    logging.info(f"   📋 Campaign type: {campaign_type}")
 
     # ===================================================================
-    # STEP 2: Extract Campaign Information from Filename
+    # STEP 2: Map Campaign Type to Hardcoded Campaign ID
     # ===================================================================
-    if "Medicaid" in filename:
-        campaign_name = "Device Activation - Medicaid"
-        campaign_id = "0F69659B-491B-40E2-88C3-ABC7D87385B2"
-        logging.info(f"📋 [OPS-DEVICE-ACTIVATION] Campaign: {campaign_name}")
-        logging.info(f"   🆔 Campaign ID: {campaign_id}")
-    elif "DTCMA" in filename:
-        campaign_name = "Device Activation - DTC/MA"
-        campaign_id = "BA865458-60F9-4EBB-9FB5-D195B532CF5A"
-        logging.info(f"📋 [OPS-DEVICE-ACTIVATION] Campaign: {campaign_name}")
-        logging.info(f"   🆔 Campaign ID: {campaign_id}")
-    else:
-        logging.error(
-            f"❌ [OPS-DEVICE-ACTIVATION] Unable to determine campaign from filename: {filename}"
-        )
-        logging.error("   Filename must contain 'Medicaid' or 'DTCMA'")
+    campaign_map = {
+        "Medicaid": {
+            "campaign_name": "Device Activation - Medicaid",
+            "campaign_id": "0F69659B-491B-40E2-88C3-ABC7D87385B2",
+        },
+        "DTCMA": {
+            "campaign_name": "Device Activation - DTC/MA",
+            "campaign_id": "BA865458-60F9-4EBB-9FB5-D195B532CF5A",
+        },
+    }
+
+    campaign_info = campaign_map.get(campaign_type)
+    if not campaign_info:
+        # This should never happen if validation function is correct
+        logging.error(f"❌ [OPS-DEVICE-ACTIVATION] Unknown campaign type: {campaign_type}")
         return
 
+    campaign_name = campaign_info["campaign_name"]
+    campaign_id = campaign_info["campaign_id"]
+
+    logging.info(f"📋 [OPS-DEVICE-ACTIVATION] Campaign: {campaign_name}")
+    logging.info(f"   🆔 Campaign ID: {campaign_id}")
+
     # Log flow selection verification
-    logging.info(f"🔧 [OPS-DEVICE-ACTIVATION] Flow: Using OPERATIONS FLOW with explicit campaign_id")
+    logging.info("🔧 [OPS-DEVICE-ACTIVATION] Flow: Using OPERATIONS FLOW with explicit campaign_id")
     logging.info(f"   📂 Blob name: {blob.name}")
-    logging.info(f"   ✅ Hardcoded campaign will be used (no auto-discovery)")
+    logging.info("   ✅ Hardcoded campaign will be used (no auto-discovery)")
 
     # ===================================================================
     # STEP 3: Process File Using Existing Device Activation Logic
@@ -142,7 +153,7 @@ def operations_device_activation_file_processor(blob: func.InputStream):
         logging.info("✅ [OPS-DEVICE-ACTIVATION] Campaign enrollment verification:")
         logging.info(f"   ✅ Used hardcoded campaign_id: {campaign_id}")
         logging.info(f"   ✅ Campaign: {campaign_name}")
-        logging.info(f"   ✅ Flow: OPERATIONS FLOW (not auto-discovery)")
+        logging.info("   ✅ Flow: OPERATIONS FLOW (not auto-discovery)")
 
         # Log success metrics for Application Insights
         logging.info("📈 [OPS-DEVICE-ACTIVATION] SUCCESS METRICS:")

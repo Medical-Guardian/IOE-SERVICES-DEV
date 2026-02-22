@@ -81,7 +81,12 @@ def validate_device_activation_filename(
                 return (True, "", date_str, campaign_type)
             except ValueError as e:
                 logger.warning(f"❌ [VALIDATOR] Invalid date: {date_str} - {str(e)}")
-                return (False, f"Invalid date in filename: {date_str} ({str(e)})", None, None)
+                return (
+                    False,
+                    f"Invalid date in filename: {date_str} ({str(e)})",
+                    None,
+                    None,
+                )
 
     # No pattern matched - invalid filename
     logger.warning(f"❌ [VALIDATOR] Filename does not match Medicaid or DTCMA patterns: {filename}")
@@ -159,7 +164,12 @@ def validate_dtc_wellness_filename(
             return (True, "", date_str, "NEW")
         except ValueError as e:
             logger.warning(f"❌ [VALIDATOR] DTC Wellness - Invalid date: {date_str} - {str(e)}")
-            return (False, f"Invalid date in filename: {date_str} ({str(e)})", None, None)
+            return (
+                False,
+                f"Invalid date in filename: {date_str} ({str(e)})",
+                None,
+                None,
+            )
 
     # Try LEGACY pattern if allowed
     if allow_legacy:
@@ -179,7 +189,12 @@ def validate_dtc_wellness_filename(
                 logger.warning(
                     f"❌ [VALIDATOR] DTC Wellness - Invalid date in legacy pattern: {date_str} - {str(e)}"
                 )
-                return (False, f"Invalid date in filename: {date_str} ({str(e)})", None, None)
+                return (
+                    False,
+                    f"Invalid date in filename: {date_str} ({str(e)})",
+                    None,
+                    None,
+                )
     else:
         # Check if it matches legacy pattern structure (but reject it)
         if re.match(legacy_pattern, filename):

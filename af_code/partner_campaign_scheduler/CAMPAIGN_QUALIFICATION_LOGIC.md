@@ -20,14 +20,14 @@ The Partner Campaign Scheduler uses timezone-aware qualification logic to determ
 
 ## Core Database Tables & Mapping
 
-### 1. `engage360.campaigns_enhanced`
+### 1. `ioe.campaigns_enhanced`
 
 **Purpose**: Stores campaign configuration including scheduling rules
 
 | Column | Type | Purpose | Example Values | Notes |
 |--------|------|---------|----------------|-------|
 | `campaign_id` | UNIQUEIDENTIFIER | Primary key | `304DFAD6-AFDF-4EFE-89FE-8F929B072395` | Auto-generated |
-| `org_id` | UNIQUEIDENTIFIER | Organization FK | `071F957A-B275-4BA2-999C-2A82824165EB` | Links to `engage360.orgs` |
+| `org_id` | UNIQUEIDENTIFIER | Organization FK | `071F957A-B275-4BA2-999C-2A82824165EB` | Links to `ioe.orgs` |
 | `name` | NVARCHAR(255) | Campaign display name | `HC_PA_Q4-2025_BCS-GSD v33` | User-defined |
 | `campaign_type` | NVARCHAR(50) | Type of campaign | `Partner`, `Internal` | **Must be 'Partner' to qualify** |
 | `status` | NVARCHAR(50) | Campaign status | `Active`, `Testing`, `Inactive`, `Draft` | **Must be 'Active' or 'Testing' (case-insensitive)** |
@@ -59,7 +59,7 @@ WHERE c.campaign_type = 'Partner'
 
 ---
 
-### 2. `engage360.campaign_call_configs_enhanced`
+### 2. `ioe.campaign_call_configs_enhanced`
 
 **Purpose**: Stores call-specific configuration for campaigns
 
@@ -72,14 +72,14 @@ WHERE c.campaign_type = 'Partner'
 
 **Join Condition:**
 ```sql
-LEFT JOIN engage360.campaign_call_configs_enhanced cc
+LEFT JOIN ioe.campaign_call_configs_enhanced cc
     ON c.campaign_id = cc.campaign_id
     AND cc.config_status = 'active'
 ```
 
 ---
 
-### 3. `engage360.orgs`
+### 3. `ioe.orgs`
 
 **Purpose**: Organization metadata
 
@@ -90,12 +90,12 @@ LEFT JOIN engage360.campaign_call_configs_enhanced cc
 
 **Join Condition:**
 ```sql
-LEFT JOIN engage360.orgs o ON c.org_id = o.org_id
+LEFT JOIN ioe.orgs o ON c.org_id = o.org_id
 ```
 
 ---
 
-### 4. `engage360.members`
+### 4. `ioe.members`
 
 **Purpose**: Member information for eligibility checks
 
@@ -117,7 +117,7 @@ LEFT JOIN engage360.orgs o ON c.org_id = o.org_id
 
 ---
 
-### 5. `engage360.outreach_batches`
+### 5. `ioe.outreach_batches`
 
 **Purpose**: Tracks batch submissions to Bland AI
 
@@ -136,7 +136,7 @@ LEFT JOIN engage360.orgs o ON c.org_id = o.org_id
 
 ---
 
-### 6. `engage360.outreach_attempts`
+### 6. `ioe.outreach_attempts`
 
 **Purpose**: Individual call attempts within batches
 

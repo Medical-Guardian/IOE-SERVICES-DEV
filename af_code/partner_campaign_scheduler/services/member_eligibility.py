@@ -4,6 +4,7 @@ from ..models.qualified_campaign import QualifiedCampaign
 from ..models.eligible_member import EligibleMember
 from ...bland_ai_webhook.services.database_service import DatabaseService
 from ...shared.timezone_utils import TimezoneConverter
+from af_code.shared.schema_config import IOE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -191,17 +192,17 @@ class MemberEligibilityService:
         """
         Enhanced query using existing tables: members, member_devices, outreach_batches, outreach_attempts
         """
-        return """
-            DECLARE @campaign_id UNIQUEIDENTIFIER = %s;
-            DECLARE @frequency_unit VARCHAR(10) = %s;
-            DECLARE @frequency_value INT = %s;
-            DECLARE @timezone_flag VARCHAR(20) = %s;
-            DECLARE @operating_tz VARCHAR(50) = %s;
-            DECLARE @contact_pref VARCHAR(50) = %s;
-            DECLARE @audience_batch VARCHAR(255) = %s;
-            DECLARE @start_time TIME = %s;
-            DECLARE @end_time TIME = %s;
-            DECLARE @call_days NVARCHAR(255) = %s;
+        return f"""
+            DECLARE @campaign_id UNIQUEIDENTIFIER = ?;
+            DECLARE @frequency_unit VARCHAR(10) = ?;
+            DECLARE @frequency_value INT = ?;
+            DECLARE @timezone_flag VARCHAR(20) = ?;
+            DECLARE @operating_tz VARCHAR(50) = ?;
+            DECLARE @contact_pref VARCHAR(50) = ?;
+            DECLARE @audience_batch VARCHAR(255) = ?;
+            DECLARE @start_time TIME = ?;
+            DECLARE @end_time TIME = ?;
+            DECLARE @call_days NVARCHAR(255) = ?;
 
             -- UTC date range variables for "today" filtering (performance optimization)
             DECLARE @CurrentUtcTimestamp DATETIMEOFFSET = SYSDATETIMEOFFSET();
@@ -220,9 +221,9 @@ class MemberEligibilityService:
                         WHEN oa.attempt_ts >= @TodayStartUtc AND oa.attempt_ts < @TodayEndUtc
                         THEN 1 ELSE 0
                     END) as attempted_today
-                FROM engage360.member_campaign_enrollments_enhanced mce
-                INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
-                INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
+                FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced mce
+                INNER JOIN {IOE_SCHEMA}.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
+                INNER JOIN {IOE_SCHEMA}.outreach_batches ob ON oa.batch_id = ob.batch_id
                 WHERE ob.campaign_id = @campaign_id
                   AND oa.disposition = 'Completed'  -- Only count successful attempts
                 GROUP BY mce.member_id
@@ -242,9 +243,9 @@ class MemberEligibilityService:
                 -- Block all dispositions from same-day retry per policy update
                 -- One attempt per member per day regardless of outcome
                 SELECT DISTINCT mce.member_id
-                FROM engage360.member_campaign_enrollments_enhanced mce
-                INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
-                INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
+                FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced mce
+                INNER JOIN {IOE_SCHEMA}.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
+                INNER JOIN {IOE_SCHEMA}.outreach_batches ob ON oa.batch_id = ob.batch_id
                 WHERE ob.campaign_id = @campaign_id
                   AND oa.attempt_ts >= @TodayStartUtc  -- Range-based filtering (SARGable)
                   AND oa.attempt_ts < @TodayEndUtc
@@ -342,8 +343,8 @@ CASE m.timezone
                         ELSE
                             DATENAME(WEEKDAY, SYSDATETIMEOFFSET() AT TIME ZONE @operating_tz)
                     END as member_current_day
-                FROM engage360.members m
-                LEFT JOIN engage360.member_devices md ON m.member_id = md.member_id
+                FROM {IOE_SCHEMA}.members m
+                LEFT JOIN {IOE_SCHEMA}.member_devices md ON m.member_id = md.member_id
                     AND md.is_device_callable = 1
                 WHERE m.timezone IS NOT NULL
             ),
@@ -355,8 +356,8 @@ CASE m.timezone
                     mce.channel AS enrollment_channel,  -- ✅ Enrollment-level channel
                     COUNT(CASE WHEN md.service_status = 'In Service' THEN 1 END) AS active_device_count,
                     COUNT(md.device_id) AS total_device_count
-                FROM engage360.member_campaign_enrollments_enhanced mce
-                LEFT JOIN engage360.member_devices md ON mce.member_id = md.member_id
+                FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced mce
+                LEFT JOIN {IOE_SCHEMA}.member_devices md ON mce.member_id = md.member_id
                 WHERE mce.campaign_id = @campaign_id
                   AND mce.current_status = 'Active'
                 GROUP BY mce.enrollment_id, mce.member_id, mce.channel
@@ -396,7 +397,7 @@ CASE m.timezone
                             CASE WHEN fc.last_attempt_ts IS NULL THEN 0 ELSE 1 END,
                             fc.last_attempt_ts ASC
                     ) as rn
-                FROM engage360.member_campaign_enrollments_enhanced mce
+                FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced mce
                 INNER JOIN TimezoneEligible te ON mce.member_id = te.member_id
                 INNER JOIN EnrollmentDeviceStatus eds ON mce.enrollment_id = eds.enrollment_id  -- ✅ Join device status
                 LEFT JOIN FrequencyCheck fc ON mce.member_id = fc.member_id

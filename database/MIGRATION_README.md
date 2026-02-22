@@ -6,7 +6,7 @@
 
 The DTC file processor now supports an optional `member_gender` field in CSV uploads. Before processing CSV files with gender data, you must run the database migration script to add the required columns to the staging table.
 
-**Important**: Production table (`engage360.members`) already has `gender CHAR(1)` column. This migration only adds columns to the staging table.
+**Important**: Production table (`ioe.members`) already has `gender CHAR(1)` column. This migration only adds columns to the staging table.
 
 ---
 
@@ -29,8 +29,8 @@ This means the database tables have not been updated yet. Follow the migration s
 
 **What it does**:
 1. Verifies production table already has `gender CHAR(1)` column
-2. Adds `member_gender VARCHAR(50) NULL` to `engage360_stg.stg_dtc_wellness_delta` (staging)
-3. Adds `gender_clean CHAR(1) NULL` to `engage360_stg.stg_dtc_wellness_delta` (staging)
+2. Adds `member_gender VARCHAR(50) NULL` to `ioe_stg.stg_dtc_wellness_delta` (staging)
+3. Adds `gender_clean CHAR(1) NULL` to `ioe_stg.stg_dtc_wellness_delta` (staging)
 4. Verifies all columns were created successfully
 
 **Data Type Note**: Uses `CHAR(1)` for `gender_clean` to match production table schema
@@ -88,22 +88,22 @@ After running the migration, verify the columns exist:
 -- Check staging table
 SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360_stg'
+WHERE TABLE_SCHEMA = 'ioe_stg'
   AND TABLE_NAME = 'stg_dtc_wellness_delta'
   AND COLUMN_NAME IN ('member_gender', 'gender_clean');
 
 -- Check production table
 SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'members'
   AND COLUMN_NAME = 'gender';
 ```
 
 **Expected Results**:
-- `engage360_stg.stg_dtc_wellness_delta.member_gender`: VARCHAR(50), NULL
-- `engage360_stg.stg_dtc_wellness_delta.gender_clean`: CHAR(1), NULL
-- `engage360.members.gender`: CHAR(1), NULL (already exists)
+- `ioe_stg.stg_dtc_wellness_delta.member_gender`: VARCHAR(50), NULL
+- `ioe_stg.stg_dtc_wellness_delta.gender_clean`: CHAR(1), NULL
+- `ioe.members.gender`: CHAR(1), NULL (already exists)
 
 ---
 
@@ -124,12 +124,12 @@ ORG001,987654321,...,1970-08-22,Female,UDI987,...
 ```sql
 -- Check staging data
 SELECT TOP 5 member_gender, gender_clean
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE member_gender IS NOT NULL;
 
 -- Check production data
 SELECT TOP 5 member_id, first_name, last_name, gender
-FROM engage360.members
+FROM ioe.members
 WHERE gender IS NOT NULL;
 ```
 
@@ -171,11 +171,11 @@ If you need to remove the gender columns from staging:
 
 ```sql
 -- Remove from staging table only
-ALTER TABLE engage360_stg.stg_dtc_wellness_delta DROP COLUMN member_gender;
-ALTER TABLE engage360_stg.stg_dtc_wellness_delta DROP COLUMN gender_clean;
+ALTER TABLE ioe_stg.stg_dtc_wellness_delta DROP COLUMN member_gender;
+ALTER TABLE ioe_stg.stg_dtc_wellness_delta DROP COLUMN gender_clean;
 
 -- DO NOT remove from production (it's used by other systems)
--- ALTER TABLE engage360.members DROP COLUMN gender;  -- Don't run this!
+-- ALTER TABLE ioe.members DROP COLUMN gender;  -- Don't run this!
 ```
 
 **Warning**: This will permanently delete any gender data in the staging table. Production table gender column should NOT be removed.
@@ -187,7 +187,7 @@ ALTER TABLE engage360_stg.stg_dtc_wellness_delta DROP COLUMN gender_clean;
 - **CSV Testing Guide**: `CSV_TESTING_GUIDE.md` (updated with gender examples)
 - **DTC Logic Code**: `af_code/af_dtc_logic.py` (CSV validation and processing)
 - **Schema Guide**: `DATABASE_SCHEMA_GUIDE.md` (how to query schemas)
-- **Table Reference**: `ENGAGE360_TABLE_USAGE_REFERENCE.md` (updated with gender field)
+- **Table Reference**: `IOE_TABLE_USAGE_REFERENCE.md` (updated with gender field)
 
 ---
 

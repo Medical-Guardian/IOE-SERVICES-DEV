@@ -44,7 +44,7 @@ graph TB
     subgraph "External Systems"
         AZURE_BLOB[Azure Blob Storage<br/>fs-dtc/landing/<br/>fs-partner/landing/]
         BLAND_AI[Bland AI API<br/>Voice Automation Platform]
-        SQL_DB[(SQL Database<br/>engage360 Schema)]
+        SQL_DB[(SQL Database<br/>ioe Schema)]
         KEY_VAULT[Azure Key Vault<br/>Secure Configuration]
     end
     
@@ -192,10 +192,10 @@ graph TB
 
 ### **Core Database Tables**
 
-#### **engage360.campaigns_enhanced**
+#### **ioe.campaigns_enhanced**
 ```sql
 -- Campaign definitions and configuration
-CREATE TABLE engage360.campaigns_enhanced (
+CREATE TABLE ioe.campaigns_enhanced (
     campaign_id UNIQUEIDENTIFIER PRIMARY KEY,
     name NVARCHAR(255) NOT NULL,
     campaign_type NVARCHAR(50) CHECK (campaign_type IN ('DTC', 'Partner')),
@@ -215,10 +215,10 @@ CREATE TABLE engage360.campaigns_enhanced (
 );
 ```
 
-#### **engage360.members**
+#### **ioe.members**
 ```sql
 -- Customer/member information
-CREATE TABLE engage360.members (
+CREATE TABLE ioe.members (
     member_id UNIQUEIDENTIFIER PRIMARY KEY,
     primary_phone NVARCHAR(20),
     Channel NVARCHAR(50) CHECK (Channel IN ('phone', 'device')),
@@ -228,25 +228,25 @@ CREATE TABLE engage360.members (
 );
 ```
 
-#### **engage360.member_devices**
+#### **ioe.member_devices**
 ```sql
 -- Member device information for device-based calling
-CREATE TABLE engage360.member_devices (
+CREATE TABLE ioe.member_devices (
     device_id UNIQUEIDENTIFIER PRIMARY KEY,
-    member_id UNIQUEIDENTIFIER REFERENCES engage360.members(member_id),
+    member_id UNIQUEIDENTIFIER REFERENCES ioe.members(member_id),
     device_phone_number NVARCHAR(20),
     device_name NVARCHAR(100),
     is_device_callable BIT DEFAULT 1
 );
 ```
 
-#### **engage360.member_campaign_enrollments_enhanced**
+#### **ioe.member_campaign_enrollments_enhanced**
 ```sql
 -- Campaign enrollment tracking
-CREATE TABLE engage360.member_campaign_enrollments_enhanced (
+CREATE TABLE ioe.member_campaign_enrollments_enhanced (
     enrollment_id UNIQUEIDENTIFIER PRIMARY KEY,
-    campaign_id UNIQUEIDENTIFIER REFERENCES engage360.campaigns_enhanced(campaign_id),
-    member_id UNIQUEIDENTIFIER REFERENCES engage360.members(member_id),
+    campaign_id UNIQUEIDENTIFIER REFERENCES ioe.campaigns_enhanced(campaign_id),
+    member_id UNIQUEIDENTIFIER REFERENCES ioe.members(member_id),
     current_status NVARCHAR(50) CHECK (current_status IN ('ENROLLED', 'UNENROLLED', 'OPTED_OUT', 'PENDING')),
     preferred_window NVARCHAR(50),
     last_attempt_ts DATETIMEOFFSET,
@@ -257,12 +257,12 @@ CREATE TABLE engage360.member_campaign_enrollments_enhanced (
 );
 ```
 
-#### **engage360.outreach_batches**
+#### **ioe.outreach_batches**
 ```sql
 -- Batch tracking for Bland AI submissions
-CREATE TABLE engage360.outreach_batches (
+CREATE TABLE ioe.outreach_batches (
     batch_id UNIQUEIDENTIFIER PRIMARY KEY,
-    campaign_id UNIQUEIDENTIFIER REFERENCES engage360.campaigns_enhanced(campaign_id),
+    campaign_id UNIQUEIDENTIFIER REFERENCES ioe.campaigns_enhanced(campaign_id),
     vendor_batch_id NVARCHAR(100),  -- Bland AI batch ID
     batch_status NVARCHAR(50) CHECK (batch_status IN ('Submitted', 'Pending', 'Completed', 'Failed')),
     total_calls_intended INT,
@@ -272,13 +272,13 @@ CREATE TABLE engage360.outreach_batches (
 );
 ```
 
-#### **engage360.outreach_attempts**
+#### **ioe.outreach_attempts**
 ```sql
 -- Individual call attempt tracking
-CREATE TABLE engage360.outreach_attempts (
+CREATE TABLE ioe.outreach_attempts (
     attempt_id UNIQUEIDENTIFIER PRIMARY KEY,
-    enrollment_id UNIQUEIDENTIFIER REFERENCES engage360.member_campaign_enrollments_enhanced(enrollment_id),
-    batch_id UNIQUEIDENTIFIER REFERENCES engage360.outreach_batches(batch_id),
+    enrollment_id UNIQUEIDENTIFIER REFERENCES ioe.member_campaign_enrollments_enhanced(enrollment_id),
+    batch_id UNIQUEIDENTIFIER REFERENCES ioe.outreach_batches(batch_id),
     vendor_session_id NVARCHAR(100),  -- Bland AI session ID
     disposition NVARCHAR(50) CHECK (disposition IN ('Pending', 'Completed', 'Failed')),
     channel NVARCHAR(20) DEFAULT 'Voice',
@@ -287,10 +287,10 @@ CREATE TABLE engage360.outreach_attempts (
 );
 ```
 
-#### **engage360.system_locks**
+#### **ioe.system_locks**
 ```sql
 -- Distributed locking for timer functions
-CREATE TABLE engage360.system_locks (
+CREATE TABLE ioe.system_locks (
     lock_id UNIQUEIDENTIFIER DEFAULT NEWID() PRIMARY KEY,
     lock_name NVARCHAR(255) NOT NULL UNIQUE,
     lock_expiry DATETIMEOFFSET NOT NULL,
@@ -303,32 +303,32 @@ CREATE TABLE engage360.system_locks (
 ```sql
 -- Campaign qualification performance
 CREATE INDEX IX_campaigns_partner_active 
-ON engage360.campaigns_enhanced(campaign_type, status, start_ts, end_ts)
+ON ioe.campaigns_enhanced(campaign_type, status, start_ts, end_ts)
 INCLUDE (audience_file_batch, timezone_flag, operating_tz, contact_pref);
 
 -- Batch tracking performance
 CREATE INDEX IX_outreach_batches_campaign_submitted 
-ON engage360.outreach_batches(campaign_id, submitted_ts, batch_status)
+ON ioe.outreach_batches(campaign_id, submitted_ts, batch_status)
 INCLUDE (vendor_batch_id, total_calls_intended, batch_id);
 
 -- Member device lookup performance
 CREATE INDEX IX_member_devices_member_callable
-ON engage360.member_devices(member_id, is_device_callable)
+ON ioe.member_devices(member_id, is_device_callable)
 INCLUDE (device_phone_number, device_name);
 
 -- Enrollment status performance
 CREATE INDEX IX_mcee_campaign_status 
-ON engage360.member_campaign_enrollments_enhanced(campaign_id, current_status)
+ON ioe.member_campaign_enrollments_enhanced(campaign_id, current_status)
 INCLUDE (member_id, enrollment_id, preferred_window, last_attempt_ts);
 
 -- Attempt history performance
 CREATE INDEX IX_outreach_attempts_enrollment_attempt 
-ON engage360.outreach_attempts(enrollment_id, attempt_ts)
+ON ioe.outreach_attempts(enrollment_id, attempt_ts)
 INCLUDE (disposition, retry_seq, batch_id, vendor_session_id);
 
 -- Distributed locking performance
 CREATE INDEX IX_system_locks_name_expiry 
-ON engage360.system_locks(lock_name, lock_expiry);
+ON ioe.system_locks(lock_name, lock_expiry);
 ```
 
 ---
@@ -375,7 +375,7 @@ flowchart TD
     end
     
     subgraph "Database Operations"
-        G4 --> DB1[(engage360.members)]
+        G4 --> DB1[(ioe.members)]
         G5 --> DB2[(member_campaign_enrollments_enhanced)]
         G6 --> DB3[(Data Validation Logs)]
     end
@@ -390,7 +390,7 @@ flowchart TD
 
 ### **Integration Points**
 - **Azure Blob Storage**: Monitors `fs-dtc/landing/` container
-- **Database**: Updates `engage360.members` and enrollment tables
+- **Database**: Updates `ioe.members` and enrollment tables
 - **Logging**: Azure Application Insights integration
 
 ---
@@ -871,16 +871,16 @@ flowchart TD
 
 ```sql
 -- Original Bland AI data
-engage360.bland_call_logs.disposition_tag        -- Bland AI disposition tag
-engage360.bland_call_logs.status                -- Bland AI call status
+ioe.bland_call_logs.disposition_tag        -- Bland AI disposition tag
+ioe.bland_call_logs.status                -- Bland AI call status
 
 -- Mapped internal disposition
-engage360.outreach_attempts.disposition          -- Internal mapped disposition
-engage360.outreach_attempts.next_action          -- Recommended next action
-engage360.outreach_attempts.response_summary     -- Call summary
+ioe.outreach_attempts.disposition          -- Internal mapped disposition
+ioe.outreach_attempts.next_action          -- Recommended next action
+ioe.outreach_attempts.response_summary     -- Call summary
 
 -- Enrollment status (business rules result)
-engage360.member_campaign_enrollments_enhanced.current_status
+ioe.member_campaign_enrollments_enhanced.current_status
 -- Values: ENROLLED, UNENROLLED, OPTED_OUT, PENDING
 ```
 
@@ -956,9 +956,9 @@ SELECT
     oa.disposition AS internal_disposition,
     oa.next_action,
     mce.current_status AS enrollment_status
-FROM engage360.bland_call_logs bcl
-LEFT JOIN engage360.outreach_attempts oa ON bcl.call_id = oa.vendor_session_id
-LEFT JOIN engage360.member_campaign_enrollments_enhanced mce ON oa.enrollment_id = mce.enrollment_id
+FROM ioe.bland_call_logs bcl
+LEFT JOIN ioe.outreach_attempts oa ON bcl.call_id = oa.vendor_session_id
+LEFT JOIN ioe.member_campaign_enrollments_enhanced mce ON oa.enrollment_id = mce.enrollment_id
 WHERE bcl.member_id = '<MEMBER_UUID>'
 ORDER BY bcl.created_at DESC;
 ```
@@ -973,7 +973,7 @@ SELECT
     mesh.change_source,
     mesh.change_details,
     mesh.duration_since_last_change_hours
-FROM engage360.member_enrollment_status_history mesh
+FROM ioe.member_enrollment_status_history mesh
 WHERE mesh.member_id = '<MEMBER_UUID>'
 ORDER BY mesh.change_timestamp DESC;
 ```
@@ -1249,7 +1249,7 @@ flowchart TD
 ```sql
 -- SQL logic for finding stale batches
 SELECT batch_id, vendor_batch_id, campaign_id, batch_status
-FROM engage360.outreach_batches 
+FROM ioe.outreach_batches 
 WHERE batch_status != 'Completed'
   AND submitted_ts < DATEADD(hour, -1, SYSDATETIMEOFFSET())
   AND (last_status_check_ts IS NULL 
@@ -1281,11 +1281,11 @@ def compare_batch_status(local_batch, remote_batch):
 ```sql
 -- Lock acquisition logic
 BEGIN TRANSACTION;
-  DELETE FROM engage360.system_locks 
+  DELETE FROM ioe.system_locks 
   WHERE lock_name = 'batch_completion_sync' 
     AND lock_expiry < SYSDATETIMEOFFSET();
   
-  INSERT INTO engage360.system_locks (lock_name, lock_expiry, locked_by)
+  INSERT INTO ioe.system_locks (lock_name, lock_expiry, locked_by)
   VALUES ('batch_completion_sync', 
           DATEADD(minute, 25, SYSDATETIMEOFFSET()),
           'batch-reconciler-instance-id');
@@ -1474,7 +1474,7 @@ sequenceDiagram
 ```sql
 -- Partner campaign qualification (most critical)
 CREATE INDEX IX_campaigns_partner_active 
-ON engage360.campaigns_enhanced(campaign_type, status, start_ts, end_ts)
+ON ioe.campaigns_enhanced(campaign_type, status, start_ts, end_ts)
 INCLUDE (audience_file_batch, timezone_flag, operating_tz, contact_pref, 
          scheduling_mode, frequency_value, frequency_unit, call_days_of_week, 
          operating_start_time, operating_end_time)
@@ -1482,27 +1482,27 @@ WHERE campaign_type = 'Partner' AND status = 'Active';
 
 -- Batch tracking optimization
 CREATE INDEX IX_outreach_batches_campaign_submitted 
-ON engage360.outreach_batches(campaign_id, submitted_ts, batch_status)
+ON ioe.outreach_batches(campaign_id, submitted_ts, batch_status)
 INCLUDE (vendor_batch_id, total_calls_intended, batch_id);
 
 -- Member device lookup optimization
 CREATE INDEX IX_member_devices_member_callable
-ON engage360.member_devices(member_id, is_device_callable)
+ON ioe.member_devices(member_id, is_device_callable)
 INCLUDE (device_phone_number, device_name);
 
 -- Enrollment status optimization
 CREATE INDEX IX_mcee_campaign_status 
-ON engage360.member_campaign_enrollments_enhanced(campaign_id, current_status)
+ON ioe.member_campaign_enrollments_enhanced(campaign_id, current_status)
 INCLUDE (member_id, enrollment_id, preferred_window, last_attempt_ts);
 
 -- Attempt history optimization
 CREATE INDEX IX_outreach_attempts_enrollment_attempt 
-ON engage360.outreach_attempts(enrollment_id, attempt_ts)
+ON ioe.outreach_attempts(enrollment_id, attempt_ts)
 INCLUDE (disposition, retry_seq, batch_id, vendor_session_id);
 
 -- Distributed locking optimization
 CREATE INDEX IX_system_locks_name_expiry 
-ON engage360.system_locks(lock_name, lock_expiry);
+ON ioe.system_locks(lock_name, lock_expiry);
 ```
 
 #### **Query Performance Statistics**
@@ -1916,7 +1916,7 @@ SELECT
     b.batch_status,
     COUNT(*) as batch_count,
     AVG(DATEDIFF(minute, b.submitted_ts, b.completion_ts)) as avg_processing_time_min
-FROM engage360.outreach_batches b
+FROM ioe.outreach_batches b
 WHERE b.submitted_ts > DATEADD(hour, -24, SYSDATETIMEOFFSET())
 GROUP BY b.batch_status;
 

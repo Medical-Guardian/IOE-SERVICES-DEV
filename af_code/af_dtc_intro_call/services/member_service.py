@@ -22,51 +22,83 @@ class MemberQualificationService:
         """Get qualified members for campaign using DTC logic"""
         WELLNESS_CAMPAIGN_ID = "E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B"
         is_wellness_campaign = campaign_id.upper() == WELLNESS_CAMPAIGN_ID.upper()
-        
+
         logger.info(
             f"🔍 [MemberQualificationService] Starting member qualification for campaign: {campaign_id}"
         )
-        
+
         # Choose the correct query based on campaign type
         if is_wellness_campaign:
-            logger.info(f"🩺 [MemberQualificationService-DEBUG] WELLNESS CAMPAIGN detected")
-            logger.info(f"🩺 [MemberQualificationService-DEBUG] About to execute ELIGIBLE_MEMBERS_QUERY_WELLNESS")
+            logger.info("🩺 [MemberQualificationService-DEBUG] WELLNESS CAMPAIGN detected")
+            logger.info(
+                "🩺 [MemberQualificationService-DEBUG] About to execute ELIGIBLE_MEMBERS_QUERY_WELLNESS"
+            )
             query_to_use = ELIGIBLE_MEMBERS_QUERY_WELLNESS
         else:
-            logger.info(f"📞 [MemberQualificationService-DEBUG] INTRO CAMPAIGN detected")
-            logger.info(f"📞 [MemberQualificationService-DEBUG] About to execute ELIGIBLE_MEMBERS_QUERY_INTRO")
-            query_to_use = ELIGIBLE_MEMBERS_QUERY_INTRO
-        
-        try:
-            potential_members = self.db_service.execute_query(
-                query_to_use, (campaign_id,)
+            logger.info("📞 [MemberQualificationService-DEBUG] INTRO CAMPAIGN detected")
+            logger.info(
+                "📞 [MemberQualificationService-DEBUG] About to execute ELIGIBLE_MEMBERS_QUERY_INTRO"
             )
-            
+            query_to_use = ELIGIBLE_MEMBERS_QUERY_INTRO
+
+        try:
+            potential_members = self.db_service.execute_query(query_to_use, (campaign_id,))
+
             if is_wellness_campaign:
-                logger.info(f"🩺 [MemberQualificationService-DEBUG] Database query returned {len(potential_members) if potential_members else 0} potential members")
+                logger.info(
+                    f"🩺 [MemberQualificationService-DEBUG] Database query returned {len(potential_members) if potential_members else 0} potential members"
+                )
                 if potential_members:
                     for i, member in enumerate(potential_members):
-                        logger.info(f"🩺 [MemberQualificationService-DEBUG] Potential member {i+1}:")
-                        logger.info(f"🩺 [MemberQualificationService-DEBUG]   - member_id: {member.get('member_id')}")
-                        logger.info(f"🩺 [MemberQualificationService-DEBUG]   - campaign_id: {member.get('campaign_id')}")
-                        logger.info(f"🩺 [MemberQualificationService-DEBUG]   - campaign_name: {member.get('campaign_name')}")
-                        logger.info(f"🩺 [MemberQualificationService-DEBUG]   - call_days_of_week: {member.get('call_days_of_week')}")
-                        logger.info(f"🩺 [MemberQualificationService-DEBUG]   - preferred_window: {member.get('preferred_window')}")
-                        logger.info(f"🩺 [MemberQualificationService-DEBUG]   - timezone: {member.get('timezone')}")
-                        logger.info(f"🩺 [MemberQualificationService-DEBUG]   - todays_failed_attempts: {member.get('todays_failed_attempts')}")
-            
+                        logger.info(
+                            f"🩺 [MemberQualificationService-DEBUG] Potential member {i+1}:"
+                        )
+                        logger.info(
+                            f"🩺 [MemberQualificationService-DEBUG]   - member_id: {member.get('member_id')}"
+                        )
+                        logger.info(
+                            f"🩺 [MemberQualificationService-DEBUG]   - campaign_id: {member.get('campaign_id')}"
+                        )
+                        logger.info(
+                            f"🩺 [MemberQualificationService-DEBUG]   - campaign_name: {member.get('campaign_name')}"
+                        )
+                        logger.info(
+                            f"🩺 [MemberQualificationService-DEBUG]   - call_days_of_week: {member.get('call_days_of_week')}"
+                        )
+                        logger.info(
+                            f"🩺 [MemberQualificationService-DEBUG]   - preferred_window: {member.get('preferred_window')}"
+                        )
+                        logger.info(
+                            f"🩺 [MemberQualificationService-DEBUG]   - timezone: {member.get('timezone')}"
+                        )
+                        logger.info(
+                            f"🩺 [MemberQualificationService-DEBUG]   - todays_failed_attempts: {member.get('todays_failed_attempts')}"
+                        )
+
             if not potential_members:
                 logger.warning("⚠️ [MemberQualificationService] No potential members found")
-                
+
                 if is_wellness_campaign:
-                    logger.warning(f"🩺 [MemberQualificationService-DEBUG] WELLNESS CAMPAIGN - No potential members from database!")
-                    logger.warning(f"🩺 [MemberQualificationService-DEBUG] This means the SQL query returned empty results")
-                    logger.warning(f"🩺 [MemberQualificationService-DEBUG] Possible reasons:")
-                    logger.warning(f"🩺 [MemberQualificationService-DEBUG] 1. No members enrolled in wellness campaign ({campaign_id})")
-                    logger.warning(f"🩺 [MemberQualificationService-DEBUG] 2. No members with current_status = 'ENROLLED' in wellness campaign")
-                    logger.warning(f"🩺 [MemberQualificationService-DEBUG] 3. Campaign status is not 'Active'")
-                    logger.warning(f"🩺 [MemberQualificationService-DEBUG] 4. Members have attempts today and are excluded by NOT EXISTS clause")
-                
+                    logger.warning(
+                        "🩺 [MemberQualificationService-DEBUG] WELLNESS CAMPAIGN - No potential members from database!"
+                    )
+                    logger.warning(
+                        "🩺 [MemberQualificationService-DEBUG] This means the SQL query returned empty results"
+                    )
+                    logger.warning("🩺 [MemberQualificationService-DEBUG] Possible reasons:")
+                    logger.warning(
+                        f"🩺 [MemberQualificationService-DEBUG] 1. No members enrolled in wellness campaign ({campaign_id})"
+                    )
+                    logger.warning(
+                        "🩺 [MemberQualificationService-DEBUG] 2. No members with current_status = 'ENROLLED' in wellness campaign"
+                    )
+                    logger.warning(
+                        "🩺 [MemberQualificationService-DEBUG] 3. Campaign status is not 'Active'"
+                    )
+                    logger.warning(
+                        "🩺 [MemberQualificationService-DEBUG] 4. Members have attempts today and are excluded by NOT EXISTS clause"
+                    )
+
                 return []
 
             logger.info(
@@ -89,50 +121,64 @@ class MemberQualificationService:
     ) -> List[Dict]:
         """Filter members based on timezone and time window eligibility"""
         WELLNESS_CAMPAIGN_ID = "E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B"
-        
+
         logger.info(
             f"🔍 [MemberQualificationService] Filtering {len(potential_members)} potential members"
         )
-        
+
         # Check if this is wellness campaign
         is_wellness_campaign = False
         if potential_members:
-            first_member_campaign = potential_members[0].get('campaign_id', '')
+            first_member_campaign = potential_members[0].get("campaign_id", "")
             # Convert UUID to string if needed
-            first_member_campaign_str = str(first_member_campaign) if first_member_campaign else ''
+            first_member_campaign_str = str(first_member_campaign) if first_member_campaign else ""
             is_wellness_campaign = first_member_campaign_str.upper() == WELLNESS_CAMPAIGN_ID.upper()
-        
+
         if is_wellness_campaign:
-            logger.info(f"🩺 [MemberQualificationService-DEBUG] Filtering members for WELLNESS campaign")
+            logger.info(
+                "🩺 [MemberQualificationService-DEBUG] Filtering members for WELLNESS campaign"
+            )
             logger.info(f"🩺 [MemberQualificationService-DEBUG] Current UTC time: {current_utc}")
-        
+
         eligible_members = []
 
         for i, member in enumerate(potential_members):
             if is_wellness_campaign:
-                logger.info(f"🩺 [MemberQualificationService-DEBUG] === Processing member {i+1}/{len(potential_members)} ===")
-                logger.info(f"🩺 [MemberQualificationService-DEBUG] Member ID: {member['member_id']}")
-            
+                logger.info(
+                    f"🩺 [MemberQualificationService-DEBUG] === Processing member {i+1}/{len(potential_members)} ==="
+                )
+                logger.info(
+                    f"🩺 [MemberQualificationService-DEBUG] Member ID: {member['member_id']}"
+                )
+
             is_eligible, reason = self._is_member_eligible_now(member, current_utc)
-            
+
             if is_eligible:
                 eligible_members.append(member)
                 logger.info(
                     f"✅ [MemberQualificationService] Member {member['member_id']} is eligible: {reason}"
                 )
                 if is_wellness_campaign:
-                    logger.info(f"🩺 [MemberQualificationService-DEBUG] ✅ WELLNESS member QUALIFIED!")
+                    logger.info(
+                        "🩺 [MemberQualificationService-DEBUG] ✅ WELLNESS member QUALIFIED!"
+                    )
             else:
                 logger.info(
                     f"❌ [MemberQualificationService] Member {member['member_id']} is not eligible: {reason}"
                 )
                 if is_wellness_campaign:
-                    logger.warning(f"🩺 [MemberQualificationService-DEBUG] ❌ WELLNESS member NOT qualified: {reason}")
+                    logger.warning(
+                        f"🩺 [MemberQualificationService-DEBUG] ❌ WELLNESS member NOT qualified: {reason}"
+                    )
 
         if is_wellness_campaign:
-            logger.info(f"🩺 [MemberQualificationService-DEBUG] === WELLNESS FILTERING COMPLETE ===")
-            logger.info(f"🩺 [MemberQualificationService-DEBUG] Total potential members: {len(potential_members)}")
-            logger.info(f"🩺 [MemberQualificationService-DEBUG] Qualified members: {len(eligible_members)}")
+            logger.info("🩺 [MemberQualificationService-DEBUG] === WELLNESS FILTERING COMPLETE ===")
+            logger.info(
+                f"🩺 [MemberQualificationService-DEBUG] Total potential members: {len(potential_members)}"
+            )
+            logger.info(
+                f"🩺 [MemberQualificationService-DEBUG] Qualified members: {len(eligible_members)}"
+            )
 
         return eligible_members
 
@@ -174,7 +220,10 @@ class MemberQualificationService:
             preferred_window = member_data.get("preferred_window")
             start_time, end_time = TimeWindowHelper.get_time_window_bounds(preferred_window)
             if not start_time or not end_time:
-                return False, f"No valid preferred window specified ({preferred_window})"
+                return (
+                    False,
+                    f"No valid preferred window specified ({preferred_window})",
+                )
 
             current_time = member_local_time.time()
             if not (start_time <= current_time <= end_time):

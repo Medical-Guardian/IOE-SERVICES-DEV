@@ -6,6 +6,7 @@ import pytz
 from ..models.qualified_campaign import QualifiedCampaign
 from ...bland_ai_webhook.services.database_service import DatabaseService
 from ...shared.timezone_utils import TimezoneConverter
+from af_code.shared.schema_config import IOE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +36,7 @@ class CampaignQualifier:
             )
 
             # Query for active Partner campaigns with enhanced fields including Bland AI parameters
-            query = """
+            query = f"""
                 SELECT
                     c.campaign_id,
                     c.org_id,
@@ -60,11 +61,11 @@ class CampaignQualifier:
                     o.org_type,
                     o.partner_contact_name,
                     o.org_name
-                FROM engage360.campaigns_enhanced c
-                LEFT JOIN engage360.campaign_call_configs_enhanced cc
+                FROM {IOE_SCHEMA}.campaigns_enhanced c
+                LEFT JOIN {IOE_SCHEMA}.campaign_call_configs_enhanced cc
                     ON c.campaign_id = cc.campaign_id
                     AND cc.config_status = 'active'
-                LEFT JOIN engage360.orgs o ON c.org_id = o.org_id
+                LEFT JOIN {IOE_SCHEMA}.orgs o ON c.org_id = o.org_id
                 WHERE c.campaign_type = 'Partner'
                   AND LOWER(c.status) IN ('active', 'testing')
                   AND c.primary_channel = 'voice'
@@ -177,10 +178,10 @@ class CampaignQualifier:
                         org_name=campaign_data.get("org_name"),
                         # Bland AI parameters from bland_parameters_global
                         bland_parameters_global=bland_params,
-                        pathway_id=bland_params.get("pathway_id") if bland_params else None,
+                        pathway_id=(bland_params.get("pathway_id") if bland_params else None),
                         voice_id=bland_params.get("voice_id") if bland_params else None,
-                        webhook_url=bland_params.get("webhook_url") if bland_params else None,
-                        max_duration=bland_params.get("max_duration") if bland_params else None,
+                        webhook_url=(bland_params.get("webhook_url") if bland_params else None),
+                        max_duration=(bland_params.get("max_duration") if bland_params else None),
                     )
                     qualified_campaigns.append(qualified_campaign)
 
@@ -537,7 +538,9 @@ class CampaignQualifier:
             bland_params = json.loads(bland_parameters_json)
 
             # Normalize field names with deprecation warnings
-            from af_code.shared.bland_parameters_validator import BlandParametersValidator
+            from af_code.shared.bland_parameters_validator import (
+                BlandParametersValidator,
+            )
 
             validator = BlandParametersValidator()
             normalized_params, deprecated_fields = validator.normalize_field_names(bland_params)

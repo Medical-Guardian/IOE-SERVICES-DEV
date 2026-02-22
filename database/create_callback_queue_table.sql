@@ -18,11 +18,11 @@
 IF EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.TABLES
-    WHERE TABLE_SCHEMA = 'engage360'
+    WHERE TABLE_SCHEMA = 'ioe'
     AND TABLE_NAME = 'outreach_callback_queue'
 )
 BEGIN
-    PRINT '⚠️  Table engage360.outreach_callback_queue already exists.'
+    PRINT '⚠️  Table ioe.outreach_callback_queue already exists.'
     PRINT 'ℹ️  Skipping table creation.'
     PRINT 'ℹ️  To modify the table, use ALTER TABLE statements.'
 
@@ -34,7 +34,7 @@ BEGIN
         IS_NULLABLE,
         COLUMN_DEFAULT
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360'
+    WHERE TABLE_SCHEMA = 'ioe'
     AND TABLE_NAME = 'outreach_callback_queue'
     ORDER BY ORDINAL_POSITION;
 END
@@ -43,7 +43,7 @@ BEGIN
     PRINT '✅ Creating outreach_callback_queue table...'
 
     -- Step 2: Create callback queue table
-    CREATE TABLE engage360.outreach_callback_queue (
+    CREATE TABLE ioe.outreach_callback_queue (
         -- Primary Key
         callback_id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
 
@@ -73,15 +73,15 @@ BEGIN
         -- Foreign Key Constraints
         CONSTRAINT FK_callback_queue_enrollment
             FOREIGN KEY (enrollment_id)
-            REFERENCES engage360.member_campaign_enrollments_enhanced(enrollment_id),
+            REFERENCES ioe.member_campaign_enrollments_enhanced(enrollment_id),
 
         CONSTRAINT FK_callback_queue_member
             FOREIGN KEY (member_id)
-            REFERENCES engage360.members(member_id),
+            REFERENCES ioe.members(member_id),
 
         CONSTRAINT FK_callback_queue_campaign
             FOREIGN KEY (campaign_id)
-            REFERENCES engage360.campaigns_enhanced(campaign_id),
+            REFERENCES ioe.campaigns_enhanced(campaign_id),
 
         -- Business Rule Constraints
         CONSTRAINT CHK_callback_attempt_count
@@ -98,25 +98,25 @@ BEGIN
 
     -- Index for scheduler queries (find pending callbacks due now)
     CREATE INDEX idx_callback_queue_status_scheduled
-    ON engage360.outreach_callback_queue(status, scheduled_callback_time);
+    ON ioe.outreach_callback_queue(status, scheduled_callback_time);
 
     PRINT '✅ Index created: idx_callback_queue_status_scheduled'
 
     -- Index for enrollment lookup (check if member has pending callback)
     CREATE INDEX idx_callback_queue_enrollment
-    ON engage360.outreach_callback_queue(enrollment_id, status);
+    ON ioe.outreach_callback_queue(enrollment_id, status);
 
     PRINT '✅ Index created: idx_callback_queue_enrollment'
 
     -- Index for member lookup (find all callbacks for a member)
     CREATE INDEX idx_callback_queue_member
-    ON engage360.outreach_callback_queue(member_id, created_ts DESC);
+    ON ioe.outreach_callback_queue(member_id, created_ts DESC);
 
     PRINT '✅ Index created: idx_callback_queue_member'
 
     -- Index for campaign reporting
     CREATE INDEX idx_callback_queue_campaign_status
-    ON engage360.outreach_callback_queue(campaign_id, status, created_ts DESC);
+    ON ioe.outreach_callback_queue(campaign_id, status, created_ts DESC);
 
     PRINT '✅ Index created: idx_callback_queue_campaign_status'
 
@@ -124,7 +124,7 @@ BEGIN
     PRINT '✅ CALLBACK QUEUE TABLE CREATION COMPLETE'
     PRINT ''
     PRINT '📋 Table Details:'
-    PRINT '   Schema: engage360'
+    PRINT '   Schema: ioe'
     PRINT '   Table: outreach_callback_queue'
     PRINT '   Indexes: 4 created'
     PRINT '   Foreign Keys: 3 created'
@@ -141,11 +141,11 @@ END
 
 -- Example 1: Insert a callback request
 /*
-DECLARE @enrollment_id UNIQUEIDENTIFIER = (SELECT TOP 1 enrollment_id FROM engage360.member_campaign_enrollments_enhanced WHERE current_status = 'ENROLLED')
-DECLARE @member_id UNIQUEIDENTIFIER = (SELECT member_id FROM engage360.member_campaign_enrollments_enhanced WHERE enrollment_id = @enrollment_id)
-DECLARE @campaign_id UNIQUEIDENTIFIER = (SELECT campaign_id FROM engage360.member_campaign_enrollments_enhanced WHERE enrollment_id = @enrollment_id)
+DECLARE @enrollment_id UNIQUEIDENTIFIER = (SELECT TOP 1 enrollment_id FROM ioe.member_campaign_enrollments_enhanced WHERE current_status = 'ENROLLED')
+DECLARE @member_id UNIQUEIDENTIFIER = (SELECT member_id FROM ioe.member_campaign_enrollments_enhanced WHERE enrollment_id = @enrollment_id)
+DECLARE @campaign_id UNIQUEIDENTIFIER = (SELECT campaign_id FROM ioe.member_campaign_enrollments_enhanced WHERE enrollment_id = @enrollment_id)
 
-INSERT INTO engage360.outreach_callback_queue (
+INSERT INTO ioe.outreach_callback_queue (
     enrollment_id,
     member_id,
     campaign_id,
@@ -161,7 +161,7 @@ INSERT INTO engage360.outreach_callback_queue (
     'PENDING'
 );
 
-SELECT * FROM engage360.outreach_callback_queue WHERE enrollment_id = @enrollment_id;
+SELECT * FROM ioe.outreach_callback_queue WHERE enrollment_id = @enrollment_id;
 */
 
 -- Example 2: Query pending callbacks due now
@@ -175,8 +175,8 @@ SELECT
     m.first_name,
     m.last_name,
     m.primary_phone
-FROM engage360.outreach_callback_queue cq
-JOIN engage360.members m ON cq.member_id = m.member_id
+FROM ioe.outreach_callback_queue cq
+JOIN ioe.members m ON cq.member_id = m.member_id
 WHERE
     cq.status = 'PENDING'
     AND cq.attempt_count < cq.max_attempts
@@ -188,14 +188,14 @@ ORDER BY cq.scheduled_callback_time;
 -- Example 3: Check if enrollment has pending callback
 /*
 SELECT COUNT(*)
-FROM engage360.outreach_callback_queue
+FROM ioe.outreach_callback_queue
 WHERE enrollment_id = '<enrollment-id-here>'
 AND status = 'PENDING';
 */
 
 -- Example 4: Mark callback as timed out
 /*
-UPDATE engage360.outreach_callback_queue
+UPDATE ioe.outreach_callback_queue
 SET status = 'TIMED_OUT', updated_ts = SYSDATETIMEOFFSET()
 WHERE status = 'PENDING'
 AND (
@@ -211,8 +211,8 @@ SELECT
     cq.status,
     COUNT(*) as callback_count,
     AVG(cq.attempt_count) as avg_attempts
-FROM engage360.outreach_callback_queue cq
-JOIN engage360.campaigns_enhanced c ON cq.campaign_id = c.campaign_id
+FROM ioe.outreach_callback_queue cq
+JOIN ioe.campaigns_enhanced c ON cq.campaign_id = c.campaign_id
 GROUP BY c.campaign_name, cq.status
 ORDER BY c.campaign_name, cq.status;
 */

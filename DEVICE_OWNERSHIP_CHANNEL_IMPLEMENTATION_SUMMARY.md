@@ -57,12 +57,12 @@ WITH ExistingDeviceOwners AS (
         m_existing.salesforce_account_number AS existing_account,
         stg.row_number
     FROM stg_dtc_wellness_delta stg
-    JOIN engage360.members m
+    JOIN ioe.members m
         ON m.org_id = stg.org_id
         AND m.salesforce_account_number = stg.salesforce_account_number
-    JOIN engage360.member_devices md
+    JOIN ioe.member_devices md
         ON stg.device_udi = md.device_id
-    JOIN engage360.members m_existing
+    JOIN ioe.members m_existing
         ON md.member_id = m_existing.member_id
     WHERE stg.file_batch_id = %s
       AND stg.processing_status = 'TRANSFORMING'
@@ -109,8 +109,8 @@ def check_device_ownership_conflicts(df, context):
         md.device_id AS device_udi,
         md.member_id AS existing_member_id,
         m.salesforce_account_number AS existing_account
-    FROM engage360.member_devices md
-    JOIN engage360.members m ON md.member_id = m.member_id
+    FROM ioe.member_devices md
+    JOIN ioe.members m ON md.member_id = m.member_id
     WHERE md.device_id IN (%s, %s, ...);
     """
 
@@ -135,7 +135,7 @@ def check_device_ownership_conflicts(df, context):
 **Index Created:**
 ```sql
 CREATE NONCLUSTERED INDEX [IX_member_devices_device_member_lookup]
-ON [engage360].[member_devices] ([device_id] ASC, [member_id] ASC)
+ON [ioe].[member_devices] ([device_id] ASC, [member_id] ASC)
 INCLUDE ([device_phone_number], [service_status], [created_ts])
 WITH (
     ONLINE = ON,
@@ -206,7 +206,7 @@ SELECT
     COUNT(*) AS total_enrollments,
     COUNT(CASE WHEN channel IS NOT NULL THEN 1 END) AS enrollments_with_channel,
     COUNT(CASE WHEN channel IS NULL THEN 1 END) AS enrollments_without_channel
-FROM engage360.member_campaign_enrollments_enhanced;
+FROM ioe.member_campaign_enrollments_enhanced;
 
 -- Expected: All enrollments have channel value (backfilled from members.channel)
 ```
@@ -229,8 +229,8 @@ EnrollmentDeviceStatus AS (
         mce.channel AS enrollment_channel,  -- ✅ Enrollment-level
         COUNT(CASE WHEN md.service_status = 'In Service' THEN 1 END) AS active_device_count,
         COUNT(md.device_id) AS total_device_count
-    FROM engage360.member_campaign_enrollments_enhanced mce
-    LEFT JOIN engage360.member_devices md ON mce.member_id = md.member_id
+    FROM ioe.member_campaign_enrollments_enhanced mce
+    LEFT JOIN ioe.member_devices md ON mce.member_id = md.member_id
     WHERE mce.campaign_id = @campaign_id
       AND mce.current_status = 'Active'
     GROUP BY mce.enrollment_id, mce.member_id, mce.channel
@@ -243,7 +243,7 @@ SELECT
     mce.channel AS Channel,  -- ✅ Use enrollment-level channel (was: te.Channel from members)
     eds.active_device_count,  -- ✅ New: Active device count
     ...
-FROM engage360.member_campaign_enrollments_enhanced mce
+FROM ioe.member_campaign_enrollments_enhanced mce
 INNER JOIN TimezoneEligible te ON mce.member_id = te.member_id
 INNER JOIN EnrollmentDeviceStatus eds ON mce.enrollment_id = eds.enrollment_id  -- ✅ New join
 ...
@@ -397,7 +397,7 @@ channel: Optional[str]  # ✅ Enrollment-level channel (from member_campaign_enr
 # Expected: Processing fails with ValueError, error logged
 
 # Check error logging:
-SELECT * FROM engage360.dtc_validation_error_details_row
+SELECT * FROM ioe.dtc_validation_error_details_row
 WHERE field_name = 'device_udi'
   AND error_message LIKE '%Device ownership conflict%'
 ORDER BY created_ts DESC;
@@ -414,8 +414,8 @@ SELECT
     mce.enrollment_id,
     mce.channel AS enrollment_channel,
     COUNT(CASE WHEN md.service_status = 'In Service' THEN 1 END) AS active_devices
-FROM engage360.member_campaign_enrollments_enhanced mce
-LEFT JOIN engage360.member_devices md ON mce.member_id = md.member_id
+FROM ioe.member_campaign_enrollments_enhanced mce
+LEFT JOIN ioe.member_devices md ON mce.member_id = md.member_id
 WHERE mce.campaign_id = '<test-campaign-id>'
   AND mce.current_status = 'Active'
 GROUP BY mce.enrollment_id, mce.channel;
@@ -426,7 +426,7 @@ GROUP BY mce.enrollment_id, mce.channel;
 -- Monitor device ownership validation query performance
 SET STATISTICS TIME ON;
 SELECT md.device_id, md.member_id
-FROM engage360.member_devices md
+FROM ioe.member_devices md
 WHERE md.device_id IN ('DEV-001', 'DEV-002', ..., 'DEV-100');
 SET STATISTICS TIME OFF;
 
@@ -599,7 +599,7 @@ device_udi='ABC-123' already assigned to member_id=11111111-2222-3333-4444-55555
 ```
 
 **Logged to:**
-- DTC: `engage360.dtc_validation_error_details_row`
+- DTC: `ioe.dtc_validation_error_details_row`
 - Device Activation: DataFrame column `error_message`
 
 ---

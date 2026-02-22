@@ -143,6 +143,8 @@ Basic usage in scheduler:
     >>> # - bland_parameters_global, config_status
 """
 
+from af_code.shared.schema_config import IOE_SCHEMA
+
 import logging
 from typing import List, Dict
 from datetime import datetime
@@ -268,15 +270,15 @@ class EligibilityService:
     """
 
     # SQL query to find eligible members
-    ELIGIBLE_MEMBERS_QUERY = """
+    ELIGIBLE_MEMBERS_QUERY = f"""
     WITH TodayActiveAttempts AS (
         -- Block same-day retries: One attempt per member per day regardless of outcome
         -- Uses UTC date range for "today" (00:00:00 - 23:59:59 UTC)
         SELECT DISTINCT e.member_id
-        FROM engage360.member_campaign_enrollments_enhanced e
-        INNER JOIN engage360.outreach_attempts oa ON e.enrollment_id = oa.enrollment_id
-        INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
-        INNER JOIN engage360.campaigns_enhanced c ON ob.campaign_id = c.campaign_id
+        FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
+        INNER JOIN {IOE_SCHEMA}.outreach_attempts oa ON e.enrollment_id = oa.enrollment_id
+        INNER JOIN {IOE_SCHEMA}.outreach_batches ob ON oa.batch_id = ob.batch_id
+        INNER JOIN {IOE_SCHEMA}.campaigns_enhanced c ON ob.campaign_id = c.campaign_id
         WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
           AND oa.attempt_ts >= CAST(CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AS DATE) AS DATETIMEOFFSET)  -- Today 00:00 UTC
           AND oa.attempt_ts < DATEADD(day, 1, CAST(CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AS DATE) AS DATETIMEOFFSET))  -- Tomorrow 00:00 UTC
@@ -325,34 +327,34 @@ class EligibilityService:
         -- Calculate which call attempt this is
         ISNULL((
             SELECT COUNT(*)
-            FROM engage360.outreach_attempts oa
+            FROM {IOE_SCHEMA}.outreach_attempts oa
             WHERE oa.enrollment_id = e.enrollment_id
         ), 0) + 1 AS call_attempt_number,
 
         -- Get last attempt date
         (
             SELECT MAX(oa.attempt_ts)
-            FROM engage360.outreach_attempts oa
+            FROM {IOE_SCHEMA}.outreach_attempts oa
             WHERE oa.enrollment_id = e.enrollment_id
         ) AS last_attempt_date,
 
         -- Get last disposition
         (
             SELECT TOP 1 oa.disposition
-            FROM engage360.outreach_attempts oa
+            FROM {IOE_SCHEMA}.outreach_attempts oa
             WHERE oa.enrollment_id = e.enrollment_id
             ORDER BY oa.attempt_ts DESC
         ) AS last_disposition
 
-    FROM engage360.member_campaign_enrollments_enhanced e
-    JOIN engage360.members m ON e.member_id = m.member_id
-    JOIN engage360.member_devices md ON m.member_id = md.member_id
-    JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
-    LEFT JOIN engage360.campaign_call_configs_enhanced cc
+    FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
+    JOIN {IOE_SCHEMA}.members m ON e.member_id = m.member_id
+    JOIN {IOE_SCHEMA}.member_devices md ON m.member_id = md.member_id
+    JOIN {IOE_SCHEMA}.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+    LEFT JOIN {IOE_SCHEMA}.campaign_call_configs_enhanced cc
         ON c.campaign_id = cc.campaign_id
         AND cc.call_type = 'Operations'
         AND cc.config_status = 'active'
-    INNER JOIN engage360.member_identifiers mi
+    INNER JOIN {IOE_SCHEMA}.member_identifiers mi
         ON m.member_id = mi.member_id
         AND mi.id_type = 'monitoring_system_id'
 
@@ -383,24 +385,24 @@ class EligibilityService:
         AND (
             -- No previous attempts (Call 1)
             NOT EXISTS (
-                SELECT 1 FROM engage360.outreach_attempts oa
+                SELECT 1 FROM {IOE_SCHEMA}.outreach_attempts oa
                 WHERE oa.enrollment_id = e.enrollment_id
             )
             OR
             -- Call 2-3: Has 1-2 previous attempts (business day check in Python)
             (
-                (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) BETWEEN 1 AND 2
+                (SELECT COUNT(*) FROM {IOE_SCHEMA}.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) BETWEEN 1 AND 2
             )
             OR
             -- Call 4: Has exactly 3 previous attempts (business day check in Python)
             (
-                (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) = 3
+                (SELECT COUNT(*) FROM {IOE_SCHEMA}.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) = 3
             )
             OR
             -- Call 5+: >7 calendar days (8+ days) since last attempt
             (
-                (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) >= 4
-                AND DATEDIFF(day, (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) > 7
+                (SELECT COUNT(*) FROM {IOE_SCHEMA}.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) >= 4
+                AND DATEDIFF(day, (SELECT MAX(attempt_ts) FROM {IOE_SCHEMA}.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id), SYSDATETIMEOFFSET()) > 7
             )
         )
 
@@ -863,7 +865,8 @@ class EligibilityService:
 
         except Exception as e:
             logger.error(
-                f"💥 [ELIGIBILITY-SERVICE] Error getting eligible members: {str(e)}", exc_info=True
+                f"💥 [ELIGIBILITY-SERVICE] Error getting eligible members: {str(e)}",
+                exc_info=True,
             )
             raise
 

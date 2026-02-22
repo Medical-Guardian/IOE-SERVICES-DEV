@@ -1,15 +1,263 @@
 """
 Device Activation Scheduler - Main Logic
-BusinessCaseID: BC-TBD (Device Activation System)
+
+BusinessCaseID: BC-DA-001 (Core Orchestration System)
 Created: 2025-12-07
+Updated: 2025-12-24 - Added comprehensive documentation and BusinessCaseID mapping
 
 This module contains the main orchestration logic for the Device Activation campaign scheduler.
-It coordinates between EligibilityService and BatchOrchestrator to:
-1. Find eligible members for device activation calls
-2. Create batches for Bland AI submission
-3. Submit batches and track results
+It coordinates between multiple services to identify eligible members and submit call batches
+to Bland AI for automated device activation calls.
 
-Pattern: Follows af_code/af_dtc_intro_call/main_logic.py structure
+PURPOSE:
+--------
+The Device Activation scheduler runs every 15 minutes (timer trigger) to:
+1. Query database for members eligible for device activation calls
+2. Validate business hours (dual-timezone: MG EST + member timezone)
+3. Create batches of up to 100 members per batch
+4. Submit batches to Bland AI for automated calling
+5. Track results and log comprehensive statistics
+
+This is the **entry point** for the entire Device Activation call workflow. All other
+components (EligibilityService, BatchOrchestrator, CallbackScheduler) are orchestrated
+by this module.
+
+ORCHESTRATION FLOW:
+-------------------
+The `create_device_activation_batch()` function implements a 3-step workflow:
+
+**STEP 1: Campaign Qualification**
+    - Validate campaign is Active
+    - Confirm campaign type is 'Device Activation' or 'Operations'
+    - Check campaigns are within operating hours
+    - Log qualification criteria
+
+**STEP 2: Member Qualification & Eligibility**
+    - Call EligibilityService.get_eligible_members()
+    - EligibilityService performs:
+        - SQL query for eligible members (200+ line query)
+        - Business hours validation (dual-timezone)
+        - Returns filtered member list
+    - If no eligible members:
+        - Log diagnostic checklist
+        - Return early with success=True, calls_submitted=0
+    - If eligible members found:
+        - Log detailed statistics:
+            - Call attempt distribution (Call 1, 2, 3, 4, 5+)
+            - Timezone distribution (EST, CST, MST, PST)
+            - Customer type distribution (DTC, MA, Medicaid)
+            - Device brand distribution
+
+**STEP 3: Batch Creation & Bland AI Submission**
+    - Call BatchOrchestrator.create_and_submit_batches(eligible_members)
+    - BatchOrchestrator performs:
+        - Split members into batches of 100 (Bland AI limit)
+        - For each batch:
+            - Phase 1: INSERT outreach_batches (status='Pending')
+            - Phase 2: INSERT outreach_attempts (disposition='Pending')
+            - Phase 3: Submit to Bland AI, UPDATE with vendor_batch_id
+        - Return summary: batches_created, calls_submitted, success
+    - Log final results summary
+
+**STEP 4: Results Summary**
+    - Calculate success metrics
+    - Log comprehensive results:
+        - Total qualified members
+        - Batches created
+        - Calls submitted
+        - Success rate percentage
+    - Log next steps (webhook processing, next scheduler run)
+    - Return result dictionary
+
+TIMER TRIGGER CONFIGURATION:
+-----------------------------
+This function is called by the device_activation_scheduler Azure Function:
+
+```python
+# In functions/device_activation_scheduler.py
+@device_activation_bp.timer_trigger(
+    schedule="0 */15 * * * *",  # Every 15 minutes
+    arg_name="timer",
+    run_on_startup=False,
+    use_monitor=False
+)
+def timer_device_activation(timer: func.TimerRequest) -> None:
+    # Initialize services
+    config_manager = ConfigManager()
+    db_service = DatabaseService(config_manager)
+    eligibility_service = EligibilityService(db_service)
+    batch_orchestrator = BatchOrchestrator(db_service, config_manager)
+
+    # Call main logic
+    result = create_device_activation_batch(
+        eligibility_service=eligibility_service,
+        batch_orchestrator=batch_orchestrator,
+        force=False
+    )
+```
+
+**Schedule:** Every 15 minutes (0, 15, 30, 45 past the hour)
+**Run on Startup:** False (prevents duplicate processing during deployment)
+**Monitoring:** Disabled (uses custom logging instead)
+
+HTTP TRIGGER SUPPORT:
+---------------------
+The function is also registered as an HTTP trigger for manual execution:
+
+```python
+# Manual trigger via HTTP POST
+@device_activation_bp.route(route="device-activation-scheduler", methods=["POST"])
+def http_device_activation(req: func.HttpRequest) -> func.HttpResponse:
+    # Same initialization as timer trigger
+    result = create_device_activation_batch(...)
+    return func.HttpResponse(json.dumps(result), status_code=200)
+```
+
+**Endpoint:** POST /api/device-activation-scheduler
+**Use Cases:**
+- Manual batch creation outside schedule
+- Testing and debugging
+- Emergency processing after system downtime
+
+LOGGING OUTPUT:
+---------------
+The function produces comprehensive logging output for monitoring and debugging:
+
+**Start:**
+```
+================================================================================
+🚀 [MAIN-LOGIC] DEVICE ACTIVATION SCHEDULER - BATCH CREATION START
+================================================================================
+```
+
+**Step 1: Campaign Qualification:**
+```
+🔍 [MAIN-LOGIC] STEP 1: CAMPAIGN QUALIFICATION
+🔍 [MAIN-LOGIC] Campaign Type: Device Activation / Operations
+🔍 [MAIN-LOGIC] Qualification Criteria:
+   ✓ Status = 'Active'
+   ✓ Campaign Type IN ('Operations', 'Device Activation')
+   ✓ Within 90-day activation window
+```
+
+**Step 2: Member Qualification:**
+```
+📋 [MAIN-LOGIC] STEP 2: MEMBER QUALIFICATION & ELIGIBILITY
+✅ [MAIN-LOGIC] Total Qualified Members: 25
+
+📊 [MAIN-LOGIC] QUALIFICATION STATISTICS
+📊 [MAIN-LOGIC] Call Attempt Distribution:
+   📞 Call #1: 5 members
+   📞 Call #2: 8 members
+   📞 Call #5: 12 members
+
+📊 [MAIN-LOGIC] Timezone Distribution:
+   🕒 America/Chicago: 10 members
+   🕒 America/New_York: 15 members
+```
+
+**Step 3: Batch Creation:**
+```
+📦 [MAIN-LOGIC] STEP 3: BATCH CREATION & BLAND AI SUBMISSION
+📦 [MAIN-LOGIC] Total members to batch: 25
+📦 [MAIN-LOGIC] Batch size limit: 100 members per batch
+```
+
+**Final Results:**
+```
+================================================================================
+📊 [MAIN-LOGIC] FINAL RESULTS SUMMARY
+================================================================================
+✅ [MAIN-LOGIC] Status: SUCCESS
+
+📊 [MAIN-LOGIC] Campaign Metrics:
+   ✓ Total Qualified Members: 25
+   ✓ Batches Created: 1
+   ✓ Calls Submitted to Bland AI: 25
+   ✓ Success Rate: 100.0%
+
+📊 [MAIN-LOGIC] Next Steps:
+   1. Bland AI will process calls asynchronously
+   2. Webhook will receive call results
+   3. Database will be updated with dispositions
+   4. Next scheduler run will handle remaining members
+================================================================================
+```
+
+ERROR SCENARIOS:
+----------------
+**No Eligible Members:**
+- Log diagnostic checklist with possible reasons
+- Return success=True (not an error), calls_submitted=0
+- Next scheduler run will check again
+
+**Batch Creation Fails:**
+- Log error details with partial results
+- Return success=False with error message
+- Eligible members remain in database for next run
+
+**Critical Exception:**
+- Log full stack trace (exc_info=True)
+- Return success=False with error message
+- Azure Functions runtime will retry on next schedule
+
+RELATED COMPONENTS:
+-------------------
+- **EligibilityService** (BC-DA-003): Gets eligible members from database
+- **BatchOrchestrator** (BC-DA-004): Creates batches and submits to Bland AI
+- **CallbackScheduler** (BC-DA-005): Processes callback requests (not called from this function yet)
+- **DatabaseService**: Executes SQL queries
+- **ConfigManager**: Retrieves secrets from Key Vault
+
+RELATED DOCUMENTATION:
+----------------------
+- Complete Architecture: documentation/device_activation/ARCHITECTURE/DEVICE_ACTIVATION_COMPLETE_ARCHITECTURE.md
+- Scheduler Internals: documentation/device_activation/ARCHITECTURE/DEVICE_ACTIVATION_SCHEDULER_INTERNALS.md
+- Call Sequence: documentation/device_activation/FLOWS/DEVICE_ACTIVATION_CALL_SEQUENCE.md
+
+PATTERN REFERENCE:
+------------------
+This module follows the same orchestration pattern as:
+- af_code/af_dtc_intro_call/main_logic.py (DTC Intro Call scheduler)
+- af_code/partner_campaign_scheduler/main_logic.py (Partner Campaign scheduler)
+
+All three schedulers share common patterns:
+- Service initialization
+- Eligibility determination
+- Batch creation and submission
+- Comprehensive logging and metrics
+
+EXAMPLES:
+---------
+Basic usage (called by timer trigger):
+    >>> from af_code.device_activation_scheduler.main_logic import create_device_activation_batch
+    >>> from af_code.device_activation_scheduler.services.eligibility_service import EligibilityService
+    >>> from af_code.device_activation_scheduler.services.batch_orchestrator import BatchOrchestrator
+    >>>
+    >>> # Initialize services
+    >>> eligibility_service = EligibilityService(db_service)
+    >>> batch_orchestrator = BatchOrchestrator(db_service, config_manager)
+    >>>
+    >>> # Run scheduler
+    >>> result = create_device_activation_batch(
+    ...     eligibility_service=eligibility_service,
+    ...     batch_orchestrator=batch_orchestrator,
+    ...     force=False
+    ... )
+    >>>
+    >>> print(f"Success: {result['success']}")
+    >>> print(f"Calls submitted: {result['calls_submitted']}")
+    Success: True
+    Calls submitted: 25
+
+NOTES:
+------
+- Runs every 15 minutes via timer trigger
+- HTTP trigger available for manual execution
+- No eligible members is a success case (not an error)
+- Business hours validation happens in EligibilityService
+- Batch size limited to 100 members (Bland AI constraint)
+- All logging uses emoji prefixes for visibility in Application Insights
 """
 
 import logging
@@ -46,7 +294,7 @@ def create_device_activation_batch(
             - batches_created (int): Number of batches created
             - calls_submitted (int): Number of calls submitted to Bland AI
 
-    BusinessCaseID: BC-TBD (Device Activation System)
+    BusinessCaseID: BC-DA-001
     """
     logger.info("=" * 80)
     logger.info("🚀 [MAIN-LOGIC] DEVICE ACTIVATION SCHEDULER - BATCH CREATION START")
@@ -64,9 +312,13 @@ def create_device_activation_batch(
         logger.info("🔍 [MAIN-LOGIC] Qualification Criteria:")
         logger.info("   ✓ Status = 'Active'")
         logger.info("   ✓ Campaign Type IN ('Operations', 'Device Activation', 'DeviceActivation')")
-        logger.info("   ✓ Within 90-day activation window (activation_start_date to campaign_end_date)")
+        logger.info(
+            "   ✓ Within 90-day activation window (activation_start_date to campaign_end_date)"
+        )
         logger.info("   ✓ Not in callback queue (priority)")
-        logger.info("   ✓ Frequency rules (Call 1-3: 2 biz days, Call 4: 5 biz days, Call 5+: 7 calendar days)")
+        logger.info(
+            "   ✓ Frequency rules (Call 1-3: 2 biz days, Call 4: 5 biz days, Call 5+: 7 calendar days)"
+        )
 
         # ========================================================================
         # STEP 2: MEMBER QUALIFICATION & ELIGIBILITY
@@ -158,8 +410,12 @@ def create_device_activation_batch(
         logger.info("📦 [MAIN-LOGIC] STEP 3: BATCH CREATION & BLAND AI SUBMISSION")
         logger.info("📦 [MAIN-LOGIC] ============================================")
         logger.info(f"📦 [MAIN-LOGIC] Total eligible members: {len(eligible_members)}")
-        logger.info("📦 [MAIN-LOGIC] Batch size: 20 members per run (single batch per 15-minute cadence)")
-        logger.info("📦 [MAIN-LOGIC] Processing top 20 qualified members and submitting to Bland AI...")
+        logger.info(
+            "📦 [MAIN-LOGIC] Batch size: 20 members per run (single batch per 15-minute cadence)"
+        )
+        logger.info(
+            "📦 [MAIN-LOGIC] Processing top 20 qualified members and submitting to Bland AI..."
+        )
 
         batch_results = batch_orchestrator.create_and_submit_batches(eligible_members)
 

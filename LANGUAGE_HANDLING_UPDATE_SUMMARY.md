@@ -199,7 +199,7 @@ Files with EN/ES/Other format will continue to work without any changes:
 
 ### ✅ Database Schema Unchanged
 
-**Table**: `engage360.members`
+**Table**: `ioe.members`
 **Column**: `language_pref NVARCHAR(50)`
 **Values**: Still stores `"EN"`, `"ES"`, or `"Other"` (unchanged)
 

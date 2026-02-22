@@ -75,7 +75,7 @@ for proactive outreach calls via the scheduler (BC-DA-003, BC-DA-004).
     - Database errors → Rollback, move blob to error/ folder
 
     Database Impact:
-    - Table: engage360_stg.stg_device_activation_delta
+    - Table: {IOE_SCHEMA_STG}.stg_device_activation_delta
     - Operation: INSERT (row-by-row with try/except)
     - Fields: 23 raw columns + metadata (file_id, processing_status, created_ts)
 
@@ -114,19 +114,19 @@ for proactive outreach calls via the scheduler (BC-DA-003, BC-DA-004).
     Purpose: MERGE staging data into core production tables
 
     Process:
-    1. **MERGE into engage360.members** (UPSERT pattern):
+    1. **MERGE into {IOE_SCHEMA}.members** (UPSERT pattern):
         - Match on: member_id (salesforce_account_number)
         - UPDATE: Existing members with latest data
         - INSERT: New members
         - Fields: first_name, last_name, primary_phone, email, address, timezone, etc.
 
-    2. **MERGE into engage360.member_devices** (UPSERT pattern):
+    2. **MERGE into {IOE_SCHEMA}.member_devices** (UPSERT pattern):
         - Match on: device_id (device_udi)
         - UPDATE: Existing devices with latest data
         - INSERT: New devices
         - Fields: device_name, brand, device_phone_number, fall_detection, powersaver_mode, etc.
 
-    3. **INSERT into engage360.member_campaign_enrollments_enhanced**:
+    3. **INSERT into {IOE_SCHEMA}.member_campaign_enrollments_enhanced**:
         - Create new enrollments (no MERGE - always new)
         - Calculate activation_start_date = delivery_date + 2 business days
         - Calculate campaign_end_date = activation_start_date + 90 days (initial, updated in Call 5)
@@ -147,7 +147,7 @@ for proactive outreach calls via the scheduler (BC-DA-003, BC-DA-004).
     - Database errors → Rollback, move blob to error/ folder
 
     Database Impact:
-    - Tables: engage360.members, engage360.member_devices, engage360.member_campaign_enrollments_enhanced
+    - Tables: {IOE_SCHEMA}.members, {IOE_SCHEMA}.member_devices, {IOE_SCHEMA}.member_campaign_enrollments_enhanced
     - Operations: MERGE (members, devices), INSERT (enrollments)
     - Transaction: All-or-nothing (rollback on any error)
 
@@ -277,16 +277,16 @@ CSV FILE STRUCTURE:
 DATABASE TABLES ACCESSED:
 --------------------------
 **Staging Table:**
-- engage360_stg.stg_device_activation_delta (read/write - temporary staging)
+- {IOE_SCHEMA_STG}.stg_device_activation_delta (read/write - temporary staging)
 
 **Core Tables:**
-- engage360.members (write - MERGE)
-- engage360.member_devices (write - MERGE)
-- engage360.member_campaign_enrollments_enhanced (write - INSERT)
-- engage360.orgs (read - org_id lookup)
+- {IOE_SCHEMA}.members (write - MERGE)
+- {IOE_SCHEMA}.member_devices (write - MERGE)
+- {IOE_SCHEMA}.member_campaign_enrollments_enhanced (write - INSERT)
+- {IOE_SCHEMA}.orgs (read - org_id lookup)
 
 **Audit Tables:**
-- engage360.file_processing_log (write - audit trail)
+- {IOE_SCHEMA}.file_processing_log (write - audit trail)
 
 ERROR HANDLING STRATEGY:
 -------------------------
@@ -356,10 +356,10 @@ from azure.identity import DefaultAzureCredential
 import logging
 import uuid
 import pandas as pd
+import pyodbc
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple
 from dataclasses import dataclass, field
-import pymssql
 from pathlib import Path
 
 try:
@@ -374,7 +374,12 @@ except ImportError:
     DataFrameSchema = None
     Check = None
 
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 try:
     from azure.storage.blob import BlobServiceClient
@@ -391,6 +396,7 @@ import re
 from af_code.shared.language_mapper import map_language_code
 from af_code.shared.business_hours_utils import add_business_days, is_business_day
 from af_code.shared.phone_utils import standardize_phone_device_activation
+from af_code.shared.schema_config import IOE_SCHEMA, IOE_SCHEMA_STG
 
 # Module load verification
 logger = logging.getLogger(__name__)
@@ -407,7 +413,7 @@ def safe_value(value, default=None):
     """
     Convert pandas NaN/NA values to None for SQL compatibility.
 
-    Prevents pymssql from converting NaN to the string "nan" when inserting to SQL Server.
+    Prevents pyodbc from converting NaN to the string "nan" when inserting to SQL Server.
 
     Args:
         value: Value from pandas DataFrame (may be NaN, None, or actual value)
@@ -484,7 +490,11 @@ def move_blob(blob_name: str, source_folder: str, target_folder: str, container_
 
 
 def handle_blob_movement_with_error_handling(
-    source_filename: str, source_folder: str, target_folder: str, container_name: str, logger
+    source_filename: str,
+    source_folder: str,
+    target_folder: str,
+    container_name: str,
+    logger,
 ):
     """Safely move blob with error handling and fallback logic"""
     try:
@@ -540,42 +550,39 @@ def handle_blob_movement_with_error_handling(
 # ============================================================================
 
 
-def get_db_connection_string():
-    """Retrieve database connection string from Key Vault"""
-    key_vault_url = os.environ.get("KEY_VAULT_URL")
-    secret_name = "SqlConnectionStringIOE"  # nosec B105
-
-    credential = DefaultAzureCredential()
-    client = SecretClient(vault_url=key_vault_url, credential=credential)
-    secret = client.get_secret(secret_name)
-    return secret.value
-
-
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=10),
-    retry=retry_if_exception_type(pymssql.OperationalError),
+    retry=retry_if_exception_type(pyodbc.OperationalError),
 )
 def get_db_connection(timeout: int = 30):
-    """Get database connection with retry logic
+    """Get database connection with retry logic using pyodbc and Managed Identity.
 
     Args:
-        timeout: Query execution timeout in seconds (default: 30)
+        timeout: Unused; Connection Timeout is set in the ODBC connection string (default: 30)
     """
-    conn_str = get_db_connection_string()
+    conn_str = os.environ.get("SqlConnectionString", "")
 
-    # Parse connection string
-    parts = dict(item.split("=", 1) for item in conn_str.split(";") if "=" in item)
+    params = {}
+    for part in conn_str.split(";"):
+        if "=" in part:
+            key, value = part.split("=", 1)
+            params[key.strip()] = value.strip()
 
-    return pymssql.connect(
-        server=parts.get("Server", "").replace("tcp:", "").split(",")[0],
-        user=parts.get("User ID", ""),
-        password=parts.get("Password", ""),
-        database=parts.get("Initial Catalog", ""),
-        port=int(parts.get("Server", "").split(",")[1]) if "," in parts.get("Server", "") else 1433,
-        timeout=timeout,
-        login_timeout=30,
+    server = params.get("Server", "").replace("tcp:", "").split(",")[0]
+    database = params.get("Database", "") or params.get("Initial Catalog", "")
+
+    connection_string = (
+        f"Driver={{ODBC Driver 18 for SQL Server}};"
+        f"Server={server};"
+        f"Database={database};"
+        "Authentication=ActiveDirectoryMsi;"
+        "Encrypt=yes;"
+        "TrustServerCertificate=no;"
+        "Connection Timeout=30;"
+        "Login Timeout=30;"
     )
+    return pyodbc.connect(connection_string)
 
 
 # ============================================================================
@@ -724,8 +731,8 @@ class ProcessingContext:
 
 
 def get_org_id_for_partner(partner_name: str) -> Optional[str]:
-    """
-    Look up org_id from engage360.orgs table based on partner name.
+    f"""
+    Look up org_id from {IOE_SCHEMA}.orgs table based on partner name.
     Specifically looks up DTC org_type for Device Activation operations.
 
     Args:
@@ -738,10 +745,10 @@ def get_org_id_for_partner(partner_name: str) -> Optional[str]:
         conn = get_db_connection()
         cursor = conn.cursor()
 
-        query = """
+        query = f"""
         SELECT org_id
-        FROM engage360.orgs
-        WHERE org_name = %s
+        FROM {IOE_SCHEMA}.orgs
+        WHERE org_name = ?
           AND org_type = 'DTC'
         """
 
@@ -1677,14 +1684,14 @@ def validate_and_cleanse_data_before_insert(
 
         if len(device_udis) > 0:
             # Query database for existing device ownership
-            placeholders = ",".join(["%s"] * len(device_udis))
+            placeholders = ",".join(["?"] * len(device_udis))
             ownership_check_sql = f"""
             SELECT
                 md.device_id AS device_udi,
                 md.member_id AS existing_member_id,
                 m.salesforce_account_number AS existing_account
-            FROM engage360.member_devices md
-            JOIN engage360.members m ON md.member_id = m.member_id
+            FROM {IOE_SCHEMA}.member_devices md
+            JOIN {IOE_SCHEMA}.members m ON md.member_id = m.member_id
             WHERE md.device_id IN ({placeholders});
             """
 
@@ -1785,7 +1792,9 @@ def validate_and_cleanse_data_before_insert(
 # ============================================================================
 
 
-def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], ProcessingResult]:
+def extract(
+    context: ProcessingContext,
+) -> Tuple[Optional[pd.DataFrame], ProcessingResult]:
     """
     Phase 1: Extract CSV file from blob storage
 
@@ -1932,7 +1941,10 @@ def extract(context: ProcessingContext) -> Tuple[Optional[pd.DataFrame], Process
 
     except Exception as e:
         logger.error(f"❌ [EXTRACT] Error in extract phase: {e}", exc_info=True)
-        return (None, ProcessingResult(success=False, message=f"Extract failed: {str(e)}", error=e))
+        return (
+            None,
+            ProcessingResult(success=False, message=f"Extract failed: {str(e)}", error=e),
+        )
 
 
 # ============================================================================
@@ -1986,8 +1998,8 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
 
         # Step 4: Insert all rows (including errors for tracking)
         # Updated to match 27-column CSV format
-        insert_query = """
-        INSERT INTO engage360_stg.stg_device_activation_delta (
+        insert_query = f"""
+        INSERT INTO {IOE_SCHEMA_STG}.stg_device_activation_delta (
             file_batch_id, row_number_in_file, uploaded_by_user, uploaded_ts,
             processing_status, validation_status, error_message,
             partner_name, campaign_name_source,
@@ -2003,19 +2015,19 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
             campaign_parameters, monitoring_system_id,
             enrollment_status, unenrollment_reason
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s,
-            %s, %s,
-            %s, %s, %s,
-            %s, %s, %s, %s,
-            %s, %s, %s, %s, %s,
-            %s, %s, %s,
-            %s,
-            %s, %s, %s,
-            %s, %s,
-            %s, %s,
-            %s,
-            %s, %s,
-            %s, %s
+            ?, ?, ?, ?, ?, ?, ?,
+            ?, ?,
+            ?, ?, ?,
+            ?, ?, ?, ?,
+            ?, ?, ?, ?, ?,
+            ?, ?, ?,
+            ?,
+            ?, ?, ?,
+            ?, ?,
+            ?, ?,
+            ?,
+            ?, ?,
+            ?, ?
         )
         """
 
@@ -2128,12 +2140,12 @@ def validate_data(context: ProcessingContext) -> ProcessingResult:
         cursor = conn.cursor()
 
         # Update org_id from partner_name
-        update_org_query = """
+        update_org_query = f"""
         UPDATE stg
         SET stg.org_id = o.org_id
-        FROM engage360_stg.stg_device_activation_delta stg
-        INNER JOIN engage360.orgs o ON LTRIM(RTRIM(stg.partner_name)) = o.org_name
-        WHERE stg.file_batch_id = %s
+        FROM {IOE_SCHEMA_STG}.stg_device_activation_delta stg
+        INNER JOIN {IOE_SCHEMA}.orgs o ON LTRIM(RTRIM(stg.partner_name)) = o.org_name
+        WHERE stg.file_batch_id = ?
         """
         cursor.execute(update_org_query, (context.file_batch_id,))
         logger.info("✅ [VALIDATE] Updated org_id from partner_name")
@@ -2189,20 +2201,25 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 logger.info(f"   Campaign name: {context.campaign_name}")
 
             # Validate campaign exists and is Active
-            validation_query = """
+            validation_query = f"""
             SELECT campaign_id, name, campaign_type, status
-            FROM engage360.campaigns_enhanced
-            WHERE campaign_id = %s
+            FROM {IOE_SCHEMA}.campaigns_enhanced
+            WHERE campaign_id = ?
             """
             cursor.execute(validation_query, (campaign_id,))
             campaign_result = cursor.fetchone()
 
             if not campaign_result:
                 return ProcessingResult(
-                    success=False, message=f"Campaign {campaign_id} not found in database"
+                    success=False,
+                    message=f"Campaign {campaign_id} not found in database",
                 )
 
-            db_name, db_type, db_status = campaign_result[1], campaign_result[2], campaign_result[3]
+            db_name, db_type, db_status = (
+                campaign_result[1],
+                campaign_result[2],
+                campaign_result[3],
+            )
             if db_status != "Active":
                 return ProcessingResult(
                     success=False,
@@ -2217,9 +2234,9 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         else:
             # Legacy flow: Auto-discover campaign by type
             logger.info("🔍 [TRANSFORM] Auto-discovering Device Activation campaign")
-            legacy_query = """
+            legacy_query = f"""
             SELECT campaign_id, name, campaign_type
-            FROM engage360.campaigns_enhanced
+            FROM {IOE_SCHEMA}.campaigns_enhanced
             WHERE campaign_type IN ('Operations', 'Device Activation', 'DeviceActivation')
             AND status = 'Active'
             """
@@ -2248,8 +2265,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             logger.info(f"   Campaign type: {campaign_results[0][2]}")
 
         # Step 2: MERGE INTO members
-        merge_members_query = """
-        MERGE engage360.members AS tgt
+        merge_members_query = f"""
+        MERGE {IOE_SCHEMA}.members AS tgt
         USING (
             SELECT DISTINCT
                 stg.org_id,
@@ -2268,8 +2285,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 stg.timezone,
                 stg.language_pref,
                 stg.member_brand
-            FROM engage360_stg.stg_device_activation_delta stg
-            WHERE stg.file_batch_id = %s
+            FROM {IOE_SCHEMA_STG}.stg_device_activation_delta stg
+            WHERE stg.file_batch_id = ?
               AND stg.validation_status = 'VALIDATED'
               AND stg.org_id IS NOT NULL
         ) AS src
@@ -2314,8 +2331,8 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         # Step 3: MERGE INTO member_devices
         # NOTE: brand, battery_status, fall_detection_status, updated_ts columns
         # NOTE: added via migration: database/add_device_activation_columns_to_member_devices.sql
-        merge_devices_query = """
-        MERGE engage360.member_devices AS tgt
+        merge_devices_query = f"""
+        MERGE {IOE_SCHEMA}.member_devices AS tgt
         USING (
             SELECT DISTINCT
                 stg.device_udi,
@@ -2333,11 +2350,11 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 END AS fall_detection,
                 -- Keep powersaver_mode original value
                 stg.powersaver_mode
-            FROM engage360_stg.stg_device_activation_delta stg
-            INNER JOIN engage360.members m
+            FROM {IOE_SCHEMA_STG}.stg_device_activation_delta stg
+            INNER JOIN {IOE_SCHEMA}.members m
                 ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
-            WHERE stg.file_batch_id = %s
+            WHERE stg.file_batch_id = ?
               AND stg.validation_status = 'VALIDATED'
               AND stg.device_udi IS NOT NULL
         ) AS src
@@ -2372,12 +2389,12 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         )
 
         # Debug: Verify fall_detection values were inserted correctly
-        debug_query = """
+        debug_query = f"""
         SELECT TOP 5 device_id, fall_detection, powersaver_mode
-        FROM engage360.member_devices md
+        FROM {IOE_SCHEMA}.member_devices md
         WHERE EXISTS (
-            SELECT 1 FROM engage360_stg.stg_device_activation_delta stg
-            WHERE stg.file_batch_id = %s
+            SELECT 1 FROM {IOE_SCHEMA_STG}.stg_device_activation_delta stg
+            WHERE stg.file_batch_id = ?
               AND md.device_id = stg.device_udi
         )
         ORDER BY md.updated_ts DESC
@@ -2400,16 +2417,16 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
 
         # First, get staging data (NO delivery_date - using enrollment_ts instead)
         # Process ALL enrollment statuses (ENROLL, UPDATE, UNENROLL)
-        get_staging_query = """
+        get_staging_query = f"""
         SELECT DISTINCT
             m.member_id,
             stg.enrollment_status,
             stg.unenrollment_reason
-        FROM engage360_stg.stg_device_activation_delta stg
-        INNER JOIN engage360.members m
+        FROM {IOE_SCHEMA_STG}.stg_device_activation_delta stg
+        INNER JOIN {IOE_SCHEMA}.members m
             ON m.org_id = stg.org_id
             AND m.salesforce_account_number = stg.salesforce_account_number
-        WHERE stg.file_batch_id = %s
+        WHERE stg.file_batch_id = ?
           AND stg.validation_status = 'VALIDATED'
         """
         cursor.execute(get_staging_query, (context.file_batch_id,))
@@ -2418,10 +2435,10 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         # Update processing status from PENDING to TRANSFORMING
         # This is critical: The MERGE query at line 1565 filters for 'TRANSFORMING' status
         # Without this update, MERGE finds 0 rows → 0 enrollments
-        status_update_query = """
-        UPDATE engage360_stg.stg_device_activation_delta
+        status_update_query = f"""
+        UPDATE {IOE_SCHEMA_STG}.stg_device_activation_delta
         SET processing_status = 'TRANSFORMING'
-        WHERE file_batch_id = %s
+        WHERE file_batch_id = ?
           AND processing_status = 'PENDING'
         """
 
@@ -2487,21 +2504,21 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             # 1. Handle ENROLL (new enrollments)
             if enroll_count > 0:
                 logger.info(f"📝 [TRANSFORM] Processing {enroll_count} ENROLL actions...")
-                enroll_merge_query = """
-                MERGE engage360.member_campaign_enrollments_enhanced AS tgt
+                enroll_merge_query = f"""
+                MERGE {IOE_SCHEMA}.member_campaign_enrollments_enhanced AS tgt
                 USING (
                     SELECT
                         m.member_id,
-                        %s AS campaign_id,
-                        %s AS activation_start_date,
-                        %s AS campaign_end_date,
-                        %s AS call_5_timestamp,
+                        ? AS campaign_id,
+                        ? AS activation_start_date,
+                        ? AS campaign_end_date,
+                        ? AS call_5_timestamp,
                         stg.transfer_phone_number
-                    FROM engage360_stg.stg_device_activation_delta stg
-                    JOIN engage360.members m
+                    FROM {IOE_SCHEMA_STG}.stg_device_activation_delta stg
+                    JOIN {IOE_SCHEMA}.members m
                         ON m.org_id = stg.org_id
                         AND m.salesforce_account_number = stg.salesforce_account_number
-                    WHERE stg.file_batch_id = %s
+                    WHERE stg.file_batch_id = ?
                       AND stg.processing_status = 'TRANSFORMING'
                       AND stg.enrollment_status = 'ENROLL'
                 ) AS src
@@ -2578,21 +2595,21 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             # 2. Handle UPDATE (existing enrollments)
             if update_count > 0:
                 logger.info(f"🔄 [TRANSFORM] Processing {update_count} UPDATE actions...")
-                update_query = """
+                update_query = f"""
                 UPDATE e
-                SET e.activation_start_date = %s,
-                    e.campaign_end_date = %s,
+                SET e.activation_start_date = ?,
+                    e.campaign_end_date = ?,
                     e.transfer_phone_number = stg.transfer_phone_number,
                     e.enrollment_ts = SYSDATETIMEOFFSET()
-                FROM engage360.member_campaign_enrollments_enhanced e
-                JOIN engage360.members m ON e.member_id = m.member_id
-                JOIN engage360_stg.stg_device_activation_delta stg
+                FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
+                JOIN {IOE_SCHEMA}.members m ON e.member_id = m.member_id
+                JOIN {IOE_SCHEMA_STG}.stg_device_activation_delta stg
                     ON m.org_id = stg.org_id
                     AND m.salesforce_account_number = stg.salesforce_account_number
-                WHERE stg.file_batch_id = %s
+                WHERE stg.file_batch_id = ?
                   AND stg.processing_status = 'TRANSFORMING'
                   AND stg.enrollment_status = 'UPDATE'
-                  AND e.campaign_id = %s
+                  AND e.campaign_id = ?
                 """
                 cursor.execute(
                     update_query,
@@ -2608,19 +2625,19 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             # 3. Handle UNENROLL (terminate enrollments)
             if unenroll_count > 0:
                 logger.info(f"❌ [TRANSFORM] Processing {unenroll_count} UNENROLL actions...")
-                unenroll_query = """
+                unenroll_query = f"""
                 UPDATE e
                 SET e.current_status = 'UNENROLLED',
                     e.unenrollment_reason = COALESCE(stg.unenrollment_reason, 'Updated via file processing')
-                FROM engage360.member_campaign_enrollments_enhanced e
-                JOIN engage360.members m ON e.member_id = m.member_id
-                JOIN engage360_stg.stg_device_activation_delta stg
+                FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
+                JOIN {IOE_SCHEMA}.members m ON e.member_id = m.member_id
+                JOIN {IOE_SCHEMA_STG}.stg_device_activation_delta stg
                     ON m.org_id = stg.org_id
                     AND m.salesforce_account_number = stg.salesforce_account_number
-                WHERE stg.file_batch_id = %s
+                WHERE stg.file_batch_id = ?
                   AND stg.processing_status = 'TRANSFORMING'
                   AND stg.enrollment_status = 'UNENROLL'
-                  AND e.campaign_id = %s
+                  AND e.campaign_id = ?
                 """
                 cursor.execute(unenroll_query, (context.file_batch_id, str(campaign_id)))
                 logger.info(f"✅ [TRANSFORM] Unenrolled {unenroll_count} members")
@@ -2631,16 +2648,16 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
 
         # Verify campaign enrollment
         logger.info("🔍 [TRANSFORM] Verifying campaign enrollment...")
-        verify_query = """
+        verify_query = f"""
         SELECT TOP 5
             e.enrollment_id,
             e.member_id,
             e.campaign_id,
             c.name AS campaign_name,
             e.current_status
-        FROM engage360.member_campaign_enrollments_enhanced e
-        JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
-        WHERE e.campaign_id = %s
+        FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
+        JOIN {IOE_SCHEMA}.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+        WHERE e.campaign_id = ?
         ORDER BY e.enrollment_ts DESC
         """
         cursor.execute(verify_query, (str(campaign_id),))
@@ -2662,18 +2679,18 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             "💾 [TRANSFORM] Step 4.5: Upserting member identifiers (monitoring_system_id)..."
         )
 
-        merge_identifiers_query = """
-        MERGE engage360.member_identifiers AS tgt
+        merge_identifiers_query = f"""
+        MERGE {IOE_SCHEMA}.member_identifiers AS tgt
         USING (
             SELECT DISTINCT
                 m.member_id,
                 'monitoring_system_id' AS id_type,
                 stg.monitoring_system_id AS id_value
-            FROM engage360_stg.stg_device_activation_delta stg
-            INNER JOIN engage360.members m
+            FROM {IOE_SCHEMA_STG}.stg_device_activation_delta stg
+            INNER JOIN {IOE_SCHEMA}.members m
                 ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
-            WHERE stg.file_batch_id = %s
+            WHERE stg.file_batch_id = ?
               AND stg.processing_status = 'TRANSFORMING'
               AND stg.monitoring_system_id IS NOT NULL
               AND LTRIM(RTRIM(stg.monitoring_system_id)) != ''
@@ -2700,7 +2717,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
 
         # Verification query - sample the inserted identifiers
         if identifiers_affected > 0:
-            verify_identifiers_query = """
+            verify_identifiers_query = f"""
             SELECT TOP 5
                 mi.member_identifier_id,
                 m.first_name,
@@ -2708,15 +2725,15 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 mi.id_type,
                 mi.id_value,
                 mi.created_ts
-            FROM engage360.member_identifiers mi
-            INNER JOIN engage360.members m ON mi.member_id = m.member_id
+            FROM {IOE_SCHEMA}.member_identifiers mi
+            INNER JOIN {IOE_SCHEMA}.members m ON mi.member_id = m.member_id
             WHERE mi.member_id IN (
                 SELECT DISTINCT m.member_id
-                FROM engage360_stg.stg_device_activation_delta stg
-                INNER JOIN engage360.members m
+                FROM {IOE_SCHEMA_STG}.stg_device_activation_delta stg
+                INNER JOIN {IOE_SCHEMA}.members m
                     ON m.org_id = stg.org_id
                     AND m.salesforce_account_number = stg.salesforce_account_number
-                WHERE stg.file_batch_id = %s
+                WHERE stg.file_batch_id = ?
                   AND stg.monitoring_system_id IS NOT NULL
             )
               AND mi.id_type = 'monitoring_system_id'
@@ -2738,10 +2755,10 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
             logger.info("ℹ️ [TRANSFORM] No monitoring_system_id values found in this batch")
 
         # Step 5: Mark staging as PROCESSED
-        update_staging_query = """
-        UPDATE engage360_stg.stg_device_activation_delta
+        update_staging_query = f"""
+        UPDATE {IOE_SCHEMA_STG}.stg_device_activation_delta
         SET processing_status = 'PROCESSED'
-        WHERE file_batch_id = %s AND validation_status = 'VALIDATED'
+        WHERE file_batch_id = ? AND validation_status = 'VALIDATED'
         """
         cursor.execute(update_staging_query, (context.file_batch_id,))
 
@@ -2794,14 +2811,14 @@ def audit_and_log(context: ProcessingContext, details: Dict[str, Any]) -> Proces
         cursor = conn.cursor()
 
         # Insert file processing log
-        insert_log_query = """
-        INSERT INTO engage360_stg.file_processing_log (
+        insert_log_query = f"""
+        INSERT INTO {IOE_SCHEMA_STG}.file_processing_log (
             file_batch_id, source_filename, file_type, uploaded_by_user,
             upload_started_ts, completed_ts, current_status,
             total_records_processed, successful_records, failed_records, enrollments_created,
             error_percentage
         ) VALUES (
-            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
         """
 
@@ -2830,7 +2847,11 @@ def audit_and_log(context: ProcessingContext, details: Dict[str, Any]) -> Proces
         # Move file to processed folder
         try:
             handle_blob_movement_with_error_handling(
-                context.source_filename, "staging", "processed", context.container_name, logger
+                context.source_filename,
+                "staging",
+                "processed",
+                context.container_name,
+                logger,
             )
         except Exception as e:
             logger.warning(f"⚠️ [AUDIT] Could not move file to processed: {e}")

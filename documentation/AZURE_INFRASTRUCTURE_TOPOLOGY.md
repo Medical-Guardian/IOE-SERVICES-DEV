@@ -38,7 +38,7 @@ The IOE Services Platform leverages a **serverless-first, event-driven architect
 | **Monthly Estimated Cost** | $500-$1,200 (production workload) |
 | **Compliance Level** | HIPAA, SOC 2 Type II ready |
 | **Runtime** | Python 3.12 on Azure Functions v4 |
-| **Primary Database** | Azure SQL Database (engage360 schema, 65 tables) |
+| **Primary Database** | Azure SQL Database (ioe schema, 65 tables) |
 | **Storage** | Azure Blob Storage (3 containers, Standard LRS) |
 | **Deployment** | GitHub Actions CI/CD with quality gates |
 
@@ -75,7 +75,7 @@ graph TB
 
             subgraph "Data Layer"
                 Blob[Azure Blob Storage<br/>Standard LRS<br/>Containers: 3<br/>Cost: $<br/>PHI: YES]
-                SQL[(Azure SQL Database<br/>Database: engage360<br/>Schema: 65 tables<br/>Cost: $$<br/>PHI: YES)]
+                SQL[(Azure SQL Database<br/>Database: ioe<br/>Schema: 65 tables<br/>Cost: $$<br/>PHI: YES)]
             end
 
             subgraph "Security & Identity Layer"
@@ -574,7 +574,7 @@ graph TB
 
 | Secret Name | Description | Used By | Format |
 |-------------|-------------|---------|--------|
-| `SqlConnectionStringIOE` | Azure SQL Database connection string | All functions needing database access | `Server=tcp:...;Database=engage360;User ID=...;Password=...;Encrypt=true` |
+| `SqlConnectionStringIOE` | Azure SQL Database connection string | All functions needing database access | `Server=tcp:...;Database=ioe;User ID=...;Password=...;Encrypt=true` |
 | `BlandAIkey` | Bland AI API authentication token | Schedulers (batch submission) | Bearer token string |
 | `Blandaitwilio` | Twilio encryption key for Bland AI | Schedulers (batch submission) | Encryption key string |
 | `AzureStorageConnectionString` | Blob storage connection string | File processors | `DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...` |
@@ -623,7 +623,7 @@ graph TB
 
 - **[AZURE_COMPONENTS_REFERENCE.md](./AZURE_COMPONENTS_REFERENCE.md)** - Detailed component analysis and code references
 - **[IOE_AZURE_FUNCTIONS_COMPREHENSIVE_DOCUMENTATION.md](../IOE_AZURE_FUNCTIONS_COMPREHENSIVE_DOCUMENTATION.md)** - Complete function-level documentation with workflows
-- **[ENGAGE360_TABLE_USAGE_REFERENCE.md](../ENGAGE360_TABLE_USAGE_REFERENCE.md)** - Database schema (65 tables, 23 actively used)
+- **[IOE_TABLE_USAGE_REFERENCE.md](../IOE_TABLE_USAGE_REFERENCE.md)** - Database schema (65 tables, 23 actively used)
 - **[PARTNER_CAMPAIGN_COMPLETE_DOCUMENTATION.md](../PARTNER_CAMPAIGN_COMPLETE_DOCUMENTATION.md)** - Partner campaign workflows and SQL queries
 - **[DTC_CALL_FLOW.md](../DTC_CALL_FLOW.md)** - DTC intro call scheduling flow
 - **[WEBHOOK_TESTING_GUIDE.md](../WEBHOOK_TESTING_GUIDE.md)** - Bland AI webhook integration testing

@@ -79,7 +79,9 @@ class BlandAIServiceWellness:
 
         try:
             self.db_service.execute_query(
-                CREATE_BATCH_QUERY, (batch_id, campaign_id, member_count), fetch_results=False
+                CREATE_BATCH_QUERY,
+                (batch_id, campaign_id, member_count),
+                fetch_results=False,
             )
             logger.info(f"✅ [BlandAIServiceWellness] Outreach batch created: {batch_id}")
             return batch_id
@@ -306,7 +308,9 @@ class BlandAIServiceWellness:
         )
         try:
             self.db_service.execute_query(
-                UPDATE_BATCH_VENDOR_ID_QUERY, (vendor_batch_id, batch_id), fetch_results=False
+                UPDATE_BATCH_VENDOR_ID_QUERY,
+                (vendor_batch_id, batch_id),
+                fetch_results=False,
             )
             logger.info("✅ [BlandAIServiceWellness] Batch updated successfully")
         except Exception as e:
@@ -322,7 +326,9 @@ class BlandAIServiceWellness:
         )
         try:
             self.db_service.execute_query(
-                UPDATE_BATCH_FAILED_QUERY, (error_message, batch_id), fetch_results=False
+                UPDATE_BATCH_FAILED_QUERY,
+                (error_message, batch_id),
+                fetch_results=False,
             )
             logger.info("✅ [BlandAIServiceWellness] Batch failure updated")
         except Exception as e:

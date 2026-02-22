@@ -58,7 +58,7 @@ Timer (Every 10 min) → Get Qualified Members → Create Batch → Submit to Bl
 │                                                                   │
 │ Query Database:                                                  │
 │   SELECT members                                                 │
-│   FROM engage360.member_campaign_enrollments_enhanced            │
+│   FROM ioe.member_campaign_enrollments_enhanced            │
 │   WHERE campaign_id = '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC'     │
 │     AND current_status = 'ENROLLED'                              │
 │     AND current_day IN call_days_of_week                         │
@@ -76,14 +76,14 @@ Timer (Every 10 min) → Get Qualified Members → Create Batch → Submit to Bl
 │ File: af_code/af_dtc_intro_call/services/blandai_service.py      │
 │                                                                   │
 │ 4a. Create Batch Record:                                         │
-│     INSERT INTO engage360.outreach_batches                       │
+│     INSERT INTO ioe.outreach_batches                       │
 │     (batch_id, campaign_id, total_calls_intended, batch_status)  │
 │     VALUES (UUID(), campaign_id, 150, 'Pending')                 │
 │                                                                   │
 │     Returns: batch_id = "550e8400-e29b-41d4-a716-446655440000"   │
 │                                                                   │
 │ 4b. Create Attempt Records (for each member):                    │
-│     INSERT INTO engage360.outreach_attempts                      │
+│     INSERT INTO ioe.outreach_attempts                      │
 │     (attempt_id, enrollment_id, batch_id, disposition)           │
 │     VALUES (UUID(), enrollment_id, batch_id, 'Pending')          │
 │                                                                   │
@@ -97,7 +97,7 @@ Timer (Every 10 min) → Get Qualified Members → Create Batch → Submit to Bl
 │                                                                   │
 │ Query:                                                           │
 │   SELECT bland_parameters_global                                 │
-│   FROM engage360.campaign_call_configs_enhanced                  │
+│   FROM ioe.campaign_call_configs_enhanced                  │
 │   WHERE campaign_id = '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC'     │
 │     AND config_status = 'active'                                 │
 │                                                                   │
@@ -201,7 +201,7 @@ Timer (Every 10 min) → Get Qualified Members → Create Batch → Submit to Bl
 │ STEP 9: Update Database with Vendor Batch ID                     │
 │ File: af_code/af_dtc_intro_call/services/blandai_service.py      │
 │                                                                   │
-│ UPDATE engage360.outreach_batches                                │
+│ UPDATE ioe.outreach_batches                                │
 │ SET vendor_batch_id = 'bland_batch_abc123xyz789',                │
 │     batch_status = 'Submitted',                                  │
 │     submitted_ts = SYSDATETIMEOFFSET()                           │
@@ -279,7 +279,7 @@ Timer (Every 10 min) → Get Qualified Members → Create Batch → Submit to Bl
 │   2. Extract attempt_id from metadata                            │
 │   3. Determine disposition (Completed, No Answer, Failed)        │
 │   4. Update database:                                            │
-│      UPDATE engage360.outreach_attempts                          │
+│      UPDATE ioe.outreach_attempts                          │
 │      SET disposition = 'Completed',                              │
 │          vendor_session_id = 'call_xyz123',                      │
 │          call_duration = 180,                                    │

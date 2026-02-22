@@ -15,7 +15,7 @@
 -- Date: 2026-02-13
 -- ========================================================================
 
-USE engage360;
+USE ioe;
 GO
 
 -- Step 1: Preview the backfill (Optional - Comment out for actual run)
@@ -25,8 +25,8 @@ SELECT
     COUNT(*) AS enrollments_to_update,
     COUNT(CASE WHEN mce.channel IS NULL THEN 1 END) AS null_channels,
     COUNT(CASE WHEN m.Channel IS NULL THEN 1 END) AS null_member_channel
-FROM engage360.member_campaign_enrollments_enhanced mce
-JOIN engage360.members m ON mce.member_id = m.member_id
+FROM ioe.member_campaign_enrollments_enhanced mce
+JOIN ioe.members m ON mce.member_id = m.member_id
 WHERE mce.campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro
     'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness
@@ -38,8 +38,8 @@ GO
 -- Default to 'phone' if member.Channel is NULL
 UPDATE mce
 SET mce.channel = ISNULL(m.Channel, 'phone')
-FROM engage360.member_campaign_enrollments_enhanced mce
-JOIN engage360.members m ON mce.member_id = m.member_id
+FROM ioe.member_campaign_enrollments_enhanced mce
+JOIN ioe.members m ON mce.member_id = m.member_id
 WHERE mce.campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro
     'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness
@@ -49,7 +49,7 @@ GO
 
 -- Step 3: Verification - Should return 0 NULL channels after backfill
 SELECT COUNT(*) AS null_channels_remaining
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro
     'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness
@@ -62,8 +62,8 @@ SELECT
     c.name AS campaign_name,
     mce.channel,
     COUNT(*) AS enrollment_count
-FROM engage360.member_campaign_enrollments_enhanced mce
-JOIN engage360.campaigns_enhanced c ON mce.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced mce
+JOIN ioe.campaigns_enhanced c ON mce.campaign_id = c.campaign_id
 WHERE mce.campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro
     'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness
@@ -75,8 +75,8 @@ GO
 -- Step 5: Verification - Compare with member-level channel (should match)
 SELECT
     COUNT(*) AS mismatched_channels
-FROM engage360.member_campaign_enrollments_enhanced mce
-JOIN engage360.members m ON mce.member_id = m.member_id
+FROM ioe.member_campaign_enrollments_enhanced mce
+JOIN ioe.members m ON mce.member_id = m.member_id
 WHERE mce.campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',
     'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'

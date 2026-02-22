@@ -30,22 +30,22 @@ The Partner Campaign Scheduler has been fully implemented using existing databas
 ### **Required Changes (Minimal):**
 ```sql
 -- Only one new column needed
-ALTER TABLE engage360.campaigns_enhanced 
+ALTER TABLE ioe.campaigns_enhanced 
 ADD audience_file_batch NVARCHAR(255);
 
 -- Performance indexes
-CREATE INDEX IX_campaigns_partner_active ON engage360.campaigns_enhanced(...);
-CREATE INDEX IX_outreach_batches_campaign_submitted ON engage360.outreach_batches(...);
-CREATE INDEX IX_member_devices_member_callable ON engage360.member_devices(...);
+CREATE INDEX IX_campaigns_partner_active ON ioe.campaigns_enhanced(...);
+CREATE INDEX IX_outreach_batches_campaign_submitted ON ioe.outreach_batches(...);
+CREATE INDEX IX_member_devices_member_callable ON ioe.member_devices(...);
 ```
 
 ### **Existing Tables Used:**
-- ✅ `engage360.campaigns_enhanced` (with new audience_file_batch column)
-- ✅ `engage360.members` (using existing Channel, timezone, primary_phone)
-- ✅ `engage360.member_devices` (using device_phone_number, is_device_callable)
-- ✅ `engage360.member_campaign_enrollments_enhanced` (using enrollment_id FK)
-- ✅ `engage360.outreach_batches` (for batch tracking)
-- ✅ `engage360.outreach_attempts` (for individual call attempts)
+- ✅ `ioe.campaigns_enhanced` (with new audience_file_batch column)
+- ✅ `ioe.members` (using existing Channel, timezone, primary_phone)
+- ✅ `ioe.member_devices` (using device_phone_number, is_device_callable)
+- ✅ `ioe.member_campaign_enrollments_enhanced` (using enrollment_id FK)
+- ✅ `ioe.outreach_batches` (for batch tracking)
+- ✅ `ioe.outreach_attempts` (for individual call attempts)
 
 ---
 
@@ -124,7 +124,7 @@ func azure functionapp publish your-function-app-name
 ### **Hamaspik Choice Campaign:**
 ```sql
 -- Campaign Configuration
-UPDATE engage360.campaigns_enhanced SET
+UPDATE ioe.campaigns_enhanced SET
     audience_file_batch = 'Hamaspik-FluQ4-20250923T0044',
     contact_pref = 'device',
     timezone_flag = 'member_tz',
@@ -142,7 +142,7 @@ WHERE name = 'Hamaspik_Flu_Q4-2025';
 ### **FidelisCare Campaign:**
 ```sql
 -- Campaign Configuration  
-UPDATE engage360.campaigns_enhanced SET
+UPDATE ioe.campaigns_enhanced SET
     audience_file_batch = 'FidelisCare-FluQ4-20250925',
     contact_pref = 'member_preference',
     timezone_flag = 'operating_tz',
@@ -203,13 +203,13 @@ WHERE name = 'Flu Outreach Q4-2025';
 ```sql
 -- Check active Partner campaigns
 SELECT name, status, audience_file_batch, contact_pref, timezone_flag
-FROM engage360.campaigns_enhanced 
+FROM ioe.campaigns_enhanced 
 WHERE campaign_type = 'Partner' AND status = 'Active';
 
 -- Check recent batch submissions
 SELECT ob.*, ce.name 
-FROM engage360.outreach_batches ob
-JOIN engage360.campaigns_enhanced ce ON ob.campaign_id = ce.campaign_id
+FROM ioe.outreach_batches ob
+JOIN ioe.campaigns_enhanced ce ON ob.campaign_id = ce.campaign_id
 WHERE ob.submitted_ts >= DATEADD(day, -1, SYSDATETIMEOFFSET())
 ORDER BY ob.submitted_ts DESC;
 ```

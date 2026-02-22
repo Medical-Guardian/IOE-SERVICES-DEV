@@ -68,9 +68,7 @@ def standardize_phone(phone: str) -> Optional[str]:
                 # Also validate area code (2nd digit must be 2-9)
                 if digits_only[1] in "23456789":
                     standardized = f"+{digits_only}"
-                    logger.debug(
-                        f"📞 [PHONE-UTILS] Valid US/Canada E.164: {standardized}"
-                    )
+                    logger.debug(f"📞 [PHONE-UTILS] Valid US/Canada E.164: {standardized}")
                     return standardized
                 else:
                     logger.warning(
@@ -104,16 +102,10 @@ def standardize_phone(phone: str) -> Optional[str]:
             f"⚠️ [PHONE-UTILS] Phone number must be 11 digits (received {len(digits_only)}): {phone_str}"
         )
         return None
-    elif (
-        len(digits_only) == 11
-        and digits_only[0] == "1"
-        and digits_only[1] in "23456789"
-    ):
+    elif len(digits_only) == 11 and digits_only[0] == "1" and digits_only[1] in "23456789":
         # 11-digit number starting with 1 (US country code)
         standardized = f"+{digits_only}"
-        logger.debug(
-            f"📞 [PHONE-UTILS] Standardized 11-digit US number: {standardized}"
-        )
+        logger.debug(f"📞 [PHONE-UTILS] Standardized 11-digit US number: {standardized}")
         return standardized
     elif len(digits_only) == 11:
         # Device Activation: 11-digit numbers must start with 1 (US format only)
@@ -133,9 +125,7 @@ def standardize_phone(phone: str) -> Optional[str]:
             return None
         # International number without + prefix (not starting with 1)
         standardized = f"+{digits_only}"
-        logger.debug(
-            f"📞 [PHONE-UTILS] Standardized international number: {standardized}"
-        )
+        logger.debug(f"📞 [PHONE-UTILS] Standardized international number: {standardized}")
         return standardized
 
     logger.warning(
@@ -196,9 +186,7 @@ def standardize_phone_device_activation(phone: str) -> Optional[str]:
         # If 11 digits after +, accept as-is (requirement: accept + and 11 digits)
         if len(digits_only) == 11:
             standardized = f"+{digits_only}"
-            logger.debug(
-                f"📞 [PHONE-UTILS-DA] Valid E.164 with 11 digits: {standardized}"
-            )
+            logger.debug(f"📞 [PHONE-UTILS-DA] Valid E.164 with 11 digits: {standardized}")
             return standardized
 
         # Special validation for US/Canada numbers (country code 1)
@@ -208,9 +196,7 @@ def standardize_phone_device_activation(phone: str) -> Optional[str]:
                 # Also validate area code (2nd digit must be 2-9)
                 if digits_only[1] in "23456789":
                     standardized = f"+{digits_only}"
-                    logger.debug(
-                        f"📞 [PHONE-UTILS-DA] Valid US/Canada E.164: {standardized}"
-                    )
+                    logger.debug(f"📞 [PHONE-UTILS-DA] Valid US/Canada E.164: {standardized}")
                     return standardized
                 else:
                     logger.warning(
@@ -247,17 +233,13 @@ def standardize_phone_device_activation(phone: str) -> Optional[str]:
     elif len(digits_only) == 10:
         # 10 digits → add +1 prefix
         standardized = f"+1{digits_only}"
-        logger.debug(
-            f"📞 [PHONE-UTILS-DA] Standardized 10-digit number: {standardized}"
-        )
+        logger.debug(f"📞 [PHONE-UTILS-DA] Standardized 10-digit number: {standardized}")
         return standardized
     elif len(digits_only) == 11:
         # 11 digits → must start with 1, then add + prefix
         if digits_only[0] == "1":
             standardized = f"+{digits_only}"
-            logger.debug(
-                f"📞 [PHONE-UTILS-DA] Standardized 11-digit US number: {standardized}"
-            )
+            logger.debug(f"📞 [PHONE-UTILS-DA] Standardized 11-digit US number: {standardized}")
             return standardized
         else:
             logger.warning(
@@ -289,9 +271,7 @@ def standardize_phone_device_activation(phone: str) -> Optional[str]:
             return None
         # International number without + prefix (not starting with 1)
         standardized = f"+{digits_only}"
-        logger.debug(
-            f"📞 [PHONE-UTILS-DA] Standardized international number: {standardized}"
-        )
+        logger.debug(f"📞 [PHONE-UTILS-DA] Standardized international number: {standardized}")
         return standardized
 
     logger.warning(

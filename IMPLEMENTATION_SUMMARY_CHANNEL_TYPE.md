@@ -92,12 +92,12 @@ Successfully implemented device vs phone routing for DTC campaigns, matching the
 
 **Files Created:**
 1. `database/add_channel_to_members_dtc.sql`
-   - Adds `Channel VARCHAR(20) NULL` column to `engage360.members` table
+   - Adds `Channel VARCHAR(20) NULL` column to `ioe.members` table
    - Sets default to `'phone'` for existing members
    - Includes verification queries
 
 2. `database/add_contact_pref_to_campaigns_dtc.sql`
-   - Adds `contact_pref VARCHAR(50) DEFAULT 'phone' NULL` to `engage360.campaigns_enhanced`
+   - Adds `contact_pref VARCHAR(50) DEFAULT 'phone' NULL` to `ioe.campaigns_enhanced`
    - Sets default to `'phone'` for existing campaigns
    - Includes example UPDATE statements for specific campaigns
 
@@ -217,10 +217,10 @@ MG001,987654321,Mary,Smith,+15552223333,...,bob.smith@test.com,device,UDI-ABC123
 
 ```bash
 # Run migrations on Azure SQL Database
-sqlcmd -S your-server.database.windows.net -d engage360_db \
+sqlcmd -S your-server.database.windows.net -d ioe_db \
   -i database/add_channel_to_members_dtc.sql
 
-sqlcmd -S your-server.database.windows.net -d engage360_db \
+sqlcmd -S your-server.database.windows.net -d ioe_db \
   -i database/add_contact_pref_to_campaigns_dtc.sql
 ```
 
@@ -228,21 +228,21 @@ sqlcmd -S your-server.database.windows.net -d engage360_db \
 
 **Option A: Use member preferences (recommended)**
 ```sql
-UPDATE engage360.campaigns_enhanced
+UPDATE ioe.campaigns_enhanced
 SET contact_pref = 'member_preference'
 WHERE campaign_id = '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC';  -- DTC Intro
 ```
 
 **Option B: Force all to phone**
 ```sql
-UPDATE engage360.campaigns_enhanced
+UPDATE ioe.campaigns_enhanced
 SET contact_pref = 'phone'
 WHERE campaign_id = '...';
 ```
 
 **Option C: Force all to device**
 ```sql
-UPDATE engage360.campaigns_enhanced
+UPDATE ioe.campaigns_enhanced
 SET contact_pref = 'device'
 WHERE campaign_id = '...';
 ```
@@ -322,7 +322,7 @@ If issues arise, rollback is simple:
 
 **Option 1: Disable device routing (keep code)**
 ```sql
-UPDATE engage360.campaigns_enhanced
+UPDATE ioe.campaigns_enhanced
 SET contact_pref = 'phone';  -- Force all to phone
 ```
 

@@ -8,7 +8,9 @@ bp = func.Blueprint()
 
 @bp.function_name(name="ProcessPartnerCampaignBlobValidationUI")
 @bp.blob_trigger(
-    arg_name="myblob", path="fs-partner/landing/{name}", connection="AzureWebJobsStorage"
+    arg_name="myblob",
+    path="fs-partner/landing/{name}",
+    connection="AzureWebJobsStorage",
 )
 def process_partner_campaign_blob(myblob: func.InputStream):
     """
@@ -36,7 +38,7 @@ def process_partner_campaign_blob(myblob: func.InputStream):
     pattern = r"^([A-Za-z0-9]+)_([A-Za-z0-9\/\s]+)_(\d{8})(_[A-Za-z0-9]+)?\.csv$"
     if not re.match(pattern, filename):
         logging.warning(f"⚠️ File skipped due to invalid naming pattern: {filename}")
-        logging.info(f"Expected pattern: PartnerName_CampaignName_YYYYMMDD[_Suffix].csv")
+        logging.info("Expected pattern: PartnerName_CampaignName_YYYYMMDD[_Suffix].csv")
         return
 
     try:

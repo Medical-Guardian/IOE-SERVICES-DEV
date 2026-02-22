@@ -7,6 +7,7 @@ from .database_service import DatabaseService
 from ..models.update_result import UpdateResult
 from ..models.mapped_call_data import MappedCallData
 from ..models.enrollment_update import EnrollmentUpdate
+from af_code.shared.schema_config import IOE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,12 @@ class DatabaseOrchestrator:
       - Provide helpers for analysis queue status logging.
     """
 
-    def __init__(self, db_service: DatabaseService, max_retries: int = 3, retry_delay: float = 1.0):
+    def __init__(
+        self,
+        db_service: DatabaseService,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+    ):
         self.db_service = db_service
         self.max_retries = max_retries
         self.retry_delay = retry_delay  # seconds (exponential backoff)
@@ -38,12 +44,12 @@ class DatabaseOrchestrator:
     ) -> UpdateResult:
         if request_id:
             logger.info(f"[DB-ORCH] request_id={request_id} execute_atomic_updates starting")
-        """
+        f"""
         Builds and executes the batched SQL statements as ONE transaction:
-          1) INSERT engage360.bland_call_logs
-          2) INSERT engage360.bland_raw_response (raw webhook JSON in separate table)
-          3) UPDATE engage360.outreach_attempts (if attempt_id present)
-          4) UPDATE engage360.member_campaign_enrollments_enhanced (conditional/idempotent)
+          1) INSERT {IOE_SCHEMA}.bland_call_logs
+          2) INSERT {IOE_SCHEMA}.bland_raw_response (raw webhook JSON in separate table)
+          3) UPDATE {IOE_SCHEMA}.outreach_attempts (if attempt_id present)
+          4) UPDATE {IOE_SCHEMA}.member_campaign_enrollments_enhanced (conditional/idempotent)
 
         Returns UpdateResult with tables updated and timings.
         """
@@ -114,18 +120,18 @@ class DatabaseOrchestrator:
             return
 
         try:
-            constraint_query = """
-                SELECT 
+            constraint_query = f"""
+                SELECT
                     cc.CONSTRAINT_NAME,
                     cc.CHECK_CLAUSE,
                     tc.TABLE_NAME,
                     tc.TABLE_SCHEMA
                 FROM INFORMATION_SCHEMA.CHECK_CONSTRAINTS cc
-                JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc 
+                JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
                     ON cc.CONSTRAINT_NAME = tc.CONSTRAINT_NAME
                 WHERE cc.CONSTRAINT_NAME = 'CK_mcee_current_status'
                     AND tc.TABLE_NAME = 'member_campaign_enrollments_enhanced'
-                    AND tc.TABLE_SCHEMA = 'engage360'
+                    AND tc.TABLE_SCHEMA = '{IOE_SCHEMA}'
             """
 
             results = self.db_service.execute_query(constraint_query, (), fetch_results=True)
@@ -174,14 +180,14 @@ class DatabaseOrchestrator:
 
     # -------- Analysis queue helpers (optional, used by ServiceBus flow) ------
     def log_queue_submission_intent(self, call_id: str, submission_time) -> None:
+        f"""
+        Insert a SUBMITTING row into {IOE_SCHEMA}.analysis_queue_status.
         """
-        Insert a SUBMITTING row into engage360.analysis_queue_status.
-        """
-        query = """
-            INSERT INTO engage360.analysis_queue_status
+        query = f"""
+            INSERT INTO {IOE_SCHEMA}.analysis_queue_status
                 (call_id, webhook_received_dttm, queue_submitted_dttm,
                  service_bus_message_id, processing_status, retry_count)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?)
         """
         params = (call_id, submission_time, submission_time, None, "SUBMITTING", 0)
         self.db_service.execute_query(query, params, fetch_results=False)
@@ -190,24 +196,24 @@ class DatabaseOrchestrator:
     def update_queue_submission_status(
         self, call_id: str, message_id: Optional[str], success: bool
     ) -> None:
-        """
-        Update engage360.analysis_queue_status to PENDING on success, FAILED otherwise.
+        f"""
+        Update {IOE_SCHEMA}.analysis_queue_status to PENDING on success, FAILED otherwise.
         """
         if success:
-            query = """
-                UPDATE engage360.analysis_queue_status
-                SET service_bus_message_id = %s,
+            query = f"""
+                UPDATE {IOE_SCHEMA}.analysis_queue_status
+                SET service_bus_message_id = ?,
                     processing_status = 'PENDING',
                     queue_submitted_dttm = SYSDATETIMEOFFSET()
-                WHERE call_id = %s
+                WHERE call_id = ?
             """
             params = (message_id, call_id)
         else:
-            query = """
-                UPDATE engage360.analysis_queue_status
+            query = f"""
+                UPDATE {IOE_SCHEMA}.analysis_queue_status
                 SET processing_status = 'FAILED',
                     queue_submitted_dttm = SYSDATETIMEOFFSET()
-                WHERE call_id = %s
+                WHERE call_id = ?
             """
             params = (call_id,)
 
@@ -220,12 +226,12 @@ class DatabaseOrchestrator:
     # Builders
     # -------------------------------------------------------------------------
     def _build_insert_bland_call_logs(self, webhook_data: Dict[str, Any]) -> Tuple[str, Tuple]:
-        """
-        Prepare the INSERT for engage360.bland_call_logs with fields commonly
+        f"""
+        Prepare the INSERT for {IOE_SCHEMA}.bland_call_logs with fields commonly
         captured from Bland's webhook (raw JSON is also stored for audit).
         """
-        q = """
-            INSERT INTO engage360.bland_call_logs (
+        q = f"""
+            INSERT INTO {IOE_SCHEMA}.bland_call_logs (
                 from_number, to_number, price, end_at, status, call_id, summary, analysis, batch_id,
                 first_name, last_name, member_id, attempt_id, language_pref, call_type_code,
                 salesforce_account_number, campaign_id, completed, created_at, pathway_id,
@@ -234,12 +240,12 @@ class DatabaseOrchestrator:
                 disposition_tag, corrected_duration, concatenated_transcript, raw_bland_response
             )
             VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s,
-                %s, %s, %s, %s, %s,
-                %s, %s, %s, %s,
-                %s, %s, %s, %s, %s
+                ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?, ?, ?, ?,
+                ?, ?, ?, ?, ?
             )
         """
         md = webhook_data.get("metadata", {}) or {}
@@ -281,8 +287,8 @@ class DatabaseOrchestrator:
         return q, params
 
     def _build_insert_bland_raw_response(self, webhook_data: Dict[str, Any]) -> Tuple[str, Tuple]:
-        """
-        Prepare INSERT for engage360.bland_raw_response (separate audit table).
+        f"""
+        Prepare INSERT for {IOE_SCHEMA}.bland_raw_response (separate audit table).
         Stores the complete raw webhook JSON payload separately from bland_call_logs
         to optimize main table size and performance.
 
@@ -292,10 +298,10 @@ class DatabaseOrchestrator:
         Returns:
             Tuple of (query_string, params_tuple)
         """
-        query = """
-            INSERT INTO engage360.bland_raw_response
+        query = f"""
+            INSERT INTO {IOE_SCHEMA}.bland_raw_response
                 (call_id, raw_response, created_at)
-            VALUES (%s, %s, SYSDATETIMEOFFSET())
+            VALUES (?, ?, SYSDATETIMEOFFSET())
         """
         params = (
             webhook_data.get("call_id"),
@@ -306,22 +312,22 @@ class DatabaseOrchestrator:
     def _build_update_outreach_attempts(
         self, webhook_data: Dict[str, Any], mapped_data: MappedCallData
     ) -> Optional[Tuple[str, Tuple]]:
-        """
-        Prepare UPDATE for engage360.outreach_attempts if attempt_id is present.
+        f"""
+        Prepare UPDATE for {IOE_SCHEMA}.outreach_attempts if attempt_id is present.
         """
         attempt_id = (webhook_data.get("metadata") or {}).get("attempt_id")
         if not attempt_id:
             return None
 
-        q = """
-            UPDATE engage360.outreach_attempts
-               SET vendor_session_id = %s,
-                   disposition      = %s,
-                   duration_sec     = %s,
-                   response_summary = %s,
-                   next_action      = %s,
+        q = f"""
+            UPDATE {IOE_SCHEMA}.outreach_attempts
+               SET vendor_session_id = ?,
+                   disposition      = ?,
+                   duration_sec     = ?,
+                   response_summary = ?,
+                   next_action      = ?,
                    status_updated_ts= SYSDATETIMEOFFSET()
-             WHERE attempt_id = %s
+             WHERE attempt_id = ?
         """
         params = (
             webhook_data.get("call_id"),
@@ -339,8 +345,8 @@ class DatabaseOrchestrator:
         enrollment_update: EnrollmentUpdate,
         mapped_data: MappedCallData,
     ) -> Optional[Tuple[str, Tuple]]:
-        """
-        Prepare UPDATE for engage360.member_campaign_enrollments_enhanced
+        f"""
+        Prepare UPDATE for {IOE_SCHEMA}.member_campaign_enrollments_enhanced
         using your schema (no update_reason; uses current_status, last_attempt_ts).
         Idempotent: only updates if the target status is different.
 
@@ -369,13 +375,30 @@ class DatabaseOrchestrator:
         # Campaign IDs for auto-transition logic
         INTRO_CAMPAIGN_ID = "34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"
         WELLNESS_CAMPAIGN_ID = "E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B"
+        DEVICE_ACTIVATION_IDS = [
+            "0F69659B-491B-40E2-88C3-ABC7D87385B2",
+            "BA865458-60F9-4EBB-9FB5-D195B532CF5A",
+        ]
 
         # CAMPAIGN IDENTIFICATION
         is_intro_campaign = campaign_id.upper() == INTRO_CAMPAIGN_ID.upper()
         is_wellness_campaign = campaign_id.upper() == WELLNESS_CAMPAIGN_ID.upper()
+        is_device_activation = campaign_id.upper() in [c.upper() for c in DEVICE_ACTIVATION_IDS]
 
-        # Get campaign type from metadata for Partner identification
-        campaign_type = md.get("campaign_type", "Unknown")
+        # Get campaign type using call_type_code (standardized approach)
+        # Updated 2025-12-23: Use call_type_code instead of campaign_type for better standardization
+        call_type_code = md.get("call_type_code", "")
+        campaign_type_from_metadata = md.get("campaign_type", "Unknown")
+
+        # Determine campaign type from call_type_code
+        if call_type_code == "DEVICE_ACTIVATION":
+            campaign_type = "Device Activation"
+        elif campaign_type_from_metadata == "Partner":
+            campaign_type = "Partner"
+        elif call_type_code in ("not_completed", "completed"):
+            campaign_type = "DTC"
+        else:
+            campaign_type = campaign_type_from_metadata
 
         logger.info("🎯 [DB-ORCH] Campaign identification:")
         logger.info(f"🎯 [DB-ORCH]   - Is Intro Campaign: {'✅' if is_intro_campaign else '❌'}")
@@ -383,8 +406,10 @@ class DatabaseOrchestrator:
             f"🎯 [DB-ORCH]   - Is Wellness Campaign: {'✅' if is_wellness_campaign else '❌'}"
         )
         logger.info(
-            f"🎯 [DB-ORCH]   - Campaign Type from metadata: {campaign_type}"
+            f"🎯 [DB-ORCH]   - Is Device Activation: {'✅' if is_device_activation else '❌'}"
         )
+        logger.info(f"🎯 [DB-ORCH]   - Campaign Type: {campaign_type}")
+        logger.info(f"🎯 [DB-ORCH]   - Call Type Code: {call_type_code}")
 
         # WELLNESS CAMPAIGN LOGIC: Only update status for opt-out
         if is_wellness_campaign:
@@ -407,7 +432,9 @@ class DatabaseOrchestrator:
         # PARTNER CAMPAIGN LOGIC: Only update status for opt-out
         is_partner_campaign = campaign_type == "Partner"
 
-        logger.info(f"🎯 [DB-ORCH]   - Is Partner Campaign: {'✅' if is_partner_campaign else '❌'}")
+        logger.info(
+            f"🎯 [DB-ORCH]   - Is Partner Campaign: {'✅' if is_partner_campaign else '❌'}"
+        )
 
         if is_partner_campaign:
             # Partner campaigns: Skip ALL enrollment status updates
@@ -416,10 +443,18 @@ class DatabaseOrchestrator:
             logger.info(
                 f"🤝 [DB-ORCH] ℹ️ Received status '{new_status}' will be logged in outreach_attempts only"
             )
-            logger.info(
-                "🤝 [DB-ORCH] ℹ️ Member remains 'Active' - call logged for audit trail"
-            )
+            logger.info("🤝 [DB-ORCH] ℹ️ Member remains 'Active' - call logged for audit trail")
             # Log the call but don't change enrollment status for partner campaigns
+            return None
+
+        # DEVICE ACTIVATION LOGIC: NO enrollment status updates (frequency-based calling)
+        if is_device_activation:
+            logger.info("🔧 [DB-ORCH] ℹ️ Device Activation campaign - no enrollment status change")
+            logger.info(
+                f"🔧 [DB-ORCH] ℹ️ Received status '{new_status}' will be logged in outreach_attempts only"
+            )
+            logger.info("🔧 [DB-ORCH] ℹ️ Member remains 'ENROLLED' - frequency-based calling")
+            # Log the call but don't change enrollment status for Device Activation campaigns
             return None
 
         # Campaign IDs for auto-transition logic
@@ -507,10 +542,10 @@ class DatabaseOrchestrator:
 
             # Step 0: Get current intro campaign data BEFORE making changes
             logger.info("🔍 [DB-ORCH] Step 0: Fetching intro campaign data before auto-transition")
-            get_intro_data_q = """
+            get_intro_data_q = f"""
                 SELECT current_status, preferred_window 
-                FROM engage360.member_campaign_enrollments_enhanced 
-                WHERE member_id = %s AND campaign_id = %s
+                FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced 
+                WHERE member_id = ? AND campaign_id = ?
             """
             intro_data = self.db_service.execute_query(get_intro_data_q, (member_id, campaign_id))
 
@@ -527,18 +562,18 @@ class DatabaseOrchestrator:
                 return None
 
             # Step 1: Set intro campaign to UNENROLLED
-            intro_update_q = """
-                UPDATE engage360.member_campaign_enrollments_enhanced
+            intro_update_q = f"""
+                UPDATE {IOE_SCHEMA}.member_campaign_enrollments_enhanced
                    SET current_status = 'UNENROLLED',
                        last_attempt_ts = SYSDATETIMEOFFSET()
-                 WHERE member_id = %s
-                   AND campaign_id = %s
+                 WHERE member_id = ?
+                   AND campaign_id = ?
             """
 
             # Step 2: Create/Update wellness campaign to ENROLLED (use preferred_window from intro)
-            wellness_upsert_q = """
-                MERGE engage360.member_campaign_enrollments_enhanced AS tgt
-                USING (SELECT %s as member_id, %s as campaign_id, %s as new_status, %s as preferred_window) AS src
+            wellness_upsert_q = f"""
+                MERGE {IOE_SCHEMA}.member_campaign_enrollments_enhanced AS tgt
+                USING (SELECT ? as member_id, ? as campaign_id, ? as new_status, ? as preferred_window) AS src
                 ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
                 WHEN MATCHED THEN
                     UPDATE SET current_status = src.new_status, last_attempt_ts = SYSDATETIMEOFFSET()
@@ -594,9 +629,9 @@ class DatabaseOrchestrator:
                         "📋 [DB-ORCH] Logging wellness campaign status change to audit history"
                     )
                     # Check if wellness record existed before
-                    check_wellness_q = """
-                        SELECT current_status FROM engage360.member_campaign_enrollments_enhanced 
-                        WHERE member_id = %s AND campaign_id = %s
+                    check_wellness_q = f"""
+                        SELECT current_status FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced 
+                        WHERE member_id = ? AND campaign_id = ?
                     """
                     existing_wellness_records = self.db_service.execute_query(
                         check_wellness_q, (member_id, WELLNESS_CAMPAIGN_ID)
@@ -642,9 +677,9 @@ class DatabaseOrchestrator:
             try:
                 # First get the current status for audit logging
                 logger.info("🔍 [DB-ORCH] Fetching current enrollment status for audit trail")
-                current_status_q = """
-                    SELECT current_status FROM engage360.member_campaign_enrollments_enhanced 
-                    WHERE member_id = %s AND campaign_id = %s
+                current_status_q = f"""
+                    SELECT current_status FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced 
+                    WHERE member_id = ? AND campaign_id = ?
                 """
                 current_records = self.db_service.execute_query(
                     current_status_q, (member_id, campaign_id)
@@ -660,13 +695,13 @@ class DatabaseOrchestrator:
 
                 # Execute the update
                 logger.info("🔄 [DB-ORCH] Executing enrollment status update")
-                q = """
-                    UPDATE engage360.member_campaign_enrollments_enhanced
-                       SET current_status = %s,
+                q = f"""
+                    UPDATE {IOE_SCHEMA}.member_campaign_enrollments_enhanced
+                       SET current_status = ?,
                            last_attempt_ts = SYSDATETIMEOFFSET()
-                     WHERE member_id = %s
-                       AND campaign_id = %s
-                       AND (current_status IS NULL OR current_status <> %s)
+                     WHERE member_id = ?
+                       AND campaign_id = ?
+                       AND (current_status IS NULL OR current_status <> ?)
                 """
                 params = (new_status, member_id, campaign_id, new_status)
 
@@ -741,18 +776,18 @@ class DatabaseOrchestrator:
         logger.info(f"🚀 [DB-ORCH] To: Wellness Campaign ({WELLNESS_CAMPAIGN_ID}) → ENROLLED")
 
         # Step 1: Set intro campaign to UNENROLLED
-        intro_update_q = """
-            UPDATE engage360.member_campaign_enrollments_enhanced
+        intro_update_q = f"""
+            UPDATE {IOE_SCHEMA}.member_campaign_enrollments_enhanced
                SET current_status = 'UNENROLLED',
                    last_attempt_ts = SYSDATETIMEOFFSET()
-             WHERE member_id = %s
-               AND campaign_id = %s
+             WHERE member_id = ?
+               AND campaign_id = ?
         """
 
         # Step 2: Create/Update wellness campaign to ENROLLED (use preferred_window from intro)
-        wellness_upsert_q = """
-            MERGE engage360.member_campaign_enrollments_enhanced AS tgt
-            USING (SELECT %s as member_id, %s as campaign_id, %s as new_status, %s as preferred_window) AS src
+        wellness_upsert_q = f"""
+            MERGE {IOE_SCHEMA}.member_campaign_enrollments_enhanced AS tgt
+            USING (SELECT ? as member_id, ? as campaign_id, ? as new_status, ? as preferred_window) AS src
             ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
             WHEN MATCHED THEN
                 UPDATE SET current_status = src.new_status, last_attempt_ts = SYSDATETIMEOFFSET()
@@ -764,10 +799,10 @@ class DatabaseOrchestrator:
         try:
             # STEP 0: Get current intro campaign data BEFORE making changes
             logger.info("🔍 [DB-ORCH] Step 0: Fetching intro campaign data before auto-transition")
-            get_intro_data_q = """
+            get_intro_data_q = f"""
                 SELECT current_status, preferred_window 
-                FROM engage360.member_campaign_enrollments_enhanced 
-                WHERE member_id = %s AND campaign_id = %s
+                FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced 
+                WHERE member_id = ? AND campaign_id = ?
             """
             intro_data = self.db_service.execute_query(get_intro_data_q, (member_id, campaign_id))
 
@@ -823,9 +858,9 @@ class DatabaseOrchestrator:
             if wellness_rows > 0:
                 logger.info("📋 [DB-ORCH] Logging wellness campaign status change to audit history")
                 # Check if wellness record existed before
-                check_wellness_q = """
-                    SELECT current_status FROM engage360.member_campaign_enrollments_enhanced 
-                    WHERE member_id = %s AND campaign_id = %s
+                check_wellness_q = f"""
+                    SELECT current_status FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced 
+                    WHERE member_id = ? AND campaign_id = ?
                 """
                 existing_wellness_records = self.db_service.execute_query(
                     check_wellness_q, (member_id, WELLNESS_CAMPAIGN_ID)
@@ -899,10 +934,10 @@ class DatabaseOrchestrator:
             # Calculate duration since last change
             duration_hours = None
             if previous_status:
-                last_change_query = """
+                last_change_query = f"""
                     SELECT TOP 1 change_timestamp 
-                    FROM engage360.member_enrollment_status_history 
-                    WHERE member_id = %s AND campaign_id = %s 
+                    FROM {IOE_SCHEMA}.member_enrollment_status_history 
+                    WHERE member_id = ? AND campaign_id = ? 
                     ORDER BY change_timestamp DESC
                 """
                 last_change_records = self.db_service.execute_query(
@@ -924,11 +959,11 @@ class DatabaseOrchestrator:
                     duration_hours = round(duration_delta.total_seconds() / 3600, 2)
 
             # Insert audit record
-            audit_query = """
-                INSERT INTO engage360.member_enrollment_status_history 
+            audit_query = f"""
+                INSERT INTO {IOE_SCHEMA}.member_enrollment_status_history 
                 (member_id, campaign_id, previous_status, new_status, duration_since_last_change_hours, 
                  change_source, change_details)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
             """
 
             self.db_service.execute_query(

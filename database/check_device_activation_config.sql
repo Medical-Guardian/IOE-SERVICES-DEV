@@ -16,7 +16,7 @@ SELECT
     campaign_type,
     status,
     created_ts
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE name IN ('Device Activation - DTC/MA', 'Device Activation - Medicaid')
 ORDER BY name;
 
@@ -33,8 +33,8 @@ SELECT
     cc.bland_parameters_global,
     cc.config_status,
     cc.created_ts
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE c.name IN ('Device Activation - DTC/MA', 'Device Activation - Medicaid')
 ORDER BY c.name, cc.config_status DESC;
 
@@ -56,8 +56,8 @@ SELECT
         ELSE '✅ Voice ID configured'
     END AS voice_status,
     cc.config_status
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE c.name IN ('Device Activation - DTC/MA', 'Device Activation - Medicaid')
 ORDER BY c.name;
 

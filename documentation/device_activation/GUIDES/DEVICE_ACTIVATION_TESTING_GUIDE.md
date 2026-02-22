@@ -89,10 +89,10 @@ func --version  # Should be 4.x
 **Database Setup:**
 ```sql
 -- Create test database (copy of production schema, no data)
-CREATE DATABASE engage360_test;
+CREATE DATABASE ioe_test;
 
 -- Restore schema from production backup
-USE engage360_test;
+USE ioe_test;
 -- Run schema creation scripts from database/ folder
 
 -- Create test data (see Section 6)
@@ -104,8 +104,8 @@ USE engage360_test;
 
 **Resources:**
 - Azure Function App: `ioe-function-test`
-- SQL Database: `engage360-test`
-- Blob Storage: `stdeviceactivation` (container: fs-device-activation-test)
+- SQL Database: `ioe-test`
+- Blob Storage: `stdeviceactivation` (containers: fs-ops-test [PRIMARY], fs-device-activation-test [LEGACY])
 - Key Vault: `kv-ioe-test`
 - Application Insights: `appinsights-ioe-test`
 
@@ -165,7 +165,7 @@ class TestFileProcessing:
         context = ProcessingContext(
             file_name="MedicalGuardian_DeviceActivation_20250115_Delta.csv",
             file_id="test-file-id-123",
-            blob_path="fs-device-activation/landing/..."
+            blob_path="fs-ops/landing/..."
         )
 
         # Act
@@ -183,7 +183,7 @@ class TestFileProcessing:
         context = ProcessingContext(
             file_name="Invalid_File.csv",
             file_id="test-file-id-456",
-            blob_path="fs-device-activation/landing/..."
+            blob_path="fs-ops/landing/..."
         )
 
         # Act & Assert
@@ -451,7 +451,7 @@ class TestBatchOrchestrator:
         assert 'Submitted' in str(call_args)
 
     def test_batch_splitting_max_100_members(self, batch_orchestrator, sample_members):
-        """Test batch splitting: Batches limited to 100 members (Bland AI constraint)"""
+        """Test batch splitting: Batches process 20 members per scheduler run"""
         # Arrange
         members = sample_members[:250]  # 250 members should create 3 batches
 
@@ -525,7 +525,7 @@ M002,Jane,Smith,555-987-6543,jane.smith@example.com,1955-05-15,Central,ES,456 Oa
 # Using Azure CLI
 az storage blob upload \
   --account-name stdeviceactivation \
-  --container-name fs-device-activation/landing \
+  --container-name fs-ops/landing \
   --name "MedicalGuardian_DeviceActivation_20250115_Delta.csv" \
   --file test_data.csv
 ```
@@ -545,26 +545,26 @@ az functionapp log tail --name ioe-function-test --resource-group rg-ioe-test
 ```sql
 -- Check staging table
 SELECT COUNT(*) AS staged_rows
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE file_id = 'expected-file-id'
   AND processing_status = 'Completed';
 
 -- Expected: 2 rows
 
 -- Check members table
-SELECT * FROM engage360.members
+SELECT * FROM ioe.members
 WHERE member_id IN ('M001', 'M002');
 
 -- Expected: 2 rows with cleaned data
 
 -- Check enrollments
-SELECT * FROM engage360.member_campaign_enrollments_enhanced
+SELECT * FROM ioe.member_campaign_enrollments_enhanced
 WHERE member_id IN ('M001', 'M002');
 
 -- Expected: 2 enrollments with status='ENROLLED', activation_start_date calculated
 
 -- Check file processing log
-SELECT * FROM engage360.file_processing_log
+SELECT * FROM ioe.file_processing_log
 WHERE file_name = 'MedicalGuardian_DeviceActivation_20250115_Delta.csv';
 
 -- Expected: 1 row with status='Completed'
@@ -576,7 +576,7 @@ WHERE file_name = 'MedicalGuardian_DeviceActivation_20250115_Delta.csv';
 # Check file moved to processed/ folder
 az storage blob list \
   --account-name stdeviceactivation \
-  --container-name fs-device-activation/processed \
+  --container-name fs-ops/processed \
   --prefix "MedicalGuardian_DeviceActivation_20250115"
 ```
 
@@ -598,7 +598,7 @@ az storage blob list \
 
 ```sql
 -- Insert test member eligible for Call 1
-INSERT INTO engage360.member_campaign_enrollments_enhanced (
+INSERT INTO ioe.member_campaign_enrollments_enhanced (
     enrollment_id,
     member_id,
     campaign_id,
@@ -643,7 +643,7 @@ curl -X POST https://ioe-function-test.azurewebsites.net/api/device_activation_s
 
 ```sql
 -- Check batch created
-SELECT * FROM engage360.outreach_batches
+SELECT * FROM ioe.outreach_batches
 WHERE batch_status = 'Submitted'
   AND created_at > DATEADD(MINUTE, -5, SYSDATETIMEOFFSET())
 ORDER BY created_at DESC;
@@ -651,7 +651,7 @@ ORDER BY created_at DESC;
 -- Expected: 1 batch with status='Submitted', vendor_batch_id populated
 
 -- Check attempts created
-SELECT * FROM engage360.outreach_attempts
+SELECT * FROM ioe.outreach_attempts
 WHERE batch_id = 'batch-id-from-above'
   AND disposition = 'Pending';
 
@@ -746,13 +746,13 @@ curl -X POST https://ioe-function-test.azurewebsites.net/api/bland_ai_webhook \
 ```sql
 -- Check attempt updated
 SELECT disposition, completed_at, call_length, recording_url
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE attempt_id = 'attempt-id-from-payload';
 
 -- Expected: disposition='Completed', completed_at populated, call_length=180
 
 -- Check call log created
-SELECT * FROM engage360.bland_call_logs
+SELECT * FROM ioe.bland_call_logs
 WHERE call_id = 'test-call-id-12345';
 
 -- Expected: 1 row with complete webhook payload in metadata
@@ -801,19 +801,19 @@ curl -X POST http://localhost:7071/api/bland_ai_webhook \
 
 ```sql
 -- Step 2: Check enrollment
-SELECT * FROM engage360.member_campaign_enrollments_enhanced
+SELECT * FROM ioe.member_campaign_enrollments_enhanced
 WHERE member_id = 'TEST-M001'
   AND current_status = 'ENROLLED'
   AND activation_start_date = CAST(GETDATE() AS DATE);
 
 -- Step 5: Check batch
-SELECT * FROM engage360.outreach_batches
+SELECT * FROM ioe.outreach_batches
 WHERE batch_status = 'Submitted'
   AND created_at > DATEADD(MINUTE, -20, SYSDATETIMEOFFSET());
 
 -- Step 7: Check attempt
-SELECT * FROM engage360.outreach_attempts
-WHERE enrollment_id = (SELECT enrollment_id FROM engage360.member_campaign_enrollments_enhanced WHERE member_id = 'TEST-M001')
+SELECT * FROM ioe.outreach_attempts
+WHERE enrollment_id = (SELECT enrollment_id FROM ioe.member_campaign_enrollments_enhanced WHERE member_id = 'TEST-M001')
   AND disposition = 'Completed';
 ```
 
@@ -841,14 +841,14 @@ WHERE enrollment_id = (SELECT enrollment_id FROM engage360.member_campaign_enrol
 ```sql
 -- After Call 4
 SELECT COUNT(*) AS attempt_count
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE enrollment_id = 'test-enrollment-id'
   AND disposition = 'NoAnswer';
 -- Expected: 4
 
 -- After Call 5
 SELECT call_5_timestamp, campaign_end_date
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_id = 'test-enrollment-id';
 -- Expected: call_5_timestamp populated, campaign_end_date = call_5_timestamp + 90 days
 
@@ -857,7 +857,7 @@ SELECT
     call_5_timestamp,
     campaign_end_date,
     DATEDIFF(DAY, call_5_timestamp, campaign_end_date) AS days_diff
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_id = 'test-enrollment-id';
 -- Expected: days_diff = 90
 ```
@@ -879,19 +879,19 @@ WHERE enrollment_id = 'test-enrollment-id';
 
 ```sql
 -- Step 2: Check callback created
-SELECT * FROM engage360.outreach_callback_queue
+SELECT * FROM ioe.outreach_callback_queue
 WHERE enrollment_id = 'test-enrollment-id'
   AND status = 'Pending';
 
 -- Step 4: Check callback rescheduled
 SELECT scheduled_callback_time, attempt_count, last_rescheduled_at
-FROM engage360.outreach_callback_queue
+FROM ioe.outreach_callback_queue
 WHERE enrollment_id = 'test-enrollment-id';
 -- Expected: scheduled_callback_time = next business day 9 AM, attempt_count = 1
 
 -- Step 6: Check callback completed
 SELECT status, completed_at
-FROM engage360.outreach_callback_queue
+FROM ioe.outreach_callback_queue
 WHERE enrollment_id = 'test-enrollment-id';
 -- Expected: status='Completed'
 ```
@@ -914,13 +914,13 @@ WHERE enrollment_id = 'test-enrollment-id';
 ```sql
 -- Step 3: Check enrollment status
 SELECT current_status, updated_at
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_id = 'test-enrollment-id';
 -- Expected: current_status='OPTED_OUT'
 
 -- Step 4: Check status history
 SELECT previous_status, new_status, change_reason
-FROM engage360.member_enrollment_status_history
+FROM ioe.member_enrollment_status_history
 WHERE enrollment_id = 'test-enrollment-id'
 ORDER BY changed_at DESC;
 -- Expected: previous_status='ENROLLED', new_status='OPTED_OUT', change_reason contains 'DO_NOT_CONTACT'
@@ -939,13 +939,13 @@ ORDER BY changed_at DESC;
 
 ```sql
 -- Test Member 1: Call 1 eligible today
-INSERT INTO engage360.members (member_id, first_name, last_name, primary_phone, email, timezone, created_at, updated_at)
+INSERT INTO ioe.members (member_id, first_name, last_name, primary_phone, email, timezone, created_at, updated_at)
 VALUES ('TEST-M001', 'Test', 'Member1', '+15551111111', 'test1@example.com', 'America/New_York', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
 
-INSERT INTO engage360.member_devices (device_id, member_id, device_name, brand, is_device_callable, fall_detection, powersaver_mode, created_at, updated_at)
+INSERT INTO ioe.member_devices (device_id, member_id, device_name, brand, is_device_callable, fall_detection, powersaver_mode, created_at, updated_at)
 VALUES ('TEST-D001', 'TEST-M001', 'Mini Guardian', 'Medical Guardian', 1, 1, 0, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
 
-INSERT INTO engage360.member_campaign_enrollments_enhanced (enrollment_id, member_id, campaign_id, current_status, activation_start_date, created_at, updated_at)
+INSERT INTO ioe.member_campaign_enrollments_enhanced (enrollment_id, member_id, campaign_id, current_status, activation_start_date, created_at, updated_at)
 VALUES (
     'TEST-E001',
     'TEST-M001',
@@ -957,13 +957,13 @@ VALUES (
 );
 
 -- Test Member 2: Call 5 eligible (has 4 previous attempts, 7+ days ago)
-INSERT INTO engage360.members (member_id, first_name, last_name, primary_phone, email, timezone, created_at, updated_at)
+INSERT INTO ioe.members (member_id, first_name, last_name, primary_phone, email, timezone, created_at, updated_at)
 VALUES ('TEST-M002', 'Test', 'Member2', '+15552222222', 'test2@example.com', 'America/Chicago', SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
 
-INSERT INTO engage360.member_devices (device_id, member_id, device_name, brand, is_device_callable, fall_detection, powersaver_mode, created_at, updated_at)
+INSERT INTO ioe.member_devices (device_id, member_id, device_name, brand, is_device_callable, fall_detection, powersaver_mode, created_at, updated_at)
 VALUES ('TEST-D002', 'TEST-M002', 'Home Guardian', 'Medical Guardian', 1, 0, 1, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET());
 
-INSERT INTO engage360.member_campaign_enrollments_enhanced (enrollment_id, member_id, campaign_id, current_status, activation_start_date, call_5_timestamp, campaign_end_date, created_at, updated_at)
+INSERT INTO ioe.member_campaign_enrollments_enhanced (enrollment_id, member_id, campaign_id, current_status, activation_start_date, call_5_timestamp, campaign_end_date, created_at, updated_at)
 VALUES (
     'TEST-E002',
     'TEST-M002',
@@ -980,7 +980,7 @@ VALUES (
 DECLARE @i INT = 1;
 WHILE @i <= 4
 BEGIN
-    INSERT INTO engage360.outreach_attempts (attempt_id, enrollment_id, batch_id, disposition, attempt_ts, created_at, updated_at)
+    INSERT INTO ioe.outreach_attempts (attempt_id, enrollment_id, batch_id, disposition, attempt_ts, created_at, updated_at)
     VALUES (
         NEWID(),
         'TEST-E002',
@@ -1019,18 +1019,18 @@ INVALID002,Eve,Taylor,555-777-7777,INVALID_EMAIL,1980-04-25,Mountain,EN,321 Birc
 
 ```sql
 -- Delete test members and cascading data
-DELETE FROM engage360.member_campaign_enrollments_enhanced WHERE member_id LIKE 'TEST-%';
-DELETE FROM engage360.member_devices WHERE member_id LIKE 'TEST-%';
-DELETE FROM engage360.members WHERE member_id LIKE 'TEST-%';
+DELETE FROM ioe.member_campaign_enrollments_enhanced WHERE member_id LIKE 'TEST-%';
+DELETE FROM ioe.member_devices WHERE member_id LIKE 'TEST-%';
+DELETE FROM ioe.members WHERE member_id LIKE 'TEST-%';
 
 -- Delete test batches
-DELETE FROM engage360.outreach_batches WHERE batch_name LIKE '%Test%';
+DELETE FROM ioe.outreach_batches WHERE batch_name LIKE '%Test%';
 
 -- Delete test staging data
-DELETE FROM engage360_stg.stg_device_activation_delta WHERE file_id LIKE 'TEST-%';
+DELETE FROM ioe_stg.stg_device_activation_delta WHERE file_id LIKE 'TEST-%';
 
 -- Delete test call logs
-DELETE FROM engage360.bland_call_logs WHERE call_id LIKE 'test-%';
+DELETE FROM ioe.bland_call_logs WHERE call_id LIKE 'test-%';
 ```
 
 ---
@@ -1102,7 +1102,7 @@ SELECT
     rows_total,
     duration_seconds,
     rows_total / duration_seconds AS rows_per_second
-FROM engage360.file_processing_log
+FROM ioe.file_processing_log
 WHERE file_id = ?;
 
 -- Expected: rows_per_second ≥ 16 (1000 rows / 60 seconds)
@@ -1220,7 +1220,7 @@ SELECT * FROM sys.dm_exec_requests WHERE command LIKE '%blob%';
 3. **Check staging table:**
 ```sql
 -- Check if any rows inserted
-SELECT * FROM engage360_stg.stg_device_activation_delta
+SELECT * FROM ioe_stg.stg_device_activation_delta
 WHERE file_id = 'expected-file-id';
 
 -- If 0 rows: Phase 1 or Phase 2 failed
@@ -1231,7 +1231,7 @@ WHERE file_id = 'expected-file-id';
 ```sql
 -- Check validation errors
 SELECT validation_error, COUNT(*) AS error_count
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE file_id = 'expected-file-id'
   AND validation_status = 'Invalid'
 GROUP BY validation_error;
@@ -1272,7 +1272,7 @@ SELECT
 3. **Check batch creation:**
 ```sql
 -- Check for failed batches
-SELECT * FROM engage360.outreach_batches
+SELECT * FROM ioe.outreach_batches
 WHERE batch_status = 'Failed'
   AND created_at > DATEADD(HOUR, -1, SYSDATETIMEOFFSET());
 ```
@@ -1302,7 +1302,7 @@ cat webhook_payload.json | jq .
 2. **Check duplicate detection:**
 ```sql
 -- Check if call_id already processed
-SELECT * FROM engage360.bland_call_logs
+SELECT * FROM ioe.bland_call_logs
 WHERE call_id = 'call-id-from-payload';
 
 -- If exists: Webhook is duplicate (expected behavior)

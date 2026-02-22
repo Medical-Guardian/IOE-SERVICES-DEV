@@ -31,9 +31,9 @@ SELECT
     STRING_AGG(CAST(e.enrollment_id AS NVARCHAR(36)), ', ') AS enrollment_ids,
     MIN(e.enrollment_ts) AS oldest_enrollment,
     MAX(e.enrollment_ts) AS newest_enrollment
-FROM engage360.member_campaign_enrollments_enhanced e
-JOIN engage360.members m ON e.member_id = m.member_id
-JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+JOIN ioe.members m ON e.member_id = m.member_id
+JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE c.campaign_type IN ('Device Activation', 'Operations')
   AND c.campaign_name LIKE '%Device Activation%'
 GROUP BY
@@ -74,12 +74,12 @@ SELECT
     c.campaign_name,
     e2.enrollment_ts AS duplicate_enrollment_ts,
     e1.enrollment_ts AS oldest_enrollment_ts_kept
-FROM engage360.member_campaign_enrollments_enhanced e1
-JOIN engage360.member_campaign_enrollments_enhanced e2
+FROM ioe.member_campaign_enrollments_enhanced e1
+JOIN ioe.member_campaign_enrollments_enhanced e2
     ON e1.member_id = e2.member_id
     AND e1.campaign_id = e2.campaign_id
-JOIN engage360.members m ON e2.member_id = m.member_id
-JOIN engage360.campaigns_enhanced c ON e1.campaign_id = c.campaign_id
+JOIN ioe.members m ON e2.member_id = m.member_id
+JOIN ioe.campaigns_enhanced c ON e1.campaign_id = c.campaign_id
 WHERE c.campaign_type IN ('Device Activation', 'Operations')
   AND c.campaign_name LIKE '%Device Activation%'
   AND e1.enrollment_ts < e2.enrollment_ts  -- e1 is older (will be kept)
@@ -89,14 +89,14 @@ PRINT '';
 PRINT '🗑️  Deleting duplicate enrollments...';
 
 -- Delete duplicates, keeping the oldest enrollment_id
-DELETE FROM engage360.member_campaign_enrollments_enhanced
+DELETE FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_id IN (
     SELECT e2.enrollment_id
-    FROM engage360.member_campaign_enrollments_enhanced e1
-    JOIN engage360.member_campaign_enrollments_enhanced e2
+    FROM ioe.member_campaign_enrollments_enhanced e1
+    JOIN ioe.member_campaign_enrollments_enhanced e2
         ON e1.member_id = e2.member_id
         AND e1.campaign_id = e2.campaign_id
-    JOIN engage360.campaigns_enhanced c ON e1.campaign_id = c.campaign_id
+    JOIN ioe.campaigns_enhanced c ON e1.campaign_id = c.campaign_id
     WHERE c.campaign_type IN ('Device Activation', 'Operations')
       AND c.campaign_name LIKE '%Device Activation%'
       AND e1.enrollment_ts < e2.enrollment_ts  -- e1 is older (keep it)
@@ -109,8 +109,8 @@ PRINT '';
 PRINT '🔍 Verification - Checking for remaining duplicates:';
 SELECT
     member_id, campaign_id, COUNT(*) AS count
-FROM engage360.member_campaign_enrollments_enhanced e
-JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE c.campaign_type IN ('Device Activation', 'Operations')
   AND c.campaign_name LIKE '%Device Activation%'
 GROUP BY member_id, campaign_id
@@ -149,7 +149,7 @@ DECLARE @member_id UNIQUEIDENTIFIER;
 
 -- Get member_id
 SELECT @member_id = member_id
-FROM engage360.members
+FROM ioe.members
 WHERE salesforce_account_number = @salesforce_account_number;
 
 IF @member_id IS NULL
@@ -171,69 +171,69 @@ PRINT '';
 -- Show what will be deleted
 PRINT '📋 Data to be deleted:';
 SELECT 'Outreach Attempts' AS data_type, COUNT(*) AS count
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE enrollment_id IN (
     SELECT enrollment_id
-    FROM engage360.member_campaign_enrollments_enhanced e
-    JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+    FROM ioe.member_campaign_enrollments_enhanced e
+    JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
     WHERE e.member_id = @member_id
       AND c.campaign_type IN ('Device Activation', 'Operations')
 )
 UNION ALL
 SELECT 'Enrollments', COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE member_id = @member_id
   AND campaign_id IN (
-      SELECT campaign_id FROM engage360.campaigns_enhanced
+      SELECT campaign_id FROM ioe.campaigns_enhanced
       WHERE campaign_type IN ('Device Activation', 'Operations')
   )
 UNION ALL
 SELECT 'Devices', COUNT(*)
-FROM engage360.member_devices
+FROM ioe.member_devices
 WHERE member_id = @member_id
 UNION ALL
 SELECT 'Staging Rows', COUNT(*)
-FROM engage360_stg.stg_device_activation_delta
-WHERE org_id IN (SELECT org_id FROM engage360.members WHERE member_id = @member_id)
+FROM ioe_stg.stg_device_activation_delta
+WHERE org_id IN (SELECT org_id FROM ioe.members WHERE member_id = @member_id)
   AND salesforce_account_number = @salesforce_account_number;
 
 PRINT '';
 PRINT '🗑️  Deleting data...';
 
 -- Delete outreach attempts
-DELETE FROM engage360.outreach_attempts
+DELETE FROM ioe.outreach_attempts
 WHERE enrollment_id IN (
     SELECT enrollment_id
-    FROM engage360.member_campaign_enrollments_enhanced e
-    JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+    FROM ioe.member_campaign_enrollments_enhanced e
+    JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
     WHERE e.member_id = @member_id
       AND c.campaign_type IN ('Device Activation', 'Operations')
 );
 PRINT '  ✓ Deleted outreach_attempts: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
 
 -- Delete enrollments
-DELETE FROM engage360.member_campaign_enrollments_enhanced
+DELETE FROM ioe.member_campaign_enrollments_enhanced
 WHERE member_id = @member_id
   AND campaign_id IN (
-      SELECT campaign_id FROM engage360.campaigns_enhanced
+      SELECT campaign_id FROM ioe.campaigns_enhanced
       WHERE campaign_type IN ('Device Activation', 'Operations')
       AND campaign_name LIKE '%Device Activation%'
   );
 PRINT '  ✓ Deleted enrollments: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
 
 -- Delete devices
-DELETE FROM engage360.member_devices
+DELETE FROM ioe.member_devices
 WHERE member_id = @member_id;
 PRINT '  ✓ Deleted devices: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
 
 -- OPTIONAL: Delete member record (only if test member)
 -- ⚠️  Uncomment ONLY if you want to delete the member record itself
--- DELETE FROM engage360.members WHERE member_id = @member_id;
+-- DELETE FROM ioe.members WHERE member_id = @member_id;
 -- PRINT '  ✓ Deleted member: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
 
 -- Delete staging data
-DELETE FROM engage360_stg.stg_device_activation_delta
-WHERE org_id IN (SELECT org_id FROM engage360.members WHERE member_id = @member_id)
+DELETE FROM ioe_stg.stg_device_activation_delta
+WHERE org_id IN (SELECT org_id FROM ioe.members WHERE member_id = @member_id)
   AND salesforce_account_number = @salesforce_account_number;
 PRINT '  ✓ Deleted staging rows: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
 
@@ -242,15 +242,15 @@ PRINT '🔍 Verification - Remaining data for this member:';
 
 -- Verify deletion
 SELECT 'Remaining Enrollments' AS check_type, COUNT(*) AS count
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE member_id = @member_id
 UNION ALL
 SELECT 'Remaining Devices', COUNT(*)
-FROM engage360.member_devices
+FROM ioe.member_devices
 WHERE member_id = @member_id
 UNION ALL
 SELECT 'Remaining Staging', COUNT(*)
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE salesforce_account_number = @salesforce_account_number;
 
 PRINT '';
@@ -298,7 +298,7 @@ PRINT '';
 -- Get all Device Activation campaign IDs
 INSERT INTO @campaign_ids
 SELECT campaign_id
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE campaign_type IN ('Device Activation', 'Operations')
   AND campaign_name LIKE '%Device Activation%';
 
@@ -308,11 +308,11 @@ SELECT
     campaign_name,
     campaign_type,
     status,
-    (SELECT COUNT(*) FROM engage360.member_campaign_enrollments_enhanced WHERE campaign_id = c.campaign_id) AS enrollments,
-    (SELECT COUNT(*) FROM engage360.outreach_attempts oa
-     JOIN engage360.member_campaign_enrollments_enhanced e ON oa.enrollment_id = e.enrollment_id
+    (SELECT COUNT(*) FROM ioe.member_campaign_enrollments_enhanced WHERE campaign_id = c.campaign_id) AS enrollments,
+    (SELECT COUNT(*) FROM ioe.outreach_attempts oa
+     JOIN ioe.member_campaign_enrollments_enhanced e ON oa.enrollment_id = e.enrollment_id
      WHERE e.campaign_id = c.campaign_id) AS outreach_attempts
-FROM engage360.campaigns_enhanced c
+FROM ioe.campaigns_enhanced c
 WHERE c.campaign_id IN (SELECT campaign_id FROM @campaign_ids)
 ORDER BY campaign_name;
 
@@ -320,21 +320,21 @@ PRINT '';
 PRINT '🗑️  Deleting all data...';
 
 -- Delete outreach attempts
-DELETE FROM engage360.outreach_attempts
+DELETE FROM ioe.outreach_attempts
 WHERE enrollment_id IN (
     SELECT enrollment_id
-    FROM engage360.member_campaign_enrollments_enhanced
+    FROM ioe.member_campaign_enrollments_enhanced
     WHERE campaign_id IN (SELECT campaign_id FROM @campaign_ids)
 );
 PRINT '  ✓ Deleted outreach_attempts: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
 
 -- Delete enrollments
-DELETE FROM engage360.member_campaign_enrollments_enhanced
+DELETE FROM ioe.member_campaign_enrollments_enhanced
 WHERE campaign_id IN (SELECT campaign_id FROM @campaign_ids);
 PRINT '  ✓ Deleted enrollments: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
 
 -- Delete staging data
-DELETE FROM engage360_stg.stg_device_activation_delta;
+DELETE FROM ioe_stg.stg_device_activation_delta;
 PRINT '  ✓ Deleted staging rows: ' + CAST(@@ROWCOUNT AS NVARCHAR(10));
 
 PRINT '';
@@ -342,18 +342,18 @@ PRINT '🔍 Verification - Remaining Device Activation data:';
 
 -- Verify deletion
 SELECT 'Remaining Enrollments' AS check_type, COUNT(*) AS count
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE campaign_id IN (SELECT campaign_id FROM @campaign_ids)
 UNION ALL
 SELECT 'Remaining Outreach Attempts', COUNT(*)
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE enrollment_id IN (
-    SELECT enrollment_id FROM engage360.member_campaign_enrollments_enhanced
+    SELECT enrollment_id FROM ioe.member_campaign_enrollments_enhanced
     WHERE campaign_id IN (SELECT campaign_id FROM @campaign_ids)
 )
 UNION ALL
 SELECT 'Remaining Staging Rows', COUNT(*)
-FROM engage360_stg.stg_device_activation_delta;
+FROM ioe_stg.stg_device_activation_delta;
 
 PRINT '';
 PRINT '⚠️  TRANSACTION OPEN - Review verification results above';

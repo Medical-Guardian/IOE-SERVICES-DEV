@@ -1,6 +1,7 @@
 import logging
 from .config_manager import ConfigManager
 from .database_service import DatabaseService
+from af_code.shared.schema_config import IOE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ class DuplicateDetector:
         self.config_manager = config_manager
         self.db_service = db_service
         self.call_log_table = self.config_manager.get_config(
-            "CALL_LOG_TABLE", "engage360.bland_call_logs"
+            "CALL_LOG_TABLE", f"{IOE_SCHEMA}.bland_call_logs"
         )
         logger.info("🔍 [DUPLICATE-DETECTOR] Initialized to use DatabaseService for checks.")
         logger.info(f"   - Target Table: {self.call_log_table}")
@@ -53,8 +54,8 @@ class DuplicateDetector:
         try:
             # This query is designed to be fast. We only need to know if at least one
             # record exists, so we select a single, indexed column.
-            # NOTE: Using '%s' as the parameter marker, which is correct for pymssql.
-            query = f"SELECT call_id FROM {self.call_log_table} WHERE call_id = %s"  # nosec B608 - Table name from config, user input is parameterized
+            # NOTE: Using '?' as the parameter marker, which is correct for pyodbc.
+            query = f"SELECT call_id FROM {self.call_log_table} WHERE call_id = ?"  # nosec B608 - Table name from config, user input is parameterized
 
             # Use the injected DatabaseService to execute the query.
             # fetch_results=True ensures we get back a list of rows if found.

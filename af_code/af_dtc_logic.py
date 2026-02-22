@@ -13,10 +13,10 @@ import logging
 import time
 import uuid
 import pandas as pd
+import pyodbc
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass, field
-import pymssql  # Replaced pyodbc
 from pathlib import Path
 
 try:
@@ -31,7 +31,12 @@ except ImportError:
     Column = None
     DataFrameSchema = None
     Check = None
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 from datetime import date  # For date handling
 
 try:
@@ -47,6 +52,7 @@ import re  # For special character cleaning
 # Import shared utilities
 from af_code.shared.language_mapper import map_language_code, validate_language_code
 from af_code.shared.phone_utils import standardize_phone
+from af_code.shared.schema_config import IOE_SCHEMA, IOE_SCHEMA_STG
 
 # MODULE LOAD VERIFICATION - This will execute when the module is first imported
 logger = logging.getLogger(__name__)
@@ -93,7 +99,11 @@ def move_blob(blob_name: str, source_folder: str, target_folder: str, container_
 
 
 def handle_blob_movement_with_error_handling(
-    source_filename: str, source_folder: str, target_folder: str, container_name: str, logger
+    source_filename: str,
+    source_folder: str,
+    target_folder: str,
+    container_name: str,
+    logger,
 ):
     """
     Safely move blob with proper error handling and fallback logic
@@ -174,8 +184,8 @@ class ProcessingConfig:
     """Configuration for DTC file processing operations."""
 
     connection_string: str
-    staging_table: str = "engage360_stg.stg_dtc_wellness_delta"
-    rejection_table: str = "engage360_stg.dtc_rejection_log"
+    staging_table: str = f"{IOE_SCHEMA_STG}.stg_dtc_wellness_delta"
+    rejection_table: str = f"{IOE_SCHEMA_STG}.dtc_rejection_log"
     error_threshold_pct: float = 10.0
     max_retries: int = 3
     retry_delay_seconds: int = 5
@@ -209,7 +219,7 @@ class DTCProcessingContext:
     uploaded_by_user: Optional[str]
     file_size_bytes: Optional[int]
     config: ProcessingConfig
-    connection: pymssql.Connection
+    connection: pyodbc.Connection
 
 
 # Custom Exceptions
@@ -282,7 +292,8 @@ def get_dtc_schema() -> DataFrameSchema:
             "partner_name": Column(str, nullable=True),
             "campaign_name_source": Column(str, nullable=True),
             "language_pref": Column(
-                str, nullable=True  # Accept any string - validation done in cleansing logic
+                str,
+                nullable=True,  # Accept any string - validation done in cleansing logic
             ),
             "salesforce_account_number": Column(
                 str, nullable=False, checks=Check.str_length(min_value=1)
@@ -301,15 +312,21 @@ def get_dtc_schema() -> DataFrameSchema:
             "member_address_zip": Column(str, nullable=True),
             "member_address_country": Column(str, nullable=True),
             "caregiver_first_name": Column(
-                str, nullable=True, checks=Check.str_matches(r"^[A-Za-z ]+$", ignore_na=True)
+                str,
+                nullable=True,
+                checks=Check.str_matches(r"^[A-Za-z ]+$", ignore_na=True),
             ),
             "caregiver_last_name": Column(
-                str, nullable=True, checks=Check.str_matches(r"^[A-Za-z ]+$", ignore_na=True)
+                str,
+                nullable=True,
+                checks=Check.str_matches(r"^[A-Za-z ]+$", ignore_na=True),
             ),
             "caregiver_phone_number": Column(str, nullable=True),
             "caregiver_email": Column(str, nullable=True),  # ADDED
             "channel_type": Column(
-                str, nullable=True, checks=Check.isin(["phone", "device", "Phone", "Device", None])
+                str,
+                nullable=True,
+                checks=Check.isin(["phone", "device", "Phone", "Device", None]),
             ),
             "device_udi": Column(str, nullable=True),
             "device_name": Column(str, nullable=True),
@@ -443,108 +460,56 @@ def proper_case(name: str) -> Optional[str]:
 
 # Database Connection Management
 # ==============================
+def _get_pyodbc_connection() -> pyodbc.Connection:
+    """Create pyodbc connection using Managed Identity via ActiveDirectoryMsi."""
+    conn_str = os.environ.get("SqlConnectionString", "")
+
+    params = {}
+    for part in conn_str.split(";"):
+        if "=" in part:
+            key, value = part.split("=", 1)
+            params[key.strip()] = value.strip()
+
+    server = params.get("Server", "").replace("tcp:", "").split(",")[0]
+    database = params.get("Database", "") or params.get("Initial Catalog", "")
+
+    connection_string = (
+        f"Driver={{ODBC Driver 18 for SQL Server}};"
+        f"Server={server};"
+        f"Database={database};"
+        "Authentication=ActiveDirectoryMsi;"
+        "Encrypt=yes;"
+        "TrustServerCertificate=no;"
+        "Connection Timeout=30;"
+        "Login Timeout=30;"
+    )
+    return pyodbc.connect(connection_string)
+
+
 class DatabaseManager:
-    """Manages database connections using pymssql, either fetching from Key Vault or using a raw conn string,
+    """Manages database connections using pyodbc with Managed Identity,
     and applies retry logic for transient failures."""
 
-    def __init__(self, secret_or_conn: str, key_vault_url_env: str = "KEY_VAULT_URL"):
+    def __init__(self, secret_or_conn: str = "", key_vault_url_env: str = "KEY_VAULT_URL"):
         self.logger = logging.getLogger("dtc_file_processor")
-        self.raw_conn_string = None
-        self.secret_name = None
-
-        # detect if what was passed is a full conn string or a vault secret name
-        if ";" in secret_or_conn and "=" in secret_or_conn:
-            # treat as a raw connection string
-            self.raw_conn_string = secret_or_conn
-            self.logger.debug("Initialized with raw connection string (no Key Vault).")
-        else:
-            # treat as a Key Vault secret name
-            self.secret_name = secret_or_conn
-            key_vault_url = os.environ.get(key_vault_url_env)
-            if not key_vault_url:
-                raise ValueError(f"{key_vault_url_env} environment variable is not set")
-            self.key_vault_url = key_vault_url
-            self.logger.debug(
-                f"Initialized with Key Vault secret '{self.secret_name}' at {self.key_vault_url}"
-            )
-
-    def _fetch_connection_string(self) -> str:
-        """Pulled only when using Key Vault mode."""
-        try:
-            self.logger.info(
-                f"🔐 Fetching secret '{self.secret_name}' from Key Vault: {self.key_vault_url}"
-            )
-            credential = DefaultAzureCredential()
-            client = SecretClient(vault_url=self.key_vault_url, credential=credential)
-            secret = client.get_secret(self.secret_name)
-
-            if not secret or not secret.value:
-                raise ValueError(f"Secret '{self.secret_name}' was retrieved but is empty.")
-            self.logger.info("✅ Secret retrieved successfully.")
-            return secret.value
-
-        except Exception as e:
-            self.logger.error(f"❌ Failed to fetch secret from Key Vault: {e}", exc_info=True)
-            raise
-
-    def _get_pymssql_kwargs(self, conn_string: str) -> dict:
-        """Parse an Azure-style conn string into a kwargs dict for pymssql."""
-        conn_params = {}
-        for param in conn_string.split(";"):
-            if "=" not in param:
-                continue
-            key, value = param.split("=", 1)
-            key = key.strip().lower()
-            value = value.strip()
-
-            if key == "server":
-                server_value = value
-                if server_value.lower().startswith("tcp:"):
-                    server_value = server_value[4:]
-                # Check for port
-                if "," in server_value:
-                    host, port = server_value.split(",", 1)
-                    conn_params["server"] = host
-                    conn_params["port"] = int(port)
-                else:
-                    conn_params["server"] = server_value
-            elif key in ("initial catalog", "database"):
-                conn_params["database"] = value
-            elif key == "user id":
-                conn_params["user"] = value
-            elif key == "password":
-                conn_params["password"] = value
-
-        self.logger.info(f"Connecting to server:   {conn_params.get('server')}")
-        self.logger.info(f"Database:              {conn_params.get('database')}")
-        self.logger.info(f"User:                  {conn_params.get('user')}")
-
-        return conn_params
+        self.logger.debug("Initialized with pyodbc Managed Identity connection.")
 
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=1, min=2, max=10),
         retry=retry_if_exception_type(TransientError),
     )
-    def get_connection(self) -> pymssql.Connection:
-        """Establish and return a DB connection using pymssql."""
+    def get_connection(self) -> pyodbc.Connection:
+        """Establish and return a DB connection using pyodbc."""
         try:
-            # choose source
-            if self.raw_conn_string:
-                raw = self.raw_conn_string
-                self.logger.debug("Using provided raw connection string.")
-            else:
-                raw = self._fetch_connection_string()
-
-            conn_kwargs = self._get_pymssql_kwargs(raw)
-            self.logger.info("Attempting database connection with pymssql...")
-            conn = pymssql.connect(**conn_kwargs, login_timeout=30)
-            conn.autocommit(False)  # Set autocommit to False to manage transactions
+            self.logger.info("Attempting database connection with pyodbc (Managed Identity)...")
+            conn = _get_pyodbc_connection()
+            conn.autocommit = False
             self.logger.info("Database connection established successfully")
             return conn
 
-        except pymssql.Error as e:
-            self.logger.error(f"Failed to connect to DB with pymssql: {e}", exc_info=True)
+        except pyodbc.Error as e:
+            self.logger.error(f"Failed to connect to DB with pyodbc: {e}", exc_info=True)
             raise TransientError(f"Database connection failed: {e}")
 
         except Exception as e:
@@ -557,8 +522,8 @@ class DatabaseManager:
         retry=retry_if_exception_type(TransientError),
     )
     def execute_with_retry(
-        self, connection: pymssql.Connection, sql: str, params: Optional[tuple] = None
-    ) -> Any:  # pymssql cursor is not easily typed
+        self, connection: pyodbc.Connection, sql: str, params: Optional[tuple] = None
+    ) -> Any:
         """Run SQL with retry logic for transient errors."""
         try:
             cursor = connection.cursor()
@@ -568,7 +533,7 @@ class DatabaseManager:
                 cursor.execute(sql)
             return cursor
 
-        except pymssql.Error as e:
+        except pyodbc.Error as e:
             msg = str(e).lower()
             if any(term in msg for term in ("timeout", "connection", "network", "lost connection")):
                 self.logger.warning(f"Retryable DB error: {e}")
@@ -664,7 +629,7 @@ def safe_value(value, default=None):
     """
     Convert pandas NaN/NA values to None for SQL compatibility.
 
-    Prevents pymssql from converting NaN to the string "nan" when inserting to SQL Server.
+    Prevents pyodbc from converting NaN to the string "nan" when inserting to SQL Server.
 
     Args:
         value: Value from pandas DataFrame (may be NaN, None, or actual value)
@@ -674,7 +639,7 @@ def safe_value(value, default=None):
         None if value is NaN/NA, otherwise returns value (or default if value is None)
 
     Note:
-        This is critical for pymssql compatibility. pymssql's executemany()
+        This is critical for pyodbc compatibility. pyodbc's executemany()
         cannot properly serialize numpy.nan or pandas.NA, leading to
         SQL Server error 207 "Invalid column name 'nan'".
 
@@ -718,7 +683,7 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
         db_manager = DatabaseManager(context.config.connection_string)
 
         # Clear existing staging data for this batch
-        cleanup_sql = f"""DELETE FROM {context.config.staging_table} WHERE file_batch_id = %s"""
+        cleanup_sql = f"""DELETE FROM {context.config.staging_table} WHERE file_batch_id = ?"""
         cursor = db_manager.execute_with_retry(
             context.connection, cleanup_sql, (str(context.file_batch_id),)
         )
@@ -863,7 +828,7 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
                     # Get the value from the row, defaulting to None if not present
                     value = row.get(col, None)
                     # 🔥 CRITICAL FIX: Convert NaN to None for SQL compatibility
-                    # Prevents pymssql error 207 "Invalid column name 'nan'"
+                    # Prevents pyodbc error 207 "Invalid column name 'nan'"
                     if pd.isna(value):
                         nan_conversion_count += 1
                         logger.debug(f"Converted NaN to None for column: {col}")
@@ -878,7 +843,7 @@ def load_to_staging(df: pd.DataFrame, context: DTCProcessingContext) -> Processi
             )
 
         # Build the INSERT SQL with proper parameter placeholders
-        placeholders = ",".join(["%s" for _ in staging_columns])
+        placeholders = ",".join(["?" for _ in staging_columns])
         insert_sql = f"""
         INSERT INTO {context.config.staging_table} 
         ({','.join(staging_columns)}) 
@@ -960,10 +925,10 @@ def log_enrollment_status_change(
         # Calculate duration since last change
         duration_hours = None
         if previous_status:
-            last_change_query = """
+            last_change_query = f"""
                 SELECT TOP 1 change_timestamp 
-                FROM engage360.member_enrollment_status_history 
-                WHERE member_id = %s AND campaign_id = %s 
+                FROM {IOE_SCHEMA}.member_enrollment_status_history 
+                WHERE member_id = ? AND campaign_id = ? 
                 ORDER BY change_timestamp DESC
             """
             cursor = connection.cursor()
@@ -985,11 +950,11 @@ def log_enrollment_status_change(
                 duration_hours = round(duration_delta.total_seconds() / 3600, 2)
 
         # Insert audit record
-        audit_query = """
-            INSERT INTO engage360.member_enrollment_status_history 
+        audit_query = f"""
+            INSERT INTO {IOE_SCHEMA}.member_enrollment_status_history 
             (member_id, campaign_id, previous_status, new_status, duration_since_last_change_hours, 
              change_source, change_details)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """
 
         cursor = connection.cursor()
@@ -1626,7 +1591,7 @@ def validate_data(context: DTCProcessingContext) -> ProcessingResult:
         update_sql = f"""
         UPDATE {context.config.staging_table}
         SET processing_status = 'VALIDATING', processing_step = 'BUSINESS_VALIDATION'
-        WHERE file_batch_id = %s AND processing_status = 'PENDING'
+        WHERE file_batch_id = ? AND processing_status = 'PENDING'
         """
 
         cursor = db_manager.execute_with_retry(
@@ -1641,21 +1606,21 @@ def validate_data(context: DTCProcessingContext) -> ProcessingResult:
             org_id = o.org_id,
             
             -- Phone number cleansing using built-in functions
-            primary_phone_clean = engage360_stg.fn_standardize_phone(member_phone_number),
-            caregiver_phone_clean = engage360_stg.fn_standardize_phone(caregiver_phone_number),
-            device_phone_clean = engage360_stg.fn_standardize_phone(device_phone_number),
+            primary_phone_clean = {IOE_SCHEMA_STG}.fn_standardize_phone(member_phone_number),
+            caregiver_phone_clean = {IOE_SCHEMA_STG}.fn_standardize_phone(caregiver_phone_number),
+            device_phone_clean = {IOE_SCHEMA_STG}.fn_standardize_phone(device_phone_number),
             
             -- Name cleansing with proper case
-            first_name_clean = engage360_stg.fn_proper_case(member_first_name),
-            last_name_clean = engage360_stg.fn_proper_case(member_last_name),
-            caregiver_first_clean = engage360_stg.fn_proper_case(caregiver_first_name),
-            caregiver_last_clean = engage360_stg.fn_proper_case(caregiver_last_name),
+            first_name_clean = {IOE_SCHEMA_STG}.fn_proper_case(member_first_name),
+            last_name_clean = {IOE_SCHEMA_STG}.fn_proper_case(member_last_name),
+            caregiver_first_clean = {IOE_SCHEMA_STG}.fn_proper_case(caregiver_first_name),
+            caregiver_last_clean = {IOE_SCHEMA_STG}.fn_proper_case(caregiver_last_name),
             
             -- Date cleansing
             dob_clean = TRY_CONVERT(DATE, member_dob),
             
             -- Timezone validation
-            timezone_clean = engage360_stg.fn_validate_timezone(customer_timezone),
+            timezone_clean = {IOE_SCHEMA_STG}.fn_validate_timezone(customer_timezone),
             
             -- Boolean conversion
             is_device_callable_clean = CASE 
@@ -1668,8 +1633,8 @@ def validate_data(context: DTCProcessingContext) -> ProcessingResult:
             updated_ts = SYSDATETIMEOFFSET()
             
         FROM {context.config.staging_table} stg
-        LEFT JOIN engage360.orgs o ON LTRIM(RTRIM(stg.partner_name)) = o.org_name
-        WHERE stg.file_batch_id = %s AND stg.processing_status = 'VALIDATING'
+        LEFT JOIN {IOE_SCHEMA}.orgs o ON LTRIM(RTRIM(stg.partner_name)) = o.org_name
+        WHERE stg.file_batch_id = ? AND stg.processing_status = 'VALIDATING'
         """
 
         cursor = db_manager.execute_with_retry(
@@ -1680,7 +1645,7 @@ def validate_data(context: DTCProcessingContext) -> ProcessingResult:
         mark_validated_sql = f"""
         UPDATE {context.config.staging_table}
         SET processing_status = 'VALIDATED'
-        WHERE file_batch_id = %s AND processing_status = 'VALIDATING'
+        WHERE file_batch_id = ? AND processing_status = 'VALIDATING'
         """
 
         cursor = db_manager.execute_with_retry(
@@ -1694,7 +1659,7 @@ def validate_data(context: DTCProcessingContext) -> ProcessingResult:
             SUM(CASE WHEN processing_status = 'VALIDATED' THEN 1 ELSE 0 END) as valid_count,
             SUM(CASE WHEN processing_status = 'VALIDATION_ERROR' THEN 1 ELSE 0 END) as invalid_count
         FROM {context.config.staging_table}
-        WHERE file_batch_id = %s
+        WHERE file_batch_id = ?
         """
 
         cursor = db_manager.execute_with_retry(
@@ -1769,8 +1734,8 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         UPDATE stg 
         SET org_id = o.org_id
         FROM {context.config.staging_table} stg
-        JOIN engage360.orgs o ON LTRIM(RTRIM(LOWER(stg.partner_name))) = LTRIM(RTRIM(LOWER(o.org_name)))
-        WHERE stg.file_batch_id = %s 
+        JOIN {IOE_SCHEMA}.orgs o ON LTRIM(RTRIM(LOWER(stg.partner_name))) = LTRIM(RTRIM(LOWER(o.org_name)))
+        WHERE stg.file_batch_id = ? 
         AND stg.org_id IS NULL
         AND stg.partner_name IS NOT NULL
         """
@@ -1782,9 +1747,9 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
 
         # 🔍 Get campaign IDs with better error handling
         logger.info("Fetching campaign IDs for 'dtc_intro_onboarding' and 'dtc_wellness_check'")
-        fetch_campaign_ids_sql = """
+        fetch_campaign_ids_sql = f"""
         SELECT campaign_id, name, status
-        FROM engage360.campaigns_enhanced
+        FROM {IOE_SCHEMA}.campaigns_enhanced
         WHERE name IN ('dtc_intro_onboarding', 'dtc_wellness_check')
         AND status = 'Active'
         """
@@ -1817,7 +1782,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         SET processing_status = 'TRANSFORMING', 
             processing_step = 'DTC_BUSINESS_LOGIC',
             updated_ts = SYSDATETIMEOFFSET()
-        WHERE file_batch_id = %s 
+        WHERE file_batch_id = ? 
         AND processing_status IN ('PENDING', 'VALIDATED', 'PROCESSED')
         """
         cursor = db_manager.execute_with_retry(
@@ -1837,7 +1802,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             COUNT(CASE WHEN salesforce_account_number IS NOT NULL AND LTRIM(RTRIM(salesforce_account_number)) != '' THEN 1 END) as records_with_sf_account,
             COUNT(CASE WHEN enrollment_status IS NOT NULL THEN 1 END) as records_with_enrollment_status
         FROM {context.config.staging_table}
-        WHERE file_batch_id = %s AND processing_status = 'TRANSFORMING'
+        WHERE file_batch_id = ? AND processing_status = 'TRANSFORMING'
         """
         cursor = db_manager.execute_with_retry(
             context.connection, check_staging_sql, (str(context.file_batch_id),)
@@ -1859,7 +1824,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             LTRIM(RTRIM(stg.salesforce_account_number)) AS salesforce_account_number,
             COUNT(*) as duplicate_count
         FROM {context.config.staging_table} stg
-        WHERE stg.file_batch_id = %s
+        WHERE stg.file_batch_id = ?
           AND stg.processing_status = 'TRANSFORMING'
           AND stg.org_id IS NOT NULL
           AND stg.salesforce_account_number IS NOT NULL
@@ -1915,13 +1880,13 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 ISNULL(stg.member_address_country, 'US') AS address_country,
                 stg.channel_type_clean AS channel_type
             FROM {context.config.staging_table} stg
-            WHERE stg.file_batch_id = %s
+            WHERE stg.file_batch_id = ?
               AND stg.processing_status = 'TRANSFORMING'
               AND stg.org_id IS NOT NULL
               AND stg.salesforce_account_number IS NOT NULL
               AND LTRIM(RTRIM(stg.salesforce_account_number)) != ''
         )
-        MERGE engage360.members AS tgt
+        MERGE {IOE_SCHEMA}.members AS tgt
         USING source_members AS src
         ON (tgt.org_id = src.org_id AND tgt.salesforce_account_number = src.salesforce_account_number)
         WHEN MATCHED THEN
@@ -1962,12 +1927,12 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         logger.info(f"Members merge affected {members_affected} rows")
 
         # 🔍 Verify members were created/updated
-        verify_members_sql = """
-        SELECT COUNT(*) FROM engage360.members m
-        JOIN engage360_stg.stg_dtc_wellness_delta stg 
+        verify_members_sql = f"""
+        SELECT COUNT(*) FROM {IOE_SCHEMA}.members m
+        JOIN {IOE_SCHEMA_STG}.stg_dtc_wellness_delta stg 
             ON m.org_id = stg.org_id 
             AND m.salesforce_account_number = stg.salesforce_account_number
-        WHERE stg.file_batch_id = %s
+        WHERE stg.file_batch_id = ?
         """
         cursor = db_manager.execute_with_retry(
             context.connection, verify_members_sql, (str(context.file_batch_id),)
@@ -1984,8 +1949,8 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         enrollment_start_time = datetime.now(timezone.utc)
         update_enrollment_start_sql = f"""
         UPDATE {context.config.staging_table}
-        SET enrollment_started_ts = %s
-        WHERE file_batch_id = %s AND processing_status = 'TRANSFORMING'
+        SET enrollment_started_ts = ?
+        WHERE file_batch_id = ? AND processing_status = 'TRANSFORMING'
         """
         cursor = db_manager.execute_with_retry(
             context.connection,
@@ -2000,25 +1965,29 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         logger.info("Handling UNENROLLED wellness members transition to intro campaign...")
         wellness_to_intro_sql = f"""
         UPDATE wellness_enroll
-        SET campaign_id = %s,
+        SET campaign_id = ?,
             current_status = 'ENROLLED',
             enrollment_ts = SYSDATETIMEOFFSET(),
             unenrollment_reason = NULL
-        FROM engage360.member_campaign_enrollments_enhanced wellness_enroll
-        JOIN engage360.members m ON wellness_enroll.member_id = m.member_id
+        FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced wellness_enroll
+        JOIN {IOE_SCHEMA}.members m ON wellness_enroll.member_id = m.member_id
         JOIN {context.config.staging_table} stg 
             ON m.org_id = stg.org_id 
             AND m.salesforce_account_number = stg.salesforce_account_number
-        WHERE stg.file_batch_id = %s
+        WHERE stg.file_batch_id = ?
           AND stg.processing_status = 'TRANSFORMING'
           AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'ENROLL'
-          AND wellness_enroll.campaign_id = %s
+          AND wellness_enroll.campaign_id = ?
           AND wellness_enroll.current_status = 'UNENROLLED'
         """
         cursor = db_manager.execute_with_retry(
             context.connection,
             wellness_to_intro_sql,
-            (str(intro_campaign_id), str(context.file_batch_id), str(wellness_campaign_id)),
+            (
+                str(intro_campaign_id),
+                str(context.file_batch_id),
+                str(wellness_campaign_id),
+            ),
         )
         transitioned_wellness = cursor.rowcount
         logger.info(
@@ -2030,15 +1999,15 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             # Get the member IDs that were transitioned for audit logging
             transitioned_members_sql = f"""
                 SELECT DISTINCT m.member_id
-                FROM engage360.members m
+                FROM {IOE_SCHEMA}.members m
                 JOIN {context.config.staging_table} stg 
                     ON m.org_id = stg.org_id 
                     AND m.salesforce_account_number = stg.salesforce_account_number
-                JOIN engage360.member_campaign_enrollments_enhanced e ON e.member_id = m.member_id
-                WHERE stg.file_batch_id = %s
+                JOIN {IOE_SCHEMA}.member_campaign_enrollments_enhanced e ON e.member_id = m.member_id
+                WHERE stg.file_batch_id = ?
                   AND stg.processing_status = 'TRANSFORMING'
                   AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'ENROLL'
-                  AND e.campaign_id = %s
+                  AND e.campaign_id = ?
             """
             cursor = db_manager.execute_with_retry(
                 context.connection,
@@ -2061,10 +2030,10 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
 
         # Then handle normal intro campaign enrollments (new enrollments and re-enrollments)
         enroll_sql = f"""
-        MERGE engage360.member_campaign_enrollments_enhanced AS tgt
+        MERGE {IOE_SCHEMA}.member_campaign_enrollments_enhanced AS tgt
         USING (
             SELECT m.member_id,
-                   %s AS campaign_id,
+                   ? AS campaign_id,
                    CASE LTRIM(RTRIM(UPPER(stg.checkin_time)))
                        WHEN 'AM' THEN 'AM9-10'
                        WHEN 'PM' THEN 'PM12-1'
@@ -2073,17 +2042,17 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                    END AS preferred_window,
                    stg.channel_type_clean AS channel
             FROM {context.config.staging_table} stg
-            JOIN engage360.members m
+            JOIN {IOE_SCHEMA}.members m
                 ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
-            WHERE stg.file_batch_id = %s
+            WHERE stg.file_batch_id = ?
               AND stg.processing_status = 'TRANSFORMING'
               AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'ENROLL'
               -- Exclude members who already have wellness enrollments (handled above)
               AND NOT EXISTS (
-                  SELECT 1 FROM engage360.member_campaign_enrollments_enhanced existing
+                  SELECT 1 FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced existing
                   WHERE existing.member_id = m.member_id
-                    AND existing.campaign_id = %s
+                    AND existing.campaign_id = ?
               )
         ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
         WHEN MATCHED THEN
@@ -2100,7 +2069,11 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         cursor = db_manager.execute_with_retry(
             context.connection,
             enroll_sql,
-            (str(intro_campaign_id), str(context.file_batch_id), str(wellness_campaign_id)),
+            (
+                str(intro_campaign_id),
+                str(context.file_batch_id),
+                str(wellness_campaign_id),
+            ),
         )
         new_enrollments = cursor.rowcount
         logger.info(
@@ -2119,10 +2092,10 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         update_duplicates_sql = f"""
         SELECT m.member_id, COUNT(*) as duplicate_count
         FROM {context.config.staging_table} stg
-        JOIN engage360.members m 
+        JOIN {IOE_SCHEMA}.members m 
             ON m.org_id = stg.org_id 
             AND m.salesforce_account_number = stg.salesforce_account_number
-        WHERE stg.file_batch_id = %s
+        WHERE stg.file_batch_id = ?
           AND stg.processing_status = 'TRANSFORMING'
           AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UPDATE'
         GROUP BY m.member_id
@@ -2146,7 +2119,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         logger.info("✅ No duplicate update enrollments found")
 
         update_enrollments_sql = f"""
-        MERGE engage360.member_campaign_enrollments_enhanced AS tgt
+        MERGE {IOE_SCHEMA}.member_campaign_enrollments_enhanced AS tgt
         USING (
             SELECT m.member_id,
                    CASE LTRIM(RTRIM(UPPER(stg.checkin_time)))
@@ -2157,13 +2130,13 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                    END AS preferred_window,
                    stg.channel_type_clean AS channel
             FROM {context.config.staging_table} stg
-            JOIN engage360.members m
+            JOIN {IOE_SCHEMA}.members m
                 ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
-            WHERE stg.file_batch_id = %s
+            WHERE stg.file_batch_id = ?
               AND stg.processing_status = 'TRANSFORMING'
               AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UPDATE'
-        ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = %s
+        ) AS src ON tgt.member_id = src.member_id AND tgt.campaign_id = ?
         WHEN MATCHED THEN
             UPDATE SET
                 preferred_window = ISNULL(src.preferred_window, tgt.preferred_window),
@@ -2184,20 +2157,24 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         UPDATE e
         SET current_status = 'UNENROLLED',
             unenrollment_reason = COALESCE(stg.unenrollment_reason, 'Updated via file processing')
-        FROM engage360.member_campaign_enrollments_enhanced e
-        JOIN engage360.members m ON e.member_id = m.member_id
+        FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
+        JOIN {IOE_SCHEMA}.members m ON e.member_id = m.member_id
         JOIN {context.config.staging_table} stg 
             ON m.org_id = stg.org_id 
             AND m.salesforce_account_number = stg.salesforce_account_number
-        WHERE stg.file_batch_id = %s
+        WHERE stg.file_batch_id = ?
           AND stg.processing_status = 'TRANSFORMING'
           AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UNENROLL'
-          AND e.campaign_id IN (%s, %s)
+          AND e.campaign_id IN (?, ?)
         """
         cursor = db_manager.execute_with_retry(
             context.connection,
             unenroll_sql,
-            (str(context.file_batch_id), str(intro_campaign_id), str(wellness_campaign_id)),
+            (
+                str(context.file_batch_id),
+                str(intro_campaign_id),
+                str(wellness_campaign_id),
+            ),
         )
         unenrolled_count = cursor.rowcount
         logger.info(f"Unenrolled {unenrolled_count} members")
@@ -2207,21 +2184,25 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             # Get the member IDs and campaign IDs that were unenrolled for audit logging
             unenrolled_members_sql = f"""
                 SELECT DISTINCT m.member_id, e.campaign_id, e.current_status
-                FROM engage360.members m
+                FROM {IOE_SCHEMA}.members m
                 JOIN {context.config.staging_table} stg 
                     ON m.org_id = stg.org_id 
                     AND m.salesforce_account_number = stg.salesforce_account_number
-                JOIN engage360.member_campaign_enrollments_enhanced e ON e.member_id = m.member_id
-                WHERE stg.file_batch_id = %s
+                JOIN {IOE_SCHEMA}.member_campaign_enrollments_enhanced e ON e.member_id = m.member_id
+                WHERE stg.file_batch_id = ?
                   AND stg.processing_status = 'TRANSFORMING'
                   AND UPPER(LTRIM(RTRIM(stg.enrollment_status))) = 'UNENROLL'
-                  AND e.campaign_id IN (%s, %s)
+                  AND e.campaign_id IN (?, ?)
                   AND e.current_status = 'UNENROLLED'
             """
             cursor = db_manager.execute_with_retry(
                 context.connection,
                 unenrolled_members_sql,
-                (str(context.file_batch_id), str(intro_campaign_id), str(wellness_campaign_id)),
+                (
+                    str(context.file_batch_id),
+                    str(intro_campaign_id),
+                    str(wellness_campaign_id),
+                ),
             )
             unenrolled_member_records = cursor.fetchall()
 
@@ -2246,10 +2227,10 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         device_duplicates_sql = f"""
         SELECT stg.device_udi, COUNT(*) as duplicate_count
         FROM {context.config.staging_table} stg
-        JOIN engage360.members m 
+        JOIN {IOE_SCHEMA}.members m 
             ON m.org_id = stg.org_id 
             AND m.salesforce_account_number = stg.salesforce_account_number
-        WHERE stg.file_batch_id = %s
+        WHERE stg.file_batch_id = ?
           AND stg.processing_status = 'TRANSFORMING'
           AND stg.device_udi IS NOT NULL
           AND LTRIM(RTRIM(stg.device_udi)) != ''
@@ -2277,15 +2258,15 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         logger.info("Retiring prior devices for members with new device_udi...")
 
         device_retirement_sql = f"""
-        UPDATE engage360.member_devices
+        UPDATE {IOE_SCHEMA}.member_devices
         SET service_status = 'Out of Service',
             updated_ts = SYSDATETIMEOFFSET()
-        FROM engage360.member_devices md
-        JOIN engage360.members m ON md.member_id = m.member_id
+        FROM {IOE_SCHEMA}.member_devices md
+        JOIN {IOE_SCHEMA}.members m ON md.member_id = m.member_id
         JOIN {context.config.staging_table} stg
             ON m.org_id = stg.org_id
             AND m.salesforce_account_number = stg.salesforce_account_number
-        WHERE stg.file_batch_id = %s
+        WHERE stg.file_batch_id = ?
           AND stg.processing_status = 'TRANSFORMING'
           AND stg.device_udi IS NOT NULL
           AND LTRIM(RTRIM(stg.device_udi)) != ''
@@ -2313,14 +2294,14 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 m_existing.salesforce_account_number AS existing_account,
                 stg.row_number_in_file
             FROM {context.config.staging_table} stg
-            JOIN engage360.members m
+            JOIN {IOE_SCHEMA}.members m
                 ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
-            JOIN engage360.member_devices md
+            JOIN {IOE_SCHEMA}.member_devices md
                 ON stg.device_udi = md.device_id
-            JOIN engage360.members m_existing
+            JOIN {IOE_SCHEMA}.members m_existing
                 ON md.member_id = m_existing.member_id
-            WHERE stg.file_batch_id = %s
+            WHERE stg.file_batch_id = ?
               AND stg.processing_status = 'TRANSFORMING'
               AND stg.device_udi IS NOT NULL
               AND LTRIM(RTRIM(stg.device_udi)) != ''
@@ -2368,10 +2349,10 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 update_sql = f"""
                 UPDATE {context.config.staging_table}
                 SET processing_status = 'VALIDATION_ERROR',
-                    error_message = %s,
+                    error_message = ?,
                     updated_ts = SYSDATETIMEOFFSET()
-                WHERE file_batch_id = %s
-                  AND device_udi = %s
+                WHERE file_batch_id = ?
+                  AND device_udi = ?
                   AND processing_status = 'TRANSFORMING';
                 """
                 db_manager.execute_with_retry(
@@ -2381,10 +2362,10 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 )
 
                 # Log to DTC validation error table
-                insert_error_sql = """
-                INSERT INTO engage360.dtc_validation_error_details_row
+                insert_error_sql = f"""
+                INSERT INTO {IOE_SCHEMA}.dtc_validation_error_details_row
                 (file_id, row_number, field_name, error_message, created_ts)
-                VALUES (%s, %s, %s, %s, SYSDATETIMEOFFSET());
+                VALUES (?, ?, ?, ?, SYSDATETIMEOFFSET());
                 """
                 db_manager.execute_with_retry(
                     context.connection,
@@ -2402,7 +2383,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
 
         # 🔁 STEP 2: MERGE new devices with service_status='In Service'
         device_sql = f"""
-        MERGE engage360.member_devices AS tgt
+        MERGE {IOE_SCHEMA}.member_devices AS tgt
         USING (
             SELECT DISTINCT
                 stg.device_udi,
@@ -2411,10 +2392,10 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
                 stg.is_device_callable_clean AS is_device_callable,
                 stg.device_name
             FROM {context.config.staging_table} stg
-            JOIN engage360.members m
+            JOIN {IOE_SCHEMA}.members m
                 ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
-            WHERE stg.file_batch_id = %s
+            WHERE stg.file_batch_id = ?
               AND stg.processing_status = 'TRANSFORMING'
               AND stg.device_udi IS NOT NULL
               AND LTRIM(RTRIM(stg.device_udi)) != ''
@@ -2442,12 +2423,12 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         verification_sql = f"""
         WITH MultiActiveDevices AS (
             SELECT m.member_id, COUNT(*) as active_device_count
-            FROM engage360.members m
+            FROM {IOE_SCHEMA}.members m
             JOIN {context.config.staging_table} stg
                 ON m.org_id = stg.org_id
                 AND m.salesforce_account_number = stg.salesforce_account_number
-            JOIN engage360.member_devices md ON m.member_id = md.member_id
-            WHERE stg.file_batch_id = %s
+            JOIN {IOE_SCHEMA}.member_devices md ON m.member_id = md.member_id
+            WHERE stg.file_batch_id = ?
               AND stg.processing_status = 'TRANSFORMING'
               AND md.service_status = 'In Service'
             GROUP BY m.member_id
@@ -2481,9 +2462,9 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
             enrollment_started_ts = SYSDATETIMEOFFSET(),
             enrollment_completed_ts = SYSDATETIMEOFFSET()
         FROM {context.config.staging_table} stg
-        JOIN engage360.members m ON m.org_id = stg.org_id AND m.salesforce_account_number = stg.salesforce_account_number
-        LEFT JOIN engage360.member_campaign_enrollments_enhanced e ON e.member_id = m.member_id
-        WHERE stg.file_batch_id = %s AND stg.processing_status = 'TRANSFORMING'
+        JOIN {IOE_SCHEMA}.members m ON m.org_id = stg.org_id AND m.salesforce_account_number = stg.salesforce_account_number
+        LEFT JOIN {IOE_SCHEMA}.member_campaign_enrollments_enhanced e ON e.member_id = m.member_id
+        WHERE stg.file_batch_id = ? AND stg.processing_status = 'TRANSFORMING'
         """
         cursor = db_manager.execute_with_retry(
             context.connection, update_tracking_sql, (str(context.file_batch_id),)
@@ -2494,7 +2475,7 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         UPDATE {context.config.staging_table}
         SET processing_status = 'PROCESSED',
             updated_ts = SYSDATETIMEOFFSET()
-        WHERE file_batch_id = %s AND processing_status = 'TRANSFORMING'
+        WHERE file_batch_id = ? AND processing_status = 'TRANSFORMING'
         """
         cursor = db_manager.execute_with_retry(
             context.connection, complete_sql, (str(context.file_batch_id),)
@@ -2502,10 +2483,10 @@ def transform_and_load_core(context: DTCProcessingContext) -> ProcessingResult:
         processed_count = cursor.rowcount
 
         # 🔍 Final verification
-        final_check_sql = """
+        final_check_sql = f"""
         SELECT 
-            (SELECT COUNT(*) FROM engage360.members WHERE created_ts >= CONVERT(date, GETDATE())) as members_today,
-            (SELECT COUNT(*) FROM engage360.member_campaign_enrollments_enhanced WHERE enrollment_ts >= CONVERT(date, GETDATE())) as enrollments_today
+            (SELECT COUNT(*) FROM {IOE_SCHEMA}.members WHERE created_ts >= CONVERT(date, GETDATE())) as members_today,
+            (SELECT COUNT(*) FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced WHERE enrollment_ts >= CONVERT(date, GETDATE())) as enrollments_today
         """
         cursor = db_manager.execute_with_retry(context.connection, final_check_sql)
         final_counts = cursor.fetchone()
@@ -2580,18 +2561,18 @@ def log_audit(
         total_failed = sum(result.records_failed for result in processing_results)
 
         # Update master file processing log
-        audit_sql = """
-        UPDATE engage360_stg.file_processing_log
+        audit_sql = f"""
+        UPDATE {IOE_SCHEMA_STG}.file_processing_log
         SET 
             current_status = 'COMPLETED',
             processing_step = 'COMPLETED',
             enrollment_completed_ts = SYSDATETIMEOFFSET(),
             completed_ts = SYSDATETIMEOFFSET(),
-            total_records_processed = %s,
-            successful_records = %s,
-            failed_records = %s,
-            error_percentage = CASE WHEN %s > 0 THEN (CAST(%s AS DECIMAL(10,2)) / CAST(%s AS DECIMAL(10,2))) * 100 ELSE 0 END
-        WHERE file_batch_id = %s
+            total_records_processed = ?,
+            successful_records = ?,
+            failed_records = ?,
+            error_percentage = CASE WHEN ? > 0 THEN (CAST(? AS DECIMAL(10,2)) / CAST(? AS DECIMAL(10,2))) * 100 ELSE 0 END
+        WHERE file_batch_id = ?
         """
 
         db_manager.execute_with_retry(
@@ -2609,11 +2590,11 @@ def log_audit(
         )
 
         # Create detailed audit log entry
-        audit_detail_sql = """
-        INSERT INTO engage360_stg.processing_step_log 
+        audit_detail_sql = f"""
+        INSERT INTO {IOE_SCHEMA_STG}.processing_step_log 
         (file_batch_id, step_name, step_sequence, step_status, records_input, records_output, 
          records_failed, step_message, step_started_ts, step_completed_ts)
-        VALUES (%s, 'DTC_COMPLETE_WORKFLOW', 99, 'COMPLETED', %s, %s, %s, %s, %s, SYSDATETIMEOFFSET())
+        VALUES (?, 'DTC_COMPLETE_WORKFLOW', 99, 'COMPLETED', ?, ?, ?, ?, ?, SYSDATETIMEOFFSET())
         """
 
         audit_message = f"DTC workflow completed successfully. Duration: {total_duration:.2f}s"
@@ -2657,7 +2638,9 @@ def log_audit(
 
 
 def handle_errors(
-    context: DTCProcessingContext, error: Exception, processing_results: List[ProcessingResult]
+    context: DTCProcessingContext,
+    error: Exception,
+    processing_results: List[ProcessingResult],
 ) -> None:
     """
     Step 6: Comprehensive error handling with retry logic and failure logging.
@@ -2683,17 +2666,17 @@ def handle_errors(
         total_failed = sum(result.records_failed for result in processing_results)
 
         # Update master log with failure status - use a simple cursor without retry logic
-        failure_sql = """
-        UPDATE engage360_stg.file_processing_log
+        failure_sql = f"""
+        UPDATE {IOE_SCHEMA_STG}.file_processing_log
         SET 
             current_status = 'FAILED',
             processing_step = 'FAILED',
             completed_ts = SYSDATETIMEOFFSET(),
-            final_error_message = %s,
-            total_records_processed = %s,
-            successful_records = %s,
-            failed_records = %s
-        WHERE file_batch_id = %s
+            final_error_message = ?,
+            total_records_processed = ?,
+            successful_records = ?,
+            failed_records = ?
+        WHERE file_batch_id = ?
         """
 
         cursor = context.connection.cursor()
@@ -2712,21 +2695,22 @@ def handle_errors(
         # Only try to log detailed error information if the master record exists
         # Check if master record exists first
         check_sql = (
-            "SELECT COUNT(*) FROM engage360_stg.file_processing_log WHERE file_batch_id = %s"
+            f"SELECT COUNT(*) FROM {IOE_SCHEMA_STG}.file_processing_log WHERE file_batch_id = ?"
         )
         cursor.execute(check_sql, (str(context.file_batch_id),))
         if cursor.fetchone()[0] > 0:
             # Master record exists, safe to insert step log
             try:
-                error_detail_sql = """
-                INSERT INTO engage360_stg.processing_step_log 
+                error_detail_sql = f"""
+                INSERT INTO {IOE_SCHEMA_STG}.processing_step_log 
                 (file_batch_id, step_name, step_sequence, step_status, step_message, error_details, step_started_ts, step_completed_ts)
-                VALUES (%s, 'ERROR_HANDLING', 999, 'FAILED', %s, %s, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET())
+                VALUES (?, 'ERROR_HANDLING', 999, 'FAILED', ?, ?, SYSDATETIMEOFFSET(), SYSDATETIMEOFFSET())
                 """
 
                 error_message = f"DTC processing failed with {error_type} error"
                 cursor.execute(
-                    error_detail_sql, (str(context.file_batch_id), error_message, str(error))
+                    error_detail_sql,
+                    (str(context.file_batch_id), error_message, str(error)),
                 )
                 context.connection.commit()
 
@@ -2823,7 +2807,7 @@ def process_dtc_file_complete(
         source_filename=source_filename,
         file_path=file_path,
         uploaded_by_user=uploaded_by_user,
-        file_size_bytes=Path(file_path).stat().st_size if Path(file_path).exists() else None,
+        file_size_bytes=(Path(file_path).stat().st_size if Path(file_path).exists() else None),
         config=config,
         connection=connection,
     )
@@ -2844,16 +2828,17 @@ def process_dtc_file_complete(
             file_type = "DTC_WELLNESS"
 
         # Initialize the master log entry FIRST (with autocommit)
-        master_sql = """
-        INSERT INTO engage360_stg.file_processing_log
+        master_sql = f"""
+        INSERT INTO {IOE_SCHEMA_STG}.file_processing_log
           (file_batch_id, source_filename, file_type, created_ts, current_status, error_threshold_pct)
-        VALUES (%s, %s, %s, SYSDATETIMEOFFSET(), 'STARTED', %s)
+        VALUES (?, ?, ?, SYSDATETIMEOFFSET(), 'STARTED', ?)
         """
 
         # Use a separate connection with autocommit for the master log
         master_cursor = connection.cursor()
         master_cursor.execute(
-            master_sql, (str(file_batch_id), source_filename, file_type, error_threshold_pct)
+            master_sql,
+            (str(file_batch_id), source_filename, file_type, error_threshold_pct),
         )
         connection.commit()  # Commit this immediately
         logger.info(f"Master log entry created for batch {file_batch_id}")
@@ -2861,7 +2846,7 @@ def process_dtc_file_complete(
         # ---------------------------------------------------------------------
         # Now begin transaction for the main processing
         # ---------------------------------------------------------------------
-        # pymssql transactions are managed by commit() and rollback() on the connection object
+        # pyodbc transactions are managed by commit() and rollback() on the connection object
 
         # ---------------------------------------------------------------------
         # Step 1: Extract
@@ -2983,14 +2968,14 @@ def process_dtc_file_complete(
 
         # Update the master log to show failure (this should work since it's already committed)
         try:
-            failure_sql = """
-            UPDATE engage360_stg.file_processing_log
+            failure_sql = f"""
+            UPDATE {IOE_SCHEMA_STG}.file_processing_log
             SET 
                 current_status = 'FAILED',
                 processing_step = 'FAILED',
                 completed_ts = SYSDATETIMEOFFSET(),
-                final_error_message = %s
-            WHERE file_batch_id = %s
+                final_error_message = ?
+            WHERE file_batch_id = ?
             """
             failure_cursor = connection.cursor()
             failure_cursor.execute(failure_sql, (str(e), str(file_batch_id)))
@@ -3004,7 +2989,11 @@ def process_dtc_file_complete(
         logger.info(f"Moving file to 'error' folder: {source_filename}")
         try:
             handle_blob_movement_with_error_handling(
-                source_filename, "staging", "error", os.environ["AZURE_CONTAINER_NAME"], logger
+                source_filename,
+                "staging",
+                "error",
+                os.environ["AZURE_CONTAINER_NAME"],
+                logger,
             )
         except Exception as mv:
             logger.error(f"Failed to move to error folder: {mv}")
@@ -3062,7 +3051,9 @@ def process_dtc_file_complete(
 
 if __name__ == "__main__":
     # Example configuration
-    CONNECTION_STRING = "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost;DATABASE=engage360;UID=user;PWD=password"
+    CONNECTION_STRING = (
+        "DRIVER={ODBC Driver 17 for SQL Server};SERVER=localhost;DATABASE=ioe;UID=user;PWD=password"
+    )
 
     # Example usage for DTC processing
     success, message, details = process_dtc_file_complete(

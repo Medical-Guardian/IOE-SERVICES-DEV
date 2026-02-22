@@ -12,7 +12,7 @@
 /*
 SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'members'
   AND COLUMN_NAME = 'salesforce_account_id';
 */
@@ -25,14 +25,14 @@ WHERE TABLE_SCHEMA = 'engage360'
 -- =====================================================================================
 
 -- Add salesforce_account_id column to members table
-ALTER TABLE engage360.members
+ALTER TABLE ioe.members
 ADD salesforce_account_id NVARCHAR(50) NULL;
 
 GO
 
 -- Create index for efficient lookups
 CREATE NONCLUSTERED INDEX IX_members_salesforce_account_id
-ON engage360.members (salesforce_account_id)
+ON ioe.members (salesforce_account_id)
 WHERE salesforce_account_id IS NOT NULL;
 
 GO
@@ -42,7 +42,7 @@ GO
 -- =====================================================================================
 SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'members'
   AND COLUMN_NAME = 'salesforce_account_id';
 

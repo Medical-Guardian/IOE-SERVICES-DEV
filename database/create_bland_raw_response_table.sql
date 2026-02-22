@@ -1,12 +1,12 @@
 -- =====================================================================================
--- Create Table: engage360.bland_raw_response
+-- Create Table: ioe.bland_raw_response
 -- Purpose: Store raw Bland AI webhook JSON payloads separately from bland_call_logs
 -- Reason: Optimize bland_call_logs table size by moving large JSON blobs
 -- Date: 2025-01-03
 -- =====================================================================================
 
 -- Create the table
-CREATE TABLE engage360.bland_raw_response (
+CREATE TABLE ioe.bland_raw_response (
     raw_response_id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
     call_id NVARCHAR(255) NOT NULL UNIQUE,  -- Links to bland_call_logs.call_id
     raw_response NVARCHAR(MAX) NOT NULL,     -- Full webhook JSON payload
@@ -15,17 +15,17 @@ CREATE TABLE engage360.bland_raw_response (
     -- Foreign key to bland_call_logs (ensures referential integrity)
     CONSTRAINT FK_bland_raw_response_call_id
         FOREIGN KEY (call_id)
-        REFERENCES engage360.bland_call_logs(call_id)
+        REFERENCES ioe.bland_call_logs(call_id)
         ON DELETE CASCADE  -- If call log deleted, delete raw response too
 );
 
 -- Create index for fast lookups by call_id
 CREATE INDEX IX_bland_raw_response_call_id
-ON engage360.bland_raw_response(call_id);
+ON ioe.bland_raw_response(call_id);
 
 -- Create index for filtering by creation date (for data retention queries)
 CREATE INDEX IX_bland_raw_response_created_at
-ON engage360.bland_raw_response(created_at);
+ON ioe.bland_raw_response(created_at);
 
 -- Verify table creation
 SELECT
@@ -34,7 +34,7 @@ SELECT
     DATA_TYPE,
     IS_NULLABLE
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'bland_raw_response'
 ORDER BY ORDINAL_POSITION;
 
@@ -43,10 +43,10 @@ ORDER BY ORDINAL_POSITION;
 -- =====================================================================================
 
 -- Check table exists
-IF OBJECT_ID('engage360.bland_raw_response', 'U') IS NOT NULL
-    PRINT '✅ Table engage360.bland_raw_response created successfully'
+IF OBJECT_ID('ioe.bland_raw_response', 'U') IS NOT NULL
+    PRINT '✅ Table ioe.bland_raw_response created successfully'
 ELSE
-    PRINT '❌ ERROR: Table engage360.bland_raw_response not found';
+    PRINT '❌ ERROR: Table ioe.bland_raw_response not found';
 
 -- Check indexes exist
 SELECT
@@ -67,7 +67,7 @@ WHERE OBJECT_NAME(i.object_id) = 'bland_raw_response'
 --     MIN(created_at) as first_record,
 --     MAX(created_at) as last_record,
 --     AVG(LEN(raw_response)) as avg_json_size_bytes
--- FROM engage360.bland_raw_response;
+-- FROM ioe.bland_raw_response;
 
 -- Query to check relationship with bland_call_logs
 -- SELECT
@@ -79,7 +79,7 @@ WHERE OBJECT_NAME(i.object_id) = 'bland_raw_response'
 --         WHEN brr.call_id IS NOT NULL THEN 'Has raw response'
 --         ELSE 'Missing raw response'
 --     END as audit_status
--- FROM engage360.bland_call_logs bcl
--- LEFT JOIN engage360.bland_raw_response brr ON bcl.call_id = brr.call_id
+-- FROM ioe.bland_call_logs bcl
+-- LEFT JOIN ioe.bland_raw_response brr ON bcl.call_id = brr.call_id
 -- WHERE bcl.created_at > DATEADD(day, -1, GETDATE())
 -- ORDER BY bcl.created_at DESC;

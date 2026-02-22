@@ -1,5 +1,5 @@
 /*
-Database Migration: Add Channel Column to engage360.members Table
+Database Migration: Add Channel Column to ioe.members Table
 Purpose: Enable device vs phone routing for DTC campaigns
 Date: 2025-01-17
 Related Feature: Device/Phone Call Routing (channel_type in CSV → Channel in database)
@@ -12,27 +12,27 @@ and sets a default value of 'phone' for backward compatibility.
 IF NOT EXISTS (
     SELECT 1
     FROM sys.columns
-    WHERE object_id = OBJECT_ID('engage360.members')
+    WHERE object_id = OBJECT_ID('ioe.members')
     AND name = 'Channel'
 )
 BEGIN
-    PRINT '📋 Adding Channel column to engage360.members table...';
+    PRINT '📋 Adding Channel column to ioe.members table...';
 
-    ALTER TABLE engage360.members
+    ALTER TABLE ioe.members
     ADD Channel VARCHAR(20) NULL;
 
     PRINT '✅ Channel column added successfully';
 END
 ELSE
 BEGIN
-    PRINT 'ℹ️ Channel column already exists in engage360.members';
+    PRINT 'ℹ️ Channel column already exists in ioe.members';
 END
 GO
 
 -- Set default to 'phone' for existing members with NULL Channel
 PRINT '📋 Updating NULL Channel values to default "phone"...';
 
-UPDATE engage360.members
+UPDATE ioe.members
 SET Channel = 'phone'
 WHERE Channel IS NULL;
 
@@ -48,7 +48,7 @@ SELECT
     SUM(CASE WHEN Channel IS NULL THEN 1 ELSE 0 END) as null_channel_count,
     SUM(CASE WHEN Channel = 'phone' THEN 1 ELSE 0 END) as phone_channel_count,
     SUM(CASE WHEN Channel = 'device' THEN 1 ELSE 0 END) as device_channel_count
-FROM engage360.members;
+FROM ioe.members;
 
 PRINT '✅ Migration complete!';
 GO

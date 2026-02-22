@@ -72,7 +72,7 @@ IOE-functions/
 └── Documentation (16 .md files):
     ├── CLAUDE.md                           # Claude Code instructions (580 lines)
     ├── README.md                           # Project overview (812 lines)
-    ├── ENGAGE360_TABLE_USAGE_REFERENCE.md  # Database schema (2,731 words)
+    ├── IOE_TABLE_USAGE_REFERENCE.md  # Database schema (2,731 words)
     ├── PARTNER_CAMPAIGN_COMPLETE_DOCUMENTATION.md (7,108 words)
     ├── DTC_CALL_FLOW.md                    # DTC workflow (1,686 words)
     ├── WEBHOOK_TESTING_GUIDE.md            # Testing instructions
@@ -254,7 +254,7 @@ A **HIPAA-compliant serverless healthcare automation system** that:
 
 ---
 
-## Database Architecture (engage360 Schema)
+## Database Architecture (ioe Schema)
 
 ### Core Tables (23 actively used out of 65 total)
 
@@ -889,7 +889,7 @@ Each of the 7 functions operates independently:
                  │
 ┌────────────────▼────────────────────────────────┐
 │  External Systems                               │
-│  - Azure SQL Database (engage360 schema)        │
+│  - Azure SQL Database (ioe schema)        │
 │  - Bland AI API (voice calls)                   │
 │  - Azure Service Bus (messaging)                │
 └─────────────────────────────────────────────────┘
@@ -1143,7 +1143,7 @@ logger.info(f"Processing file: {filename}", extra={
 ### Key Documentation Files
 - `CLAUDE.md` - Claude Code development instructions (580 lines)
 - `README.md` - Project overview and business context (812 lines)
-- `ENGAGE360_TABLE_USAGE_REFERENCE.md` - Complete database schema (2,731 words)
+- `IOE_TABLE_USAGE_REFERENCE.md` - Complete database schema (2,731 words)
 - `PARTNER_CAMPAIGN_COMPLETE_DOCUMENTATION.md` - Partner workflows (7,108 words)
 - `DTC_CALL_FLOW.md` - DTC intro call scheduling flow (1,686 words)
 - `WEBHOOK_TESTING_GUIDE.md` - Bland AI webhook testing

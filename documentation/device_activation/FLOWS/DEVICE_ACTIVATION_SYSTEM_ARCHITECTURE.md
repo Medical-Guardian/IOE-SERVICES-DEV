@@ -1,7 +1,7 @@
 # Device Activation - System Architecture Diagrams
 
 **Date:** 2025-12-24
-**BusinessCaseID:** BC-DA-001 (Core Orchestration), BC-DA-002 (File Processing), BC-DA-004 (Batch Orchestration), BC-DA-007 (Webhook Processing)
+**BusinessCaseID:** BC-DA-001 (Core Orchestration), BC-DA-002 (File Processing), BC-DA-004 (Batch Orchestration), BC-DA-007 (Campaign Closure), BC-102 (Webhook Processing - Shared)
 **Purpose:** Visual documentation of Device Activation system components, database schema, and integration points
 
 ---
@@ -20,7 +20,7 @@ The Device Activation system is built on Microsoft Azure using serverless Azure 
 
 - **Event-Driven:** Blob triggers for file processing, timer triggers for scheduling
 - **Serverless:** Azure Functions with automatic scaling
-- **Database-Centric:** SQL Server (engage360 schema) as source of truth
+- **Database-Centric:** SQL Server (ioe schema) as source of truth
 - **External Integration:** Bland AI for voice calls, Azure Blob Storage for file ingestion
 - **3-Phase Tracking:** All batch submissions follow Pending → Submitted → Completed pattern
 
@@ -72,11 +72,23 @@ graph TB
         subgraph "Batch Reconciler (Timer: Every 5 min)"
             RECON[batch_completion_reconciler<br/>Timer: 0 */5 * * * *<br/>Business: Mark batches completed]
         end
+
+        subgraph "Campaign Closure (Timer: Every hour)"
+            CLOSURE[device_activation_campaign_closure<br/>Timer: 0 0 * * * *<br/>HTTP: Manual execution<br/>Business: Auto-unenroll 90-day expiry]
+
+            subgraph "Closure Services"
+                CLOSESVC[CampaignClosureService<br/>Business: 90-day window check]
+                LOCK[DistributedLocking<br/>Business: Prevent concurrent runs]
+            end
+
+            CLOSURE --> CLOSESVC
+            CLOSURE --> LOCK
+        end
     end
 
     subgraph "Data Stores"
         BLOB[(Azure Blob Storage<br/>Containers:<br/>- fs-device-activation<br/>- fs-ops)]
-        DB[(Azure SQL Database<br/>Schema: engage360<br/>Tables: 8 core + 1 staging)]
+        DB[(Azure SQL Database<br/>Schema: ioe<br/>Tables: 8 core + 1 staging)]
     end
 
     subgraph "External APIs"
@@ -116,6 +128,10 @@ graph TB
     RECON --> DB
     RECON --> DBSVC
 
+    CLOSESVC --> DB
+    CLOSESVC --> DBSVC
+    LOCK --> DB
+
     BLANDCLIENT --> CONFIG
     DBSVC --> CONFIG
 
@@ -124,6 +140,7 @@ graph TB
     style SCHED fill:#FFF4E1
     style WH fill:#E8F5E9
     style RECON fill:#F3E5F5
+    style CLOSURE fill:#FCE4EC
     style DB fill:#FFE0B2
     style BLAND fill:#FFF9C4
     style CONFIG fill:#E0E0E0
@@ -206,7 +223,7 @@ graph TB
 │  │  📨 bland_ai_webhook                                                 │    │
 │  │     • Endpoint: /api/bland_ai_webhook                                │    │
 │  │     • Auth: API key validation                                       │    │
-│  │     • BusinessCaseID: BC-DA-007                                      │    │
+│  │     • BusinessCaseID: BC-102 (Webhook - Shared across campaigns)    │    │
 │  │                                                                       │    │
 │  │  ┌──────────────────────────────────────────────────────────┐       │    │
 │  │  │ Processing Pipeline:                                     │       │    │
@@ -234,6 +251,28 @@ graph TB
 │  │     • Check: No 'Pending' attempts → Update batch_status             │    │
 │  │                                                                       │    │
 │  └─────────────────────────────────────────────────────────────────────┘    │
+│                                  ↓                                            │
+│  ┌─────────────────────────────────────────────────────────────────────┐    │
+│  │ CAMPAIGN CLOSURE (Timer Trigger: Every hour)                         │    │
+│  ├─────────────────────────────────────────────────────────────────────┤    │
+│  │                                                                       │    │
+│  │  🔒 device_activation_campaign_closure                               │    │
+│  │     • Timer: 0 0 * * * * (every hour at :00 minutes)                 │    │
+│  │     • HTTP: /api/device_activation_campaign_closure (manual trigger) │    │
+│  │     • Function: Auto-unenroll members after 90-day window expires    │    │
+│  │     • BusinessCaseID: BC-DA-007 (Campaign Closure)                   │    │
+│  │                                                                       │    │
+│  │  ┌──────────────────────────────────────────────────────────┐       │    │
+│  │  │ Closure Pipeline:                                        │       │    │
+│  │  ├──────────────────────────────────────────────────────────┤       │    │
+│  │  │ 1. Distributed Lock → Prevent concurrent executions     │       │    │
+│  │  │ 2. Query eligible enrollments → campaign_end_date passed│       │    │
+│  │  │ 3. Update enrollment_status → 'Active' to 'UNENROLLED'  │       │    │
+│  │  │ 4. Insert audit trail → member_enrollment_status_history│       │    │
+│  │  │ 5. Release lock → Allow next execution                  │       │    │
+│  │  └──────────────────────────────────────────────────────────┘       │    │
+│  │                                                                       │    │
+│  └─────────────────────────────────────────────────────────────────────┘    │
 │                                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
                                        ↕
@@ -248,9 +287,9 @@ graph TB
 │                                                                               │
 │  🗄️  Azure SQL Database                                                      │
 │     • Server: ioe-sql-server.database.windows.net                            │
-│     • Database: engage360                                                    │
+│     • Database: ioe                                                    │
 │     • Core Tables: 8 (see Diagram 2)                                         │
-│     • Staging Tables: 1 (engage360_stg.stg_device_activation_delta)          │
+│     • Staging Tables: 1 (ioe_stg.stg_device_activation_delta)          │
 │                                                                               │
 └──────────────────────────────────────────────────────────────────────────────┘
                                        ↕
@@ -297,6 +336,7 @@ graph TB
    - **Scheduler:** Time-driven timer triggers every 15 minutes for call orchestration
    - **Webhook Processor:** HTTP endpoint for Bland AI call result callbacks
    - **Reconciler:** Housekeeping timer trigger every 5 minutes to mark batches completed
+   - **Campaign Closure:** Timer trigger every hour to auto-unenroll expired 90-day campaigns
 
 2. **File Processing Pattern:**
    - Two separate blob triggers for different campaigns (regular vs operations)
@@ -598,7 +638,7 @@ member_campaign_enrollments_enhanced (1) → (N) outreach_callback_queue
 
 ### Key Points
 
-1. **Core Tables (engage360 Schema):**
+1. **Core Tables (ioe Schema):**
    - **members:** Master member/patient table (23 references across codebase)
    - **member_devices:** Device information (fall detection, powersaver mode, etc.)
    - **campaigns_enhanced:** Campaign configuration (operating hours, timezones)
@@ -609,7 +649,7 @@ member_campaign_enrollments_enhanced (1) → (N) outreach_callback_queue
    - **outreach_callback_queue:** Callback request queue with timeout logic
    - **bland_call_logs:** Complete audit trail of all Bland AI webhook data
 
-2. **Staging Table (engage360_stg Schema):**
+2. **Staging Table (ioe_stg Schema):**
    - **stg_device_activation_delta:** Temporary storage during CSV processing
    - Row lifecycle: CSV → Staging → Validation → Core tables
    - Supports error threshold logic (10% for staging, 50% for validation)
@@ -778,7 +818,7 @@ External Vendor (CSV Source)
               ↓
       ┌───────────────┐
       │ SQL Database  │
-      │ (engage360)   │
+      │ (ioe)   │
       └───────┬───────┘
               │
               │ 11. Timer trigger fires (every 15 min)
@@ -902,7 +942,7 @@ Integration Points Summary:
 3. **Scheduling (Timer → Database → Bland AI):**
    - Timer trigger runs every 15 minutes (00:00, 00:15, 00:30, 00:45 of each hour)
    - Eligibility query returns 0-1000 members (varies by campaign size and time of day)
-   - Batches of 100 members submitted sequentially (not parallel) to avoid Bland AI rate limits
+   - Batches of 20 members per scheduler run submitted to Bland AI (96 runs/day = max 1,920 members/day capacity)
    - 3-phase tracking ensures database consistency even if Bland AI submission fails
    - Duration: 1-10 minutes (depending on number of eligible members)
 
@@ -935,7 +975,7 @@ Integration Points Summary:
 
 - **File Processing Throughput:** 1 file per minute (parallelized across multiple functions if needed)
 - **Scheduler Execution Time:** 1-10 minutes every 15 minutes (depends on eligible member count)
-- **Bland AI Batch Submission Time:** 5-10 seconds per batch of 100 members
+- **Bland AI Batch Submission Time:** 2-5 seconds per batch of 20 members
 - **Webhook Processing Time:** <1 second per webhook (non-blocking, async)
 - **Database Query Performance:** Eligibility query: 2-5 seconds; Batch creation: <1 second; Webhook updates: <1 second
 

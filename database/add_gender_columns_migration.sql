@@ -7,7 +7,7 @@
 --
 -- IMPORTANT:
 -- - Run this script on Azure SQL Database before processing CSV files with gender data
--- - Production table (engage360.members) already has gender CHAR(1) column
+-- - Production table (ioe.members) already has gender CHAR(1) column
 -- - This migration ONLY adds columns to staging table
 -- =============================================================================
 
@@ -30,12 +30,12 @@ PRINT '--------------------------------------';
 IF EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360'
+    WHERE TABLE_SCHEMA = 'ioe'
       AND TABLE_NAME = 'members'
       AND COLUMN_NAME = 'gender'
 )
 BEGIN
-    PRINT '✅ Production table already has gender column: engage360.members.gender (CHAR 1)';
+    PRINT '✅ Production table already has gender column: ioe.members.gender (CHAR 1)';
 
     -- Show the column details
     SELECT
@@ -44,7 +44,7 @@ BEGIN
         CHARACTER_MAXIMUM_LENGTH,
         IS_NULLABLE
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360'
+    WHERE TABLE_SCHEMA = 'ioe'
       AND TABLE_NAME = 'members'
       AND COLUMN_NAME = 'gender';
 END
@@ -68,12 +68,12 @@ PRINT '';
 IF NOT EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360_stg'
+    WHERE TABLE_SCHEMA = 'ioe_stg'
       AND TABLE_NAME = 'stg_dtc_wellness_delta'
       AND COLUMN_NAME = 'member_gender'
 )
 BEGIN
-    ALTER TABLE engage360_stg.stg_dtc_wellness_delta
+    ALTER TABLE ioe_stg.stg_dtc_wellness_delta
     ADD member_gender VARCHAR(50) NULL;
 
     PRINT '✅ Added column: member_gender VARCHAR(50) NULL';
@@ -89,12 +89,12 @@ GO
 IF NOT EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360_stg'
+    WHERE TABLE_SCHEMA = 'ioe_stg'
       AND TABLE_NAME = 'stg_dtc_wellness_delta'
       AND COLUMN_NAME = 'gender_clean'
 )
 BEGIN
-    ALTER TABLE engage360_stg.stg_dtc_wellness_delta
+    ALTER TABLE ioe_stg.stg_dtc_wellness_delta
     ADD gender_clean CHAR(1) NULL;
 
     PRINT '✅ Added column: gender_clean CHAR(1) NULL';
@@ -123,7 +123,7 @@ SELECT
     IS_NULLABLE,
     ORDINAL_POSITION
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360_stg'
+WHERE TABLE_SCHEMA = 'ioe_stg'
   AND TABLE_NAME = 'stg_dtc_wellness_delta'
   AND COLUMN_NAME IN ('member_gender', 'gender_clean')
 ORDER BY ORDINAL_POSITION;
@@ -183,12 +183,12 @@ PRINT '======================================';
 PRINT 'MIGRATION COMPLETE';
 PRINT '======================================';
 PRINT '';
-PRINT 'Columns added to engage360_stg.stg_dtc_wellness_delta:';
+PRINT 'Columns added to ioe_stg.stg_dtc_wellness_delta:';
 PRINT '  1. member_gender (VARCHAR 50, NULL) - Raw CSV input';
 PRINT '  2. gender_clean (CHAR 1, NULL) - Standardized value';
 PRINT '';
 PRINT 'Production table status:';
-PRINT '  ✅ engage360.members.gender already exists (CHAR 1, NULL)';
+PRINT '  ✅ ioe.members.gender already exists (CHAR 1, NULL)';
 PRINT '  ✅ Production constraint: gender IN (''M'', ''F'', NULL)';
 PRINT '';
 PRINT 'Next steps:';
@@ -215,8 +215,8 @@ PRINT 'ROLLBACK SCRIPT (if needed)';
 PRINT '--------------------------------------';
 PRINT '';
 PRINT 'To remove the columns:';
-PRINT '  ALTER TABLE engage360_stg.stg_dtc_wellness_delta DROP COLUMN member_gender;';
-PRINT '  ALTER TABLE engage360_stg.stg_dtc_wellness_delta DROP COLUMN gender_clean;';
+PRINT '  ALTER TABLE ioe_stg.stg_dtc_wellness_delta DROP COLUMN member_gender;';
+PRINT '  ALTER TABLE ioe_stg.stg_dtc_wellness_delta DROP COLUMN gender_clean;';
 PRINT '';
 PRINT 'WARNING: This will permanently delete any gender data in staging table';
 PRINT '';

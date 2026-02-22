@@ -22,7 +22,7 @@ Create a complete ETL pipeline for Device Activation campaign CSV files followin
    - MERGE statements for members and member_devices tables
    - 90-day campaign lifecycle with activation_start_date calculation
 7. **`functions/device_activation_file_processor.py`** - Azure Function blob trigger (91 lines)
-   - Blob trigger for `fs-device-activation/landing/{name}`
+   - Blob trigger for `fs-ops/landing/{name}`
    - Filename validation: `MedicalGuardian_DeviceActivation_YYYYMMDD_Delta.csv`
    - Registered in `function_app.py` with error handling
 8. **`tests/test_device_activation_logic.py`** - Comprehensive unit tests (628 lines)
@@ -37,8 +37,8 @@ Create a complete ETL pipeline for Device Activation campaign CSV files followin
    - Data model tests (4 test cases)
 
 **❌ TODO (Integration & Deployment):**
-1. Campaign setup: Create `device_activation` campaign in `engage360.campaigns_enhanced`
-2. Blob storage setup: Create `fs-device-activation` container with folders (landing/, staging/, processed/, error/)
+1. Campaign setup: Create `device_activation` campaign in `ioe.campaigns_enhanced`
+2. Blob storage setup: Create `fs-ops` container with folders (landing/, staging/, processed/, error/)
 3. Integration testing with sample CSV file
 4. Production deployment verification
 
@@ -177,14 +177,14 @@ app = func.FunctionApp()
 
 @app.blob_trigger(
     arg_name="myblob",
-    path="fs-device-activation/landing/{name}",
+    path="fs-ops/landing/{name}",
     connection="AzureWebJobsStorage"
 )
 def ProcessDeviceActivationBlob(myblob: func.InputStream):
     """
     Azure Function blob trigger for Device Activation CSV files
 
-    Trigger path: fs-device-activation/landing/
+    Trigger path: fs-ops/landing/
     Expected filename: MedicalGuardian_DeviceActivation_YYYYMMDD_Delta.csv
     """
     filename = myblob.name.split('/')[-1]
@@ -226,7 +226,7 @@ def ProcessDeviceActivationBlob(myblob: func.InputStream):
 | **Delivery Date** | Not tracked | ✅ Required (for Day 2 calc) |
 | **Customer Type** | Not in CSV | ✅ DTC/MS (affects workflow) |
 | **Campaign** | 2 campaigns (intro + wellness) | 1 campaign (device_activation) |
-| **Blob Container** | fs-dtc | fs-device-activation |
+| **Blob Container** | fs-dtc | fs-ops |
 | **Filename Pattern** | DTCWellness | DeviceActivation |
 
 ---
@@ -237,7 +237,7 @@ def ProcessDeviceActivationBlob(myblob: func.InputStream):
 **Match key:** `org_id + salesforce_account_number`
 
 ```sql
-MERGE engage360.members AS tgt
+MERGE ioe.members AS tgt
 USING (
     SELECT
         stg.org_id,
@@ -247,7 +247,7 @@ USING (
         stg.primary_phone_clean AS primary_phone,
         stg.service_address AS address_street,  -- Different from DTC
         stg.dob AS dob
-    FROM engage360_stg.stg_device_activation_delta stg
+    FROM ioe_stg.stg_device_activation_delta stg
     WHERE stg.file_batch_id = %s AND stg.processing_status = 'TRANSFORMING'
 ) AS src
 ON (tgt.org_id = src.org_id AND tgt.salesforce_account_number = src.salesforce_account_number)
@@ -267,7 +267,7 @@ WHEN NOT MATCHED THEN
 **Match key:** `device_id = device_udi`
 
 ```sql
-MERGE engage360.member_devices AS tgt
+MERGE ioe.member_devices AS tgt
 USING (
     SELECT DISTINCT
         stg.device_udi,
@@ -279,8 +279,8 @@ USING (
         stg.delivery_date,                  -- NEW
         stg.fall_detection_status,          -- NEW
         stg.battery_status                  -- NEW
-    FROM engage360_stg.stg_device_activation_delta stg
-    JOIN engage360.members m
+    FROM ioe_stg.stg_device_activation_delta stg
+    JOIN ioe.members m
         ON m.org_id = stg.org_id
         AND m.salesforce_account_number = stg.salesforce_account_number
     WHERE stg.file_batch_id = %s
@@ -319,7 +319,7 @@ campaign_end_date = activation_start_date + timedelta(days=90)  # 90-day limit
 
 # SQL INSERT
 insert_enrollment_sql = """
-INSERT INTO engage360.member_campaign_enrollments_enhanced
+INSERT INTO ioe.member_campaign_enrollments_enhanced
 (enrollment_id, member_id, campaign_id, enrollment_ts, current_status,
  activation_start_date, campaign_end_date, customer_type, device_activated)
 SELECT
@@ -332,8 +332,8 @@ SELECT
     %s AS campaign_end_date,
     stg.customer_type,
     0 AS device_activated
-FROM engage360_stg.stg_device_activation_delta stg
-JOIN engage360.members m ...
+FROM ioe_stg.stg_device_activation_delta stg
+JOIN ioe.members m ...
 WHERE stg.enrollment_status = 'ENROLL'
 """
 ```
@@ -366,16 +366,16 @@ class TestDeviceActivationETL:
 ### **Phase 6: Integration Points**
 
 1. **Campaign Setup Required:**
-   - Create `device_activation` campaign in `engage360.campaigns_enhanced`
+   - Create `device_activation` campaign in `ioe.campaigns_enhanced`
    - Status: 'Active'
    - Type: 'Device Activation'
 
 2. **Blob Storage Container:**
-   - Create `fs-device-activation` container
+   - Create `fs-ops` container
    - Folders: `landing/`, `staging/`, `processed/`, `error/`
 
 3. **File Processing Log:**
-   - Use existing `engage360_stg.file_processing_log` table
+   - Use existing `ioe_stg.file_processing_log` table
    - Set `workflow_type = 'DEVICE_ACTIVATION'`
 
 4. **Business Hours Integration:**
@@ -395,7 +395,7 @@ class TestDeviceActivationETL:
 
 ### **Azure Function (1 file):**
 2. `functions/device_activation_file_processor.py` (~80 lines)
-   - Blob trigger for `fs-device-activation/landing/{name}`
+   - Blob trigger for `fs-ops/landing/{name}`
    - Filename validation: `MedicalGuardian_DeviceActivation_YYYYMMDD_Delta.csv`
 
 ### **Tests (1 file):**

@@ -76,7 +76,9 @@ class BlandAIService:
 
         try:
             self.db_service.execute_query(
-                CREATE_BATCH_QUERY, (batch_id, campaign_id, member_count), fetch_results=False
+                CREATE_BATCH_QUERY,
+                (batch_id, campaign_id, member_count),
+                fetch_results=False,
             )
             logger.info(f"✅ [BlandAIService] Outreach batch created: {batch_id}")
             return batch_id
@@ -200,7 +202,9 @@ class BlandAIService:
                         "last_name": member.get("last_name"),
                         "called_number": phone_number,  # DYNAMIC (matches phone_number)
                         "contact_preference": contact_pref,  # NEW: Track routing mode
-                        "is_device_callable": member.get("is_device_callable"),  # NEW: Device status
+                        "is_device_callable": member.get(
+                            "is_device_callable"
+                        ),  # NEW: Device status
                         "language_pref": member.get("language_pref"),
                         "call_type_code": member.get("call_type"),  # Sourced from the new query
                     },
@@ -269,11 +273,11 @@ class BlandAIService:
         )
         # Get encrypted key from Azure Key Vault
         encrypted_key_value = self.get_bland_encrypted_key()
-        
+
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "encrypted_key": encrypted_key_value
+            "encrypted_key": encrypted_key_value,
         }
         try:
             response = requests.post(BLAND_AI_BATCH_URL, json=payload, headers=headers, timeout=30)
@@ -297,7 +301,9 @@ class BlandAIService:
         )
         try:
             self.db_service.execute_query(
-                UPDATE_BATCH_VENDOR_ID_QUERY, (vendor_batch_id, batch_id), fetch_results=False
+                UPDATE_BATCH_VENDOR_ID_QUERY,
+                (vendor_batch_id, batch_id),
+                fetch_results=False,
             )
             logger.info("✅ [BlandAIService] Batch updated successfully")
         except Exception as e:
@@ -309,7 +315,9 @@ class BlandAIService:
         logger.info(f"❌ [BlandAIService] Marking batch {batch_id} as failed: {error_message}")
         try:
             self.db_service.execute_query(
-                UPDATE_BATCH_FAILED_QUERY, (error_message, batch_id), fetch_results=False
+                UPDATE_BATCH_FAILED_QUERY,
+                (error_message, batch_id),
+                fetch_results=False,
             )
             logger.info("✅ [BlandAIService] Batch failure updated")
         except Exception as e:

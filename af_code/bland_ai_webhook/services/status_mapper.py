@@ -199,7 +199,8 @@ class StatusMapper:
 
         mapping_key = (status, disposition_tag)
         mapping_rule = self.status_disposition_mapping.get(
-            mapping_key, self.status_disposition_mapping.get((status, None), self.fallback_mapping)
+            mapping_key,
+            self.status_disposition_mapping.get((status, None), self.fallback_mapping),
         )
         logger.info(f"✅ [STATUS-MAPPER] Found mapping rule for {mapping_key}")
 
@@ -255,7 +256,12 @@ class StatusMapper:
         Returns:
             Call duration in seconds, or None if not found
         """
-        duration_fields = ["call_length", "corrected_duration", "duration_seconds", "duration"]
+        duration_fields = [
+            "call_length",
+            "corrected_duration",
+            "duration_seconds",
+            "duration",
+        ]
         for field_name in duration_fields:
             if field_name in webhook_data:
                 duration_value = webhook_data[field_name]

@@ -1,15 +1,16 @@
 import logging
 from typing import Dict, Optional
 from ...bland_ai_webhook.services.database_service import DatabaseService
+from af_code.shared.schema_config import IOE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
 
 class CareGapMapper:
-    """
+    f"""
     Service to map care gap import flags to completion flag names
 
-    Loads mappings from [engage360].[care_gaps] table on initialization.
+    Loads mappings from {IOE_SCHEMA}.care_gaps table on initialization.
     Used to add completion flag fields to Bland AI request_data.
     """
 
@@ -19,19 +20,19 @@ class CareGapMapper:
         self._load_care_gap_mapping()
 
     def _load_care_gap_mapping(self):
-        """
+        f"""
         Load care gap to completion flag mapping from database
 
         Query: SELECT csv_import_flag_name, completion_flag_name
-               FROM [engage360].[care_gaps]
+               FROM {IOE_SCHEMA}.care_gaps
         """
         logger.info("🔧 [CARE-GAP-MAPPER] Loading care gap mappings from database...")
 
-        query = """
+        query = f"""
             SELECT
                 csv_import_flag_name,
                 completion_flag_name
-            FROM engage360.care_gaps
+            FROM {IOE_SCHEMA}.care_gaps
         """
 
         try:

@@ -11,7 +11,7 @@
 -- Test 1: Verify table doesn't exist yet (should return 0)
 SELECT COUNT(*) as table_exists
 FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'bland_raw_response';
 -- Expected: 0
 
@@ -27,7 +27,7 @@ SELECT
     IS_NULLABLE,
     CHARACTER_MAXIMUM_LENGTH
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'bland_raw_response'
 ORDER BY ORDINAL_POSITION;
 -- Expected: 4 rows (raw_response_id, call_id, raw_response, created_at)
@@ -72,7 +72,7 @@ SELECT
         ELSE '❌ Has data (unexpected)'
     END as raw_bland_response_status,
     LEN(raw_bland_response) as json_size_bytes
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 WHERE created_at > DATEADD(hour, -1, GETDATE())  -- Last hour
 ORDER BY created_at DESC;
 -- Expected: raw_bland_response should be NULL for all new records
@@ -85,7 +85,7 @@ SELECT
     AVG(LEN(raw_response)) as avg_json_size_bytes,
     MAX(LEN(raw_response)) as max_json_size_bytes,
     MIN(LEN(raw_response)) as min_json_size_bytes
-FROM engage360.bland_raw_response
+FROM ioe.bland_raw_response
 WHERE created_at > DATEADD(hour, -1, GETDATE());
 -- Expected: Records should exist if webhooks have been processed
 
@@ -100,8 +100,8 @@ SELECT
         WHEN bcl.created_at < DATEADD(hour, -1, GETDATE()) THEN '⚠️ Old record (before deployment)'
         ELSE '❌ Missing raw response'
     END as audit_status
-FROM engage360.bland_call_logs bcl
-LEFT JOIN engage360.bland_raw_response brr ON bcl.call_id = brr.call_id
+FROM ioe.bland_call_logs bcl
+LEFT JOIN ioe.bland_raw_response brr ON bcl.call_id = brr.call_id
 WHERE bcl.created_at > DATEADD(hour, -2, GETDATE())  -- Last 2 hours
 ORDER BY bcl.created_at DESC;
 -- Expected: All new records (after deployment) should have raw response
@@ -111,8 +111,8 @@ SELECT
     brr.call_id,
     brr.created_at,
     '❌ Orphaned - no corresponding call_log' as issue
-FROM engage360.bland_raw_response brr
-LEFT JOIN engage360.bland_call_logs bcl ON brr.call_id = bcl.call_id
+FROM ioe.bland_raw_response brr
+LEFT JOIN ioe.bland_call_logs bcl ON brr.call_id = bcl.call_id
 WHERE bcl.call_id IS NULL;
 -- Expected: 0 rows (FK constraint should prevent this)
 
@@ -120,13 +120,13 @@ WHERE bcl.call_id IS NULL;
 SELECT
     'bland_call_logs' as table_name,
     COUNT(*) as records_last_hour
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 WHERE created_at > DATEADD(hour, -1, GETDATE())
 UNION ALL
 SELECT
     'bland_raw_response' as table_name,
     COUNT(*) as records_last_hour
-FROM engage360.bland_raw_response
+FROM ioe.bland_raw_response
 WHERE created_at > DATEADD(hour, -1, GETDATE());
 -- Expected: Both tables should have same count (atomic transaction)
 
@@ -143,7 +143,7 @@ SELECT
         WHEN ISJSON(raw_response) = 1 THEN '✅ Valid JSON'
         ELSE '❌ Invalid JSON'
     END as json_validity
-FROM engage360.bland_raw_response
+FROM ioe.bland_raw_response
 WHERE created_at > DATEADD(hour, -1, GETDATE())
 ORDER BY created_at DESC;
 -- Expected: All should be valid JSON
@@ -156,7 +156,7 @@ SELECT
     CASE WHEN raw_response LIKE '%"status"%' THEN '✅' ELSE '❌' END as has_status,
     CASE WHEN raw_response LIKE '%"metadata"%' THEN '✅' ELSE '❌' END as has_metadata,
     CASE WHEN raw_response LIKE '%"transcripts"%' THEN '✅' ELSE '❌' END as has_transcripts
-FROM engage360.bland_raw_response
+FROM ioe.bland_raw_response
 WHERE created_at > DATEADD(hour, -1, GETDATE())
 ORDER BY created_at DESC;
 -- Expected: All should have ✅ for key webhook fields
@@ -188,7 +188,7 @@ SET STATISTICS TIME ON;
 SET STATISTICS IO ON;
 
 SELECT call_id, LEN(raw_response) as json_size
-FROM engage360.bland_raw_response
+FROM ioe.bland_raw_response
 WHERE call_id = 'test_call_id_here';  -- Replace with actual call_id
 
 SET STATISTICS TIME OFF;
@@ -203,7 +203,7 @@ SET STATISTICS IO OFF;
 SELECT
     call_id,
     COUNT(*) as duplicate_count
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 WHERE created_at > DATEADD(day, -1, GETDATE())
 GROUP BY call_id
 HAVING COUNT(*) > 1;
@@ -219,8 +219,8 @@ SELECT
     bcl.created_at as call_time,
     brr.raw_response,
     LEN(brr.raw_response) as raw_json_size
-FROM engage360.bland_call_logs bcl
-INNER JOIN engage360.bland_raw_response brr ON bcl.call_id = brr.call_id
+FROM ioe.bland_call_logs bcl
+INNER JOIN ioe.bland_raw_response brr ON bcl.call_id = brr.call_id
 WHERE bcl.call_id = 'specific_call_id_here'  -- Replace with actual call_id for audit
 ;
 -- Expected: Returns complete call data including raw webhook JSON for compliance audit
@@ -233,7 +233,7 @@ WHERE bcl.call_id = 'specific_call_id_here'  -- Replace with actual call_id for 
 SELECT
     CAST(created_at AS DATE) as date,
     COUNT(*) as records
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 WHERE created_at > DATEADD(day, -7, GETDATE())
 GROUP BY CAST(created_at AS DATE)
 ORDER BY date DESC;
@@ -241,7 +241,7 @@ ORDER BY date DESC;
 SELECT
     CAST(created_at AS DATE) as date,
     COUNT(*) as records
-FROM engage360.bland_raw_response
+FROM ioe.bland_raw_response
 WHERE created_at > DATEADD(day, -7, GETDATE())
 GROUP BY CAST(created_at AS DATE)
 ORDER BY date DESC;
@@ -254,7 +254,7 @@ SELECT
     SUM(CASE WHEN raw_bland_response IS NULL THEN 1 ELSE 0 END) as rows_with_null,
     SUM(CASE WHEN raw_bland_response IS NOT NULL THEN 1 ELSE 0 END) as rows_with_data,
     AVG(CASE WHEN raw_bland_response IS NOT NULL THEN LEN(raw_bland_response) ELSE 0 END) as avg_old_json_size
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 UNION ALL
 SELECT
     'bland_raw_response' as table_name,
@@ -262,22 +262,22 @@ SELECT
     COUNT(*) as rows_with_null,  -- All have data
     0 as rows_with_data,
     AVG(LEN(raw_response)) as avg_json_size
-FROM engage360.bland_raw_response;
+FROM ioe.bland_raw_response;
 
 -- Monitor 3: Check for failed transactions (missing pairs)
 SELECT
     'Missing in bland_raw_response' as issue_type,
     COUNT(*) as count
-FROM engage360.bland_call_logs bcl
-LEFT JOIN engage360.bland_raw_response brr ON bcl.call_id = brr.call_id
+FROM ioe.bland_call_logs bcl
+LEFT JOIN ioe.bland_raw_response brr ON bcl.call_id = brr.call_id
 WHERE bcl.created_at > DATEADD(hour, -24, GETDATE())
   AND brr.call_id IS NULL
 UNION ALL
 SELECT
     'Missing in bland_call_logs' as issue_type,
     COUNT(*) as count
-FROM engage360.bland_raw_response brr
-LEFT JOIN engage360.bland_call_logs bcl ON brr.call_id = bcl.call_id
+FROM ioe.bland_raw_response brr
+LEFT JOIN ioe.bland_call_logs bcl ON brr.call_id = bcl.call_id
 WHERE brr.created_at > DATEADD(hour, -24, GETDATE())
   AND bcl.call_id IS NULL;
 -- Expected: 0 for both (transaction ensures atomicity)

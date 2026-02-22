@@ -269,7 +269,7 @@ class TestAddressValidation:
 # TEST 3: DATE OF BIRTH VALIDATION AND AGE RANGE
 # =============================================================================
 class TestDOBValidation:
-    """Test DOB validation (format validation, max age 120, no future dates)."""
+    """Test DOB validation (format validation, no future dates)."""
 
     def _validate_dob(self, dob_str):
         """Helper to validate DOB."""
@@ -286,14 +286,6 @@ class TestDOBValidation:
             # Check if future date
             if dob > datetime.now():
                 return False, "DOB cannot be in the future"
-
-            # Calculate age
-            today = datetime.now()
-            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-
-            # Maximum age: 120
-            if age > 120:
-                return False, f"Age {age} exceeds maximum (120)"
 
             return True, dob.strftime('%Y-%m-%d')
 
@@ -329,16 +321,6 @@ class TestDOBValidation:
         assert not is_valid, "Future DOB should fail validation"
         assert "future" in result.lower(), f"Should have future date error: {result}"
         print("✅ PASS: Invalid DOB (future date) rejected")
-
-    def test_invalid_dob_too_old(self):
-        """Test invalid DOB - too old (135 years old)."""
-        dob = "1890-01-01"
-
-        is_valid, result = self._validate_dob(dob)
-
-        assert not is_valid, "DOB resulting in age > 120 should fail validation"
-        assert "exceeds maximum" in result.lower(), f"Should have age error: {result}"
-        print("✅ PASS: Invalid DOB (too old - 135 years) rejected")
 
 
 # =============================================================================

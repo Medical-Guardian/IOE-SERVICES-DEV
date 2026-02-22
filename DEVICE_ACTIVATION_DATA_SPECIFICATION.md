@@ -256,10 +256,10 @@ SF-2025-001237,ACC-789459,Robert,Williams,+15554321098,,321 Pine Road,Phoenix,AZ
 
 ## Database Storage
 
-### **Staging Table: `engage360_stg.stg_device_activation_delta`**
+### **Staging Table: `ioe_stg.stg_device_activation_delta`**
 
 ```sql
-CREATE TABLE engage360_stg.stg_device_activation_delta (
+CREATE TABLE ioe_stg.stg_device_activation_delta (
     -- File metadata
     file_batch_id UNIQUEIDENTIFIER NOT NULL,
     source_filename NVARCHAR(255),
@@ -331,7 +331,7 @@ CREATE TABLE engage360_stg.stg_device_activation_delta (
 
 ### **Core Tables**
 
-#### **engage360.members**
+#### **ioe.members**
 ```sql
 -- Stores member demographics and contact information
 member_id UNIQUEIDENTIFIER PRIMARY KEY,
@@ -354,7 +354,7 @@ created_ts DATETIMEOFFSET,
 updated_ts DATETIMEOFFSET
 ```
 
-#### **engage360.member_devices** (Enhanced for Device Activation)
+#### **ioe.member_devices** (Enhanced for Device Activation)
 ```sql
 device_id NVARCHAR(100) PRIMARY KEY,          -- Device UDI
 member_id UNIQUEIDENTIFIER NOT NULL,
@@ -371,7 +371,7 @@ created_ts DATETIMEOFFSET,
 updated_ts DATETIMEOFFSET
 ```
 
-#### **engage360.member_campaign_enrollments_enhanced**
+#### **ioe.member_campaign_enrollments_enhanced**
 ```sql
 enrollment_id UNIQUEIDENTIFIER PRIMARY KEY,
 member_id UNIQUEIDENTIFIER NOT NULL,
@@ -385,7 +385,7 @@ device_activated BIT,         -- NEW: TRUE when device sends signal
 activation_confirmed_ts DATETIMEOFFSET  -- NEW: When activation confirmed
 ```
 
-#### **engage360.outreach_attempts** (Enhanced)
+#### **ioe.outreach_attempts** (Enhanced)
 ```sql
 attempt_id UNIQUEIDENTIFIER PRIMARY KEY,
 enrollment_id UNIQUEIDENTIFIER NOT NULL,
@@ -453,17 +453,17 @@ next_action NVARCHAR(255)
 
 ```sql
 -- Step 1: Load to staging table
-INSERT INTO engage360_stg.stg_device_activation_delta
+INSERT INTO ioe_stg.stg_device_activation_delta
 VALUES (...);
 
 -- Step 2: Validate against business rules
 UPDATE staging
-SET org_id = (SELECT org_id FROM engage360.orgs WHERE org_name = partner_name);
+SET org_id = (SELECT org_id FROM ioe.orgs WHERE org_name = partner_name);
 
 -- Step 3: MERGE into core tables
-MERGE engage360.members ...
-MERGE engage360.member_devices ...
-MERGE engage360.member_campaign_enrollments_enhanced ...
+MERGE ioe.members ...
+MERGE ioe.member_devices ...
+MERGE ioe.member_campaign_enrollments_enhanced ...
 
 -- Step 4: Calculate call schedule
 UPDATE enrollments

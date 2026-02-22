@@ -47,8 +47,6 @@ class WebhookHandler:
         self.error_handler = error_handler
         self.service_bus_handler = service_bus_handler
 
-
-
     async def handle_webhook(self, req: func.HttpRequest) -> func.HttpResponse:
         """
         Process the incoming webhook request through all pipeline stages.
@@ -69,7 +67,10 @@ class WebhookHandler:
                     request_id, webhook_data, validation_result.errors
                 )
                 return self._error_response(
-                    request_id, "Webhook validation failed", 400, errors=validation_result.errors
+                    request_id,
+                    "Webhook validation failed",
+                    400,
+                    errors=validation_result.errors,
                 )
 
             call_id = webhook_data["call_id"]
@@ -117,7 +118,9 @@ class WebhookHandler:
 
                 # 2. Attempt to send the message to Service Bus
                 success, message_id_or_error = await self.service_bus_handler.send_analysis_message(
-                    webhook_data=webhook_data, mapped_data=mapped_data, request_id=request_id
+                    webhook_data=webhook_data,
+                    mapped_data=mapped_data,
+                    request_id=request_id,
                 )
 
                 # 3. Update the database record with the outcome
@@ -138,7 +141,6 @@ class WebhookHandler:
                     f"🚨 A critical error occurred during the queue submission process: {str(e)}"
                 )
                 raise
-
 
             # --- Phase 6: Success Response --- (This is the new final step)
             logger.info(
@@ -169,14 +171,24 @@ class WebhookHandler:
             return None
 
     def _error_response(
-        self, request_id: str, message: str, status_code: int, errors: Optional[list] = None
+        self,
+        request_id: str,
+        message: str,
+        status_code: int,
+        errors: Optional[list] = None,
     ) -> func.HttpResponse:
         """Create a standardized error HTTP response."""
-        response_body = {"status": "error", "message": message, "request_id": request_id}
+        response_body = {
+            "status": "error",
+            "message": message,
+            "request_id": request_id,
+        }
         if errors:
             response_body["errors"] = errors
         return func.HttpResponse(
-            json.dumps(response_body), status_code=status_code, mimetype="application/json"
+            json.dumps(response_body),
+            status_code=status_code,
+            mimetype="application/json",
         )
 
     def _success_response(

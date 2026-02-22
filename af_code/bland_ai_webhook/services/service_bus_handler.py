@@ -1,4 +1,3 @@
-
 import logging
 import json
 from typing import Dict, Any, Optional
@@ -39,7 +38,9 @@ class ServiceBusHandler:
         )
 
         if not self.connection_string:
-            logger.warning("⚠️ [SERVICE-BUS] SERVICE_BUS_CONNECTION_STRING not configured - Service Bus disabled")
+            logger.warning(
+                "⚠️ [SERVICE-BUS] SERVICE_BUS_CONNECTION_STRING not configured - Service Bus disabled"
+            )
             return
 
         logger.info(
@@ -61,9 +62,11 @@ class ServiceBusHandler:
             tuple[bool, Optional[str]]: (success, message_id or error_message)
         """
         if not self.enabled:
-            logger.warning(f"⚠️ [SERVICE-BUS] Service Bus not enabled, skipping message for request_id: {request_id}")
+            logger.warning(
+                f"⚠️ [SERVICE-BUS] Service Bus not enabled, skipping message for request_id: {request_id}"
+            )
             return True, "service_bus_disabled"
-            
+
         logger.info(f"🚌 [SERVICE-BUS] Sending analysis message for request_id: {request_id}")
 
         message_content = self._prepare_message_content(webhook_data, mapped_data, request_id)

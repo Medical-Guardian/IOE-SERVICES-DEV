@@ -211,10 +211,10 @@ jobs:
           # Database libraries
           echo ""
           echo "🗄️  Testing Database Libraries..."
-          if python -c "import pymssql; print('✅ pymssql')"; then
-            echo "   ✓ SQL Server driver loaded"
+          if python -c "import pyodbc; print('✅ pyodbc')"; then
+            echo "   ✓ SQL Server ODBC driver loaded"
           else
-            echo "   ✗ Failed to load SQL Server driver"
+            echo "   ✗ Failed to load SQL Server ODBC driver"
             IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
           fi
 
@@ -642,7 +642,7 @@ jobs:
 
           MAX_RETRIES=5
           RETRY_COUNT=0
-          HEALTH_URL="https://ioe-function-e2g7e6d4e6hme4ge.eastus2-01.azurewebsites.net"
+          HEALTH_URL="https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net"
 
           echo "🌐 Checking: $HEALTH_URL"
 

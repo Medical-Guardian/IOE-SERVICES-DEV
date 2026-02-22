@@ -17,7 +17,7 @@
 -- STEP 1: Verify campaigns exist
 -- =====================================================================================
 SELECT campaign_id, name, campaign_type, operating_start_time, operating_end_time, timezone_flag, status
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE campaign_id IN (
     '0F69659B-491B-40E2-88C3-ABC7D87385B2',  -- Device Activation - Medicaid
     'BA865458-60F9-4EBB-9FB5-D195B532CF5A'   -- Device Activation - DTC/MA
@@ -43,8 +43,8 @@ SELECT
     cc.config_status,
     cc.created_ts,
     cc.bland_parameters_global
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE cc.campaign_id IN (
     '0F69659B-491B-40E2-88C3-ABC7D87385B2',
     'BA865458-60F9-4EBB-9FB5-D195B532CF5A'
@@ -59,7 +59,7 @@ GO
 -- STEP 3: Insert Bland AI Config for Device Activation - Medicaid
 -- =====================================================================================
 
-INSERT INTO engage360.campaign_call_configs_enhanced (
+INSERT INTO ioe.campaign_call_configs_enhanced (
     config_id,
     campaign_id,
     bland_parameters_global,
@@ -103,7 +103,7 @@ GO
 -- STEP 4: Insert Bland AI Config for Device Activation - DTC/MA
 -- =====================================================================================
 
-INSERT INTO engage360.campaign_call_configs_enhanced (
+INSERT INTO ioe.campaign_call_configs_enhanced (
     config_id,
     campaign_id,
     bland_parameters_global,
@@ -156,8 +156,8 @@ SELECT
     JSON_VALUE(cc.bland_parameters_global, '$.webhook_url') AS webhook_url,
     JSON_VALUE(cc.bland_parameters_global, '$.max_duration') AS max_duration,
     cc.created_ts
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE cc.campaign_id IN (
     '0F69659B-491B-40E2-88C3-ABC7D87385B2',
     'BA865458-60F9-4EBB-9FB5-D195B532CF5A'
@@ -189,7 +189,7 @@ GO
 -- Use UPDATE queries below only if you need to modify existing configs
 -- =====================================================================================
 
-UPDATE engage360.campaign_call_configs_enhanced
+UPDATE ioe.campaign_call_configs_enhanced
 SET
     bland_parameters_global = '{
         "from": "+18336000078",
@@ -220,7 +220,7 @@ SET
     updated_ts = SYSDATETIMEOFFSET()
 WHERE campaign_id = '0F69659B-491B-40E2-88C3-ABC7D87385B2';
 
-UPDATE engage360.campaign_call_configs_enhanced
+UPDATE ioe.campaign_call_configs_enhanced
 SET
     bland_parameters_global = '{
         "from": "+18336000078",

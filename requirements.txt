@@ -10,7 +10,7 @@ pandas                    # DataFrame operations and CSV processing
 numpy                     # Numerical operations (used by pandas)
 
 # Database Connectivity
-pymssql                   # SQL Server database connection (replaced pyodbc)
+pyodbc                    # SQL Server via ODBC Driver 18 (Managed Identity)
 
 # Azure Services
 azure-identity            # Azure authentication and credential management

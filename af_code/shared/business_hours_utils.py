@@ -7,7 +7,7 @@ This module handles:
 3. Dual-timezone business hours validation (Member timezone + Medical Guardian EST)
 4. Call scheduling within valid business hours
 
-BusinessCaseID: BC-TBD (Device Activation System)
+BusinessCaseID: BC-DA-003 (Business Hours Validation)
 
 Dependencies:
 - holidays: US federal holiday calendar
@@ -340,7 +340,8 @@ class BusinessHoursValidator:
                 # Move to next day at preferred hour
                 check_time = member_timezone.localize(
                     datetime.combine(
-                        member_time.date() + timedelta(days=1), time(hour=preferred_hour, minute=0)
+                        member_time.date() + timedelta(days=1),
+                        time(hour=preferred_hour, minute=0),
                     )
                 ).astimezone(pytz.UTC)
             elif member_time.hour < cls.BUSINESS_START_HOUR:
@@ -432,7 +433,9 @@ def can_make_call(call_time: datetime, member_timezone: pytz.tzinfo.BaseTzInfo) 
 
 
 def get_next_valid_call_time(
-    current_time: datetime, member_timezone: pytz.tzinfo.BaseTzInfo, preferred_hour: int = 10
+    current_time: datetime,
+    member_timezone: pytz.tzinfo.BaseTzInfo,
+    preferred_hour: int = 10,
 ) -> datetime:
     """Find the next valid call time"""
     return BusinessHoursValidator.get_next_valid_call_time(

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The project includes two comprehensive database schema reference files for the **engage360** schema in Azure SQL Database. These files provide complete documentation of all 64 tables used by the AI-IOE system.
+The project includes two comprehensive database schema reference files for the **ioe** schema in Azure SQL Database. These files provide complete documentation of all 64 tables used by the AI-IOE system.
 
 ## Schema Files Comparison
 
@@ -40,20 +40,20 @@ The project includes two comprehensive database schema reference files for the *
 
 **All_tables_schema.txt Format**:
 ```sql
-CREATE TABLE [engage360].[table_name] (
+CREATE TABLE [ioe].[table_name] (
     [column_name] DATA_TYPE CONSTRAINTS,
     ...
     CONSTRAINT [PK_name] PRIMARY KEY CLUSTERED ([column] ASC)
 );
 GO
 
-ALTER TABLE [engage360].[table_name] WITH CHECK ADD
+ALTER TABLE [ioe].[table_name] WITH CHECK ADD
 CONSTRAINT [FK_name] FOREIGN KEY([column])
-REFERENCES [engage360].[other_table] ([column]);
+REFERENCES [ioe].[other_table] ([column]);
 GO
 
 CREATE NONCLUSTERED INDEX [IX_name]
-ON [engage360].[table_name] ([column] ASC);
+ON [ioe].[table_name] ([column] ASC);
 GO
 
 ---------------- (separator between tables)
@@ -61,7 +61,7 @@ GO
 
 **Context Engage360 schema.txt Format**:
 ```sql
-CREATE TABLE [engage360].[table_name] (...)
+CREATE TABLE [ioe].[table_name] (...)
 GO
 
 ALTER TABLE ... (foreign keys)
@@ -85,16 +85,16 @@ column1,column2,column3,...
 **For All_tables_schema.txt** (structure lookups):
 ```bash
 # Find complete table structure
-grep -A 30 "CREATE TABLE \[engage360\]\.\[call_analysis_results\]" documentation/All_tables_schema.txt
+grep -A 30 "CREATE TABLE [ioe]\.\[call_analysis_results\]" documentation/All_tables_schema.txt
 
 # Find all foreign keys referencing a table
-grep "REFERENCES \[engage360\]\.\[members\]" documentation/All_tables_schema.txt
+grep "REFERENCES [ioe]\.\[members\]" documentation/All_tables_schema.txt
 
 # Find all tables with a specific column
 grep "\[member_id\]" documentation/All_tables_schema.txt
 
 # Find all indexes on a table
-grep "ON \[engage360\]\.\[campaign_agent_executions\]" documentation/All_tables_schema.txt
+grep "ON [ioe]\.\[campaign_agent_executions\]" documentation/All_tables_schema.txt
 
 # Find primary key definition
 grep "PRIMARY KEY" documentation/All_tables_schema.txt | grep "table_name"
@@ -166,7 +166,7 @@ grep -A 10 "Sample Data of Table action_execution_log" "documentation/Context En
 
 ## Database Characteristics
 
-**Schema**: `engage360` (all tables)
+**Schema**: `ioe` (all tables)
 **Database**: Azure SQL Database with Transparent Data Encryption
 **Primary Keys**: UUIDs (UNIQUEIDENTIFIER with DEFAULT newid())
 **Timestamps**: DATETIMEOFFSET(7) for timezone-aware timestamps
@@ -178,7 +178,7 @@ grep -A 10 "Sample Data of Table action_execution_log" "documentation/Context En
 
 1. **Check schema structure first**:
    ```bash
-   grep -A 30 "CREATE TABLE \[engage360\]\.\[table_name\]" documentation/All_tables_schema.txt
+   grep -A 30 "CREATE TABLE [ioe]\.\[table_name\]" documentation/All_tables_schema.txt
    ```
 
 2. **Use existing db_client.py methods** when available:
@@ -192,7 +192,7 @@ grep -A 10 "Sample Data of Table action_execution_log" "documentation/Context En
 
 4. **Always use parameterized queries** (HIPAA requirement):
    ```python
-   cursor.execute("SELECT * FROM engage360.calls WHERE call_id = %s", (call_id,))
+   cursor.execute("SELECT * FROM ioe.calls WHERE call_id = %s", (call_id,))
    ```
 
 5. **Validate with sql_validator.py**:

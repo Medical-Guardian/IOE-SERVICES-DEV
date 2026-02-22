@@ -80,7 +80,7 @@ mce.channel,  -- Enrollment-level channel (phone/device)
 
 **Added LEFT JOIN:**
 ```sql
-LEFT JOIN engage360.member_devices md
+LEFT JOIN ioe.member_devices md
     ON m.member_id = md.member_id
     AND md.service_status = 'In Service'
 ```
@@ -186,7 +186,7 @@ All code quality checks passed:
 
 ### Pre-Deployment (Database Migration)
 
-- [ ] **Backup database:** Full backup of `engage360` schema
+- [ ] **Backup database:** Full backup of `ioe` schema
 - [ ] **Run migration script:** `database/backfill_dtc_enrollment_channel.sql`
 - [ ] **Verify migration success:** Check verification queries (should show 0 NULL channels)
 - [ ] **Notify operations:** "Call volume may decrease - expected behavior (strict preference enforcement)"
@@ -246,7 +246,7 @@ SELECT
     COUNT(CASE WHEN channel IS NOT NULL THEN 1 END) AS with_channel,
     COUNT(CASE WHEN channel = 'phone' THEN 1 END) AS phone_channel,
     COUNT(CASE WHEN channel = 'device' THEN 1 END) AS device_channel
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro
     'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness
@@ -268,9 +268,9 @@ SELECT
         WHEN mce.channel = 'device' AND COUNT(md.device_id) = 0 THEN 'INELIGIBLE'
         ELSE 'ELIGIBLE'
     END AS eligibility_status
-FROM engage360.member_campaign_enrollments_enhanced mce
-JOIN engage360.members m ON mce.member_id = m.member_id
-LEFT JOIN engage360.member_devices md
+FROM ioe.member_campaign_enrollments_enhanced mce
+JOIN ioe.members m ON mce.member_id = m.member_id
+LEFT JOIN ioe.member_devices md
     ON mce.member_id = md.member_id
     AND md.service_status = 'In Service'
 WHERE mce.campaign_id = '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC'
@@ -307,7 +307,7 @@ traces
 -- Rollback: Clear enrollment channel values
 UPDATE mce
 SET mce.channel = NULL
-FROM engage360.member_campaign_enrollments_enhanced mce
+FROM ioe.member_campaign_enrollments_enhanced mce
 WHERE mce.campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',
     'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'

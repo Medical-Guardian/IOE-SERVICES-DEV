@@ -23,7 +23,7 @@
 
 PRINT '📋 Inserting configuration for Device Activation - DTC/MA campaign...';
 
-INSERT INTO engage360.campaign_call_configs_enhanced (
+INSERT INTO ioe.campaign_call_configs_enhanced (
     campaign_id,
     call_type,
     config_name,
@@ -45,11 +45,11 @@ SELECT
         "interruption_threshold": 100
     }' AS bland_parameters_global,
     'active' AS config_status
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE name = 'Device Activation - DTC/MA'
   AND NOT EXISTS (
       SELECT 1
-      FROM engage360.campaign_call_configs_enhanced cc
+      FROM ioe.campaign_call_configs_enhanced cc
       WHERE cc.campaign_id = campaigns_enhanced.campaign_id
         AND cc.call_type = 'DeviceActivation'
         AND cc.config_status = 'active'
@@ -71,7 +71,7 @@ GO
 
 PRINT '📋 Inserting configuration for Device Activation - Medicaid campaign...';
 
-INSERT INTO engage360.campaign_call_configs_enhanced (
+INSERT INTO ioe.campaign_call_configs_enhanced (
     campaign_id,
     call_type,
     config_name,
@@ -93,11 +93,11 @@ SELECT
         "interruption_threshold": 100
     }' AS bland_parameters_global,
     'active' AS config_status
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE name = 'Device Activation - Medicaid'
   AND NOT EXISTS (
       SELECT 1
-      FROM engage360.campaign_call_configs_enhanced cc
+      FROM ioe.campaign_call_configs_enhanced cc
       WHERE cc.campaign_id = campaigns_enhanced.campaign_id
         AND cc.call_type = 'DeviceActivation'
         AND cc.config_status = 'active'
@@ -129,8 +129,8 @@ SELECT
     cc.config_status,
     cc.created_ts,
     cc.updated_ts
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE cc.call_type = 'DeviceActivation'
   AND cc.config_status = 'active'
 ORDER BY c.name;
@@ -159,8 +159,8 @@ SET cc.bland_parameters_global = JSON_MODIFY(
     '$.pathway_id',
     'NEW_PATHWAY_ID_HERE'
 )
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE c.name = 'Device Activation - DTC/MA'
   AND cc.call_type = 'DeviceActivation'
   AND cc.config_status = 'active';
@@ -176,7 +176,7 @@ SET cc.bland_parameters_global = JSON_MODIFY(
     '$.voice_id',
     'NEW_VOICE_ID_HERE'
 )
-FROM engage360.campaign_call_configs_enhanced cc
+FROM ioe.campaign_call_configs_enhanced cc
 WHERE cc.call_type = 'DeviceActivation'
   AND cc.config_status = 'active';
 

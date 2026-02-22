@@ -161,8 +161,8 @@ curl -X POST http://localhost:7071/api/device_activation_campaign_closure
 SELECT
     COUNT(*) as expired_enrollments,
     c.name as campaign_name
-FROM engage360.member_campaign_enrollments_enhanced e
-INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE
     e.current_status = 'ENROLLED'
     AND c.campaign_type = 'Operations'
@@ -175,8 +175,8 @@ GROUP BY c.name
 ```sql
 -- Verify no expired enrollments remain (should return 0)
 SELECT COUNT(*) as expired_enrollments_remaining
-FROM engage360.member_campaign_enrollments_enhanced e
-INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE
     e.current_status = 'ENROLLED'
     AND c.campaign_type = 'Operations'
@@ -192,7 +192,7 @@ SELECT TOP 10
     change_timestamp,
     change_source,
     change_details
-FROM engage360.member_enrollment_status_history
+FROM ioe.member_enrollment_status_history
 WHERE change_source = 'AUTOMATED_CLOSURE'
 ORDER BY change_timestamp DESC
 ```

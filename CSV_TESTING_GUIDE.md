@@ -159,10 +159,10 @@ ORG001,987654321,update,Spanish,Email,Maria,Garcia,1970-08-22,F,UDI987654321,Hom
 ```
 
 **Expected Database Changes**:
-- New records in `engage360.dtc_staging_[env]` table
-- Updated `engage360.members` table
-- Updated `engage360.member_devices` table
-- Updated `engage360.member_campaign_enrollments_enhanced` table
+- New records in `ioe.dtc_staging_[env]` table
+- Updated `ioe.members` table
+- Updated `ioe.member_devices` table
+- Updated `ioe.member_campaign_enrollments_enhanced` table
 
 ---
 
@@ -244,7 +244,7 @@ SELECT
     salesforce_account_number,
     processing_status,
     COUNT(*) as count
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE file_batch_id = 'BATCH_20241226111007'
 GROUP BY org_id, salesforce_account_number, processing_status
 ORDER BY count DESC;
@@ -435,7 +435,7 @@ EOF
   - Empty/blank → Stored as NULL (no error)
 - **Validation**: No validation errors if missing or empty
 - **Location in CSV**: After `member_dob`, before `member_email`
-- **Database**: Stored in `engage360.members.gender` (CHAR 1 with CHECK constraint)
+- **Database**: Stored in `ioe.members.gender` (CHAR 1 with CHECK constraint)
 - **Constraint**: Production table allows only 'M', 'F', or NULL
 - **Behavior**:
   - If provided in CSV, value is standardized (M/F) or mapped to NULL
@@ -505,12 +505,12 @@ traces
 ```sql
 -- Check DTC staging data
 SELECT TOP 10 *
-FROM engage360.dtc_staging_dev
+FROM ioe.dtc_staging_dev
 ORDER BY created_ts DESC;
 
 -- Check processing status
 SELECT processing_status, COUNT(*) as count
-FROM engage360.dtc_staging_dev
+FROM ioe.dtc_staging_dev
 WHERE file_batch_id = 'BATCH_20241226110004'
 GROUP BY processing_status;
 ```
@@ -526,7 +526,7 @@ SELECT
     LTRIM(RTRIM(salesforce_account_number)) AS salesforce_account_number,
     COUNT(*) as duplicate_count,
     STRING_AGG(CAST(row_number AS VARCHAR), ', ') as row_numbers
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE file_batch_id = 'YOUR-FILE-BATCH-ID'
   AND processing_status = 'TRANSFORMING'
   AND org_id IS NOT NULL
@@ -544,8 +544,8 @@ SELECT
     stg.salesforce_account_number,
     COUNT(*) as duplicate_count,
     STRING_AGG(stg.preferred_window, ', ') as conflicting_windows
-FROM engage360_stg.stg_dtc_wellness_delta stg
-JOIN engage360.members m
+FROM ioe_stg.stg_dtc_wellness_delta stg
+JOIN ioe.members m
     ON m.org_id = stg.org_id
     AND m.salesforce_account_number = stg.salesforce_account_number
 WHERE stg.file_batch_id = 'YOUR-FILE-BATCH-ID'
@@ -562,7 +562,7 @@ SELECT
     COUNT(*) as duplicate_count,
     STRING_AGG(stg.salesforce_account_number, ', ') as assigned_to_members,
     STRING_AGG(stg.device_phone_clean, ', ') as phone_numbers
-FROM engage360_stg.stg_dtc_wellness_delta stg
+FROM ioe_stg.stg_dtc_wellness_delta stg
 WHERE stg.file_batch_id = 'YOUR-FILE-BATCH-ID'
   AND stg.processing_status = 'TRANSFORMING'
   AND stg.device_udi IS NOT NULL
@@ -581,7 +581,7 @@ SELECT
     processing_start_ts,
     processing_end_ts,
     DATEDIFF(SECOND, processing_start_ts, processing_end_ts) as duration_seconds
-FROM engage360_stg.file_processing_log
+FROM ioe_stg.file_processing_log
 WHERE final_error_message LIKE '%Duplicate%'
   OR file_name LIKE '%YOUR-FILE-NAME%'
 ORDER BY processing_start_ts DESC;
@@ -597,7 +597,7 @@ SELECT
     device_udi,
     processing_status,
     error_message
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE file_batch_id = 'YOUR-FILE-BATCH-ID'
 ORDER BY row_number;
 ```
@@ -610,8 +610,8 @@ SELECT TOP 10
     mce.current_status,
     mce.preferred_window,
     mce.updated_ts
-FROM engage360.members m
-JOIN engage360.member_campaign_enrollments_enhanced mce ON m.member_id = mce.member_id
+FROM ioe.members m
+JOIN ioe.member_campaign_enrollments_enhanced mce ON m.member_id = mce.member_id
 ORDER BY mce.updated_ts DESC;
 
 -- Check device updates
@@ -621,7 +621,7 @@ SELECT TOP 10
     md.device_phone_number,
     md.is_device_callable,
     md.updated_ts
-FROM engage360.member_devices md
+FROM ioe.member_devices md
 ORDER BY md.updated_ts DESC;
 ```
 

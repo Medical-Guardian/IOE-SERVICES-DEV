@@ -97,16 +97,16 @@ graph TB
 
 | Table Name | Purpose | When Updated | Update Type |
 |------------|---------|--------------|-------------|
-| `engage360.outreach_batches` | Tracks batch metadata | Phase 1 (before API), Phase 3 (after API) | INSERT, UPDATE |
-| `engage360.outreach_attempts` | Tracks individual call attempts | Phase 2 (before API), Webhook (after call) | INSERT, UPDATE |
-| `engage360.bland_call_logs` | Complete call details from Bland AI | Webhook (after call) | INSERT |
-| `engage360.member_campaign_enrollments_enhanced` | Member enrollment status | Webhook (if business rules apply) | UPDATE |
-| `engage360.member_enrollment_status_history` | Audit trail of status changes | Webhook (if enrollment updated) | INSERT |
-| `engage360.analysis_queue_status` | Post-call analysis queue tracking | Webhook (queue submission) | INSERT, UPDATE |
-| `engage360.campaigns_enhanced` | Campaign configuration | Read-only during processing | SELECT |
-| `engage360.campaign_call_configs_enhanced` | Bland AI configuration | Read-only during processing | SELECT |
-| `engage360.members` | Member demographics | Read-only during processing | SELECT |
-| `engage360.system_locks` | Distributed locking for reconciliation | Batch reconciliation | INSERT, DELETE |
+| `ioe.outreach_batches` | Tracks batch metadata | Phase 1 (before API), Phase 3 (after API) | INSERT, UPDATE |
+| `ioe.outreach_attempts` | Tracks individual call attempts | Phase 2 (before API), Webhook (after call) | INSERT, UPDATE |
+| `ioe.bland_call_logs` | Complete call details from Bland AI | Webhook (after call) | INSERT |
+| `ioe.member_campaign_enrollments_enhanced` | Member enrollment status | Webhook (if business rules apply) | UPDATE |
+| `ioe.member_enrollment_status_history` | Audit trail of status changes | Webhook (if enrollment updated) | INSERT |
+| `ioe.analysis_queue_status` | Post-call analysis queue tracking | Webhook (queue submission) | INSERT, UPDATE |
+| `ioe.campaigns_enhanced` | Campaign configuration | Read-only during processing | SELECT |
+| `ioe.campaign_call_configs_enhanced` | Bland AI configuration | Read-only during processing | SELECT |
+| `ioe.members` | Member demographics | Read-only during processing | SELECT |
+| `ioe.system_locks` | Distributed locking for reconciliation | Batch reconciliation | INSERT, DELETE |
 
 ### Table Relationships
 
@@ -189,7 +189,7 @@ Both DTC and Partner campaigns use the same **3-Phase Batch Tracking Pattern** t
 
 **Purpose**: Create database record for batch tracking BEFORE calling Bland AI API
 
-**Table**: `engage360.outreach_batches`
+**Table**: `ioe.outreach_batches`
 
 **Operation**: INSERT
 
@@ -203,7 +203,7 @@ Both DTC and Partner campaigns use the same **3-Phase Batch Tracking Pattern** t
 
 **SQL Query**:
 ```sql
-INSERT INTO engage360.outreach_batches
+INSERT INTO ioe.outreach_batches
 (batch_id, campaign_id, batch_status, total_calls_intended, submitted_ts)
 VALUES (?, ?, 'Pending', ?, SYSDATETIMEOFFSET())
 ```
@@ -217,7 +217,7 @@ VALUES (?, ?, 'Pending', ?, SYSDATETIMEOFFSET())
 batch_id = str(uuid.uuid4())  # e.g., "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
 query = """
-    INSERT INTO engage360.outreach_batches
+    INSERT INTO ioe.outreach_batches
     (batch_id, campaign_id, batch_status, total_calls_intended, submitted_ts)
     VALUES (%s, %s, 'Pending', %s, SYSDATETIMEOFFSET())
 """
@@ -229,7 +229,7 @@ db_service.execute_query(query, (batch_id, campaign_id, len(members)), fetch_res
 
 **Purpose**: Create individual attempt records for each member BEFORE calling Bland AI API
 
-**Table**: `engage360.outreach_attempts`
+**Table**: `ioe.outreach_attempts`
 
 **Operation**: INSERT (bulk insert - one per member)
 
@@ -245,7 +245,7 @@ db_service.execute_query(query, (batch_id, campaign_id, len(members)), fetch_res
 
 **SQL Query**:
 ```sql
-INSERT INTO engage360.outreach_attempts
+INSERT INTO ioe.outreach_attempts
 (attempt_id, enrollment_id, batch_id, channel, disposition, retry_seq, attempt_ts)
 VALUES (?, ?, ?, 'Voice', 'Pending', 0, SYSDATETIMEOFFSET())
 ```
@@ -261,7 +261,7 @@ for member in eligible_members:
     attempt_id = str(uuid.uuid4())
 
     query = """
-        INSERT INTO engage360.outreach_attempts
+        INSERT INTO ioe.outreach_attempts
         (attempt_id, enrollment_id, batch_id, channel, disposition, retry_seq, attempt_ts)
         VALUES (%s, %s, %s, 'Voice', 'Pending', 0, SYSDATETIMEOFFSET())
     """
@@ -336,7 +336,7 @@ headers = {
 
 **Database Update After API Success**:
 
-**Table**: `engage360.outreach_batches`
+**Table**: `ioe.outreach_batches`
 
 **Operation**: UPDATE
 
@@ -346,7 +346,7 @@ headers = {
 
 **SQL Query**:
 ```sql
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET vendor_batch_id = ?, batch_status = 'Submitted'
 WHERE batch_id = ?
 ```
@@ -371,7 +371,7 @@ if response.status_code == 200:
 
     # Update database with vendor batch ID
     query = """
-        UPDATE engage360.outreach_batches
+        UPDATE ioe.outreach_batches
         SET vendor_batch_id = %s, batch_status = 'Submitted'
         WHERE batch_id = %s
     """
@@ -385,7 +385,7 @@ If Bland AI API call fails, the batch is marked as failed:
 
 **SQL Query**:
 ```sql
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET batch_status = 'Failed', error_message = ?
 WHERE batch_id = ?
 ```
@@ -597,7 +597,7 @@ if mapped.opt_out_requested:
 
 **Purpose**: Store complete call details from Bland AI
 
-**Table**: `engage360.bland_call_logs`
+**Table**: `ioe.bland_call_logs`
 
 **Operation**: INSERT
 
@@ -624,7 +624,7 @@ if mapped.opt_out_requested:
 
 **SQL Query**:
 ```sql
-INSERT INTO engage360.bland_call_logs (
+INSERT INTO ioe.bland_call_logs (
     call_id, attempt_id, batch_id, vendor_batch_id, campaign_id, member_id,
     call_status, endpoint_status, call_initiated_at, call_completed_at, call_duration,
     recording_url, transcript, analysis_schema, variables,
@@ -639,7 +639,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, SYSDATETIMEOFFSET(
 
 **Purpose**: Update attempt record with call outcome
 
-**Table**: `engage360.outreach_attempts`
+**Table**: `ioe.outreach_attempts`
 
 **Operation**: UPDATE
 
@@ -653,7 +653,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, SYSDATETIMEOFFSET(
 
 **SQL Query**:
 ```sql
-UPDATE engage360.outreach_attempts
+UPDATE ioe.outreach_attempts
 SET disposition = ?,
     contact_made = ?,
     next_action = ?,
@@ -669,7 +669,7 @@ WHERE attempt_id = ?
 
 **Purpose**: Update member's enrollment status based on business rules
 
-**Table**: `engage360.member_campaign_enrollments_enhanced`
+**Table**: `ioe.member_campaign_enrollments_enhanced`
 
 **Operation**: UPDATE
 
@@ -681,7 +681,7 @@ WHERE attempt_id = ?
 
 **SQL Query**:
 ```sql
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET enrollment_status = ?,
     status_updated_at = SYSDATETIMEOFFSET(),
     last_contact_date = CAST(SYSDATETIMEOFFSET() AS DATE)
@@ -699,12 +699,12 @@ For DTC Intro Call campaigns, if member is enrolled (COMPLETED_ACTION or INTERES
 
 ```sql
 -- Update intro call enrollment
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET enrollment_status = 'ENROLLED', status_updated_at = SYSDATETIMEOFFSET()
 WHERE enrollment_id = ?
 
 -- Insert new wellness campaign enrollment
-INSERT INTO engage360.member_campaign_enrollments_enhanced
+INSERT INTO ioe.member_campaign_enrollments_enhanced
 (enrollment_id, member_id, campaign_id, enrollment_status, enrolled_at)
 VALUES (?, ?, ?, 'ENROLLED', SYSDATETIMEOFFSET())
 ```
@@ -713,7 +713,7 @@ VALUES (?, ?, ?, 'ENROLLED', SYSDATETIMEOFFSET())
 
 **Purpose**: Audit trail of enrollment status changes
 
-**Table**: `engage360.member_enrollment_status_history`
+**Table**: `ioe.member_enrollment_status_history`
 
 **Operation**: INSERT
 
@@ -728,7 +728,7 @@ VALUES (?, ?, ?, 'ENROLLED', SYSDATETIMEOFFSET())
 
 **SQL Query**:
 ```sql
-INSERT INTO engage360.member_enrollment_status_history
+INSERT INTO ioe.member_enrollment_status_history
 (history_id, enrollment_id, previous_status, new_status, change_reason, changed_at, changed_by)
 VALUES (?, ?, ?, ?, ?, SYSDATETIMEOFFSET(), 'SYSTEM_WEBHOOK')
 ```
@@ -967,7 +967,7 @@ message = ServiceBusMessage(
 
 #### Step 1: Log Queue Submission Intent
 
-**Table**: `engage360.analysis_queue_status`
+**Table**: `ioe.analysis_queue_status`
 
 **Operation**: INSERT
 
@@ -980,7 +980,7 @@ message = ServiceBusMessage(
 
 **SQL Query**:
 ```sql
-INSERT INTO engage360.analysis_queue_status
+INSERT INTO ioe.analysis_queue_status
 (call_id, submission_intent, submitted_at, queue_name)
 VALUES (?, 'Pending', SYSDATETIMEOFFSET(), 'IOE-POSTCALL-ANALYSIS')
 ```
@@ -1043,7 +1043,7 @@ async def send_analysis_message(webhook_data, mapped_data, request_id):
 
 #### Step 3: Update Queue Submission Status
 
-**Table**: `engage360.analysis_queue_status`
+**Table**: `ioe.analysis_queue_status`
 
 **Operation**: UPDATE
 
@@ -1054,7 +1054,7 @@ async def send_analysis_message(webhook_data, mapped_data, request_id):
 
 **SQL Query (Success)**:
 ```sql
-UPDATE engage360.analysis_queue_status
+UPDATE ioe.analysis_queue_status
 SET submission_intent = 'Queued',
     message_id = ?,
     updated_at = SYSDATETIMEOFFSET()
@@ -1063,7 +1063,7 @@ WHERE call_id = ?
 
 **SQL Query (Failure)**:
 ```sql
-UPDATE engage360.analysis_queue_status
+UPDATE ioe.analysis_queue_status
 SET submission_intent = 'Failed',
     error_message = ?,
     updated_at = SYSDATETIMEOFFSET()
@@ -1130,12 +1130,12 @@ SELECT
     m.first_name,
     m.last_name,
     m.phone_number
-FROM engage360.outreach_attempts oa
-INNER JOIN engage360.outreach_batches ob
+FROM ioe.outreach_attempts oa
+INNER JOIN ioe.outreach_batches ob
     ON oa.batch_id = ob.batch_id
-INNER JOIN engage360.member_campaign_enrollments_enhanced mce
+INNER JOIN ioe.member_campaign_enrollments_enhanced mce
     ON oa.enrollment_id = mce.enrollment_id
-INNER JOIN engage360.members m
+INNER JOIN ioe.members m
     ON mce.member_id = m.member_id
 WHERE oa.disposition = 'Pending'  -- Not yet completed
   AND ob.batch_status = 'Submitted'  -- Batch was successfully submitted to Bland AI
@@ -1165,10 +1165,10 @@ SELECT
     bcl.recording_url,
     oa.enrollment_id,
     mce.enrollment_status
-FROM engage360.bland_call_logs bcl
-LEFT JOIN engage360.outreach_attempts oa
+FROM ioe.bland_call_logs bcl
+LEFT JOIN ioe.outreach_attempts oa
     ON bcl.attempt_id = oa.attempt_id
-LEFT JOIN engage360.member_campaign_enrollments_enhanced mce
+LEFT JOIN ioe.member_campaign_enrollments_enhanced mce
     ON oa.enrollment_id = mce.enrollment_id
 WHERE bcl.call_completed_at >= DATEADD(day, -1, SYSDATETIMEOFFSET())
 ORDER BY bcl.call_completed_at DESC
@@ -1188,8 +1188,8 @@ SELECT
     aqs.submission_intent,
     aqs.message_id,
     aqs.submitted_at
-FROM engage360.bland_call_logs bcl
-LEFT JOIN engage360.analysis_queue_status aqs
+FROM ioe.bland_call_logs bcl
+LEFT JOIN ioe.analysis_queue_status aqs
     ON bcl.call_id = aqs.call_id
 WHERE bcl.call_completed_at >= DATEADD(day, -1, SYSDATETIMEOFFSET())
   AND (aqs.submission_intent IS NULL OR aqs.submission_intent = 'Pending')
@@ -1218,10 +1218,10 @@ SELECT
     SUM(CASE WHEN oa.disposition = 'Pending' THEN 1 ELSE 0 END) AS pending_calls,
     SUM(CASE WHEN oa.disposition != 'Pending' THEN 1 ELSE 0 END) AS completed_calls,
     SUM(CASE WHEN oa.contact_made = 1 THEN 1 ELSE 0 END) AS successful_contacts
-FROM engage360.outreach_batches ob
-INNER JOIN engage360.campaigns_enhanced c
+FROM ioe.outreach_batches ob
+INNER JOIN ioe.campaigns_enhanced c
     ON ob.campaign_id = c.campaign_id
-LEFT JOIN engage360.outreach_attempts oa
+LEFT JOIN ioe.outreach_attempts oa
     ON ob.batch_id = oa.batch_id
 WHERE ob.batch_status IN ('Submitted', 'In Progress')
   AND ob.submitted_ts >= DATEADD(day, -7, SYSDATETIMEOFFSET())  -- Last 7 days
@@ -1266,12 +1266,12 @@ SELECT
     AVG(bcl.call_duration) AS avg_call_duration,
     SUM(bcl.call_duration) AS total_call_duration
 
-FROM engage360.outreach_batches ob
-INNER JOIN engage360.campaigns_enhanced c
+FROM ioe.outreach_batches ob
+INNER JOIN ioe.campaigns_enhanced c
     ON ob.campaign_id = c.campaign_id
-LEFT JOIN engage360.outreach_attempts oa
+LEFT JOIN ioe.outreach_attempts oa
     ON ob.batch_id = oa.batch_id
-LEFT JOIN engage360.bland_call_logs bcl
+LEFT JOIN ioe.bland_call_logs bcl
     ON oa.attempt_id = bcl.attempt_id
 WHERE ob.batch_id = @batch_id
 GROUP BY
@@ -1297,8 +1297,8 @@ SELECT
     COUNT(oa.attempt_id) AS attempts_created,
     SUM(CASE WHEN oa.disposition != 'Pending' THEN 1 ELSE 0 END) AS calls_completed,
     SUM(CASE WHEN oa.contact_made = 1 THEN 1 ELSE 0 END) AS successful_contacts
-FROM engage360.outreach_batches ob
-LEFT JOIN engage360.outreach_attempts oa
+FROM ioe.outreach_batches ob
+LEFT JOIN ioe.outreach_attempts oa
     ON ob.batch_id = oa.batch_id
 WHERE ob.campaign_id = @campaign_id
   AND ob.submitted_ts >= DATEADD(day, -30, SYSDATETIMEOFFSET())  -- Last 30 days
@@ -1331,22 +1331,22 @@ ORDER BY ob.submitted_ts DESC
 
 ```sql
 -- PHASE 1: Create batch record
-INSERT INTO engage360.outreach_batches
+INSERT INTO ioe.outreach_batches
 (batch_id, campaign_id, batch_status, total_calls_intended, submitted_ts)
 VALUES (?, ?, 'Pending', ?, SYSDATETIMEOFFSET())
 
 -- PHASE 2: Create attempt records (bulk insert)
-INSERT INTO engage360.outreach_attempts
+INSERT INTO ioe.outreach_attempts
 (attempt_id, enrollment_id, batch_id, channel, disposition, retry_seq, attempt_ts)
 VALUES (?, ?, ?, 'Voice', 'Pending', 0, SYSDATETIMEOFFSET())
 
 -- PHASE 3: Update batch with vendor ID (after Bland AI response)
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET vendor_batch_id = ?, batch_status = 'Submitted'
 WHERE batch_id = ?
 
 -- PHASE 3 (Error): Mark batch as failed
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET batch_status = 'Failed', error_message = ?
 WHERE batch_id = ?
 ```
@@ -1355,7 +1355,7 @@ WHERE batch_id = ?
 
 ```sql
 -- 1. Insert bland_call_logs (always)
-INSERT INTO engage360.bland_call_logs (
+INSERT INTO ioe.bland_call_logs (
     call_id, attempt_id, batch_id, vendor_batch_id, campaign_id, member_id,
     call_status, endpoint_status, call_initiated_at, call_completed_at, call_duration,
     recording_url, transcript, analysis_schema, variables,
@@ -1364,7 +1364,7 @@ INSERT INTO engage360.bland_call_logs (
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, SYSDATETIMEOFFSET())
 
 -- 2. Update outreach_attempts (if attempt_id exists)
-UPDATE engage360.outreach_attempts
+UPDATE ioe.outreach_attempts
 SET disposition = ?,
     contact_made = ?,
     next_action = ?,
@@ -1374,22 +1374,22 @@ SET disposition = ?,
 WHERE attempt_id = ?
 
 -- 3. Update enrollment status (if business rules apply)
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET enrollment_status = ?,
     status_updated_at = SYSDATETIMEOFFSET(),
     last_contact_date = CAST(SYSDATETIMEOFFSET() AS DATE)
 WHERE enrollment_id = ?
 
 -- 3a. Insert status history (if enrollment updated)
-INSERT INTO engage360.member_enrollment_status_history
+INSERT INTO ioe.member_enrollment_status_history
 (history_id, enrollment_id, previous_status, new_status, change_reason, changed_at, changed_by)
 VALUES (?, ?, ?, ?, ?, SYSDATETIMEOFFSET(), 'SYSTEM_WEBHOOK')
 
 -- 3b. DTC Auto-Transition: Create wellness enrollment
-INSERT INTO engage360.member_campaign_enrollments_enhanced
+INSERT INTO ioe.member_campaign_enrollments_enhanced
 (enrollment_id, member_id, campaign_id, enrollment_status, enrolled_at)
 SELECT ?, member_id, ?, 'ENROLLED', SYSDATETIMEOFFSET()
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_id = ?
 ```
 
@@ -1397,19 +1397,19 @@ WHERE enrollment_id = ?
 
 ```sql
 -- Log queue submission intent
-INSERT INTO engage360.analysis_queue_status
+INSERT INTO ioe.analysis_queue_status
 (call_id, submission_intent, submitted_at, queue_name)
 VALUES (?, 'Pending', SYSDATETIMEOFFSET(), 'IOE-POSTCALL-ANALYSIS')
 
 -- Update queue submission status (success)
-UPDATE engage360.analysis_queue_status
+UPDATE ioe.analysis_queue_status
 SET submission_intent = 'Queued',
     message_id = ?,
     updated_at = SYSDATETIMEOFFSET()
 WHERE call_id = ?
 
 -- Update queue submission status (failure)
-UPDATE engage360.analysis_queue_status
+UPDATE ioe.analysis_queue_status
 SET submission_intent = 'Failed',
     error_message = ?,
     updated_at = SYSDATETIMEOFFSET()
@@ -1426,12 +1426,12 @@ SELECT DISTINCT
     ob.campaign_id,
     ob.submitted_ts,
     ob.batch_status
-FROM engage360.outreach_batches ob
+FROM ioe.outreach_batches ob
 WHERE ob.batch_status IN ('Submitted', 'In Progress')
   AND ob.submitted_ts >= DATEADD(day, -1, SYSDATETIMEOFFSET())
   AND (
       NOT EXISTS (
-          SELECT 1 FROM engage360.outreach_attempts oa
+          SELECT 1 FROM ioe.outreach_attempts oa
           WHERE oa.batch_id = ob.batch_id
             AND oa.updated_ts >= DATEADD(hour, -2, SYSDATETIMEOFFSET())
       )
@@ -1439,15 +1439,15 @@ WHERE ob.batch_status IN ('Submitted', 'In Progress')
   )
 
 -- Acquire distributed lock
-INSERT INTO engage360.system_locks (lock_name, acquired_by, acquired_at, expires_at)
+INSERT INTO ioe.system_locks (lock_name, acquired_by, acquired_at, expires_at)
 VALUES ('batch_reconciliation', ?, SYSDATETIMEOFFSET(), DATEADD(minute, 10, SYSDATETIMEOFFSET()))
 
 -- Release distributed lock
-DELETE FROM engage360.system_locks
+DELETE FROM ioe.system_locks
 WHERE lock_name = 'batch_reconciliation' AND acquired_by = ?
 
 -- Update batch reconciliation status
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET batch_status = ?,
     last_status_check_ts = SYSDATETIMEOFFSET(),
     total_calls_completed = ?,
@@ -1588,7 +1588,7 @@ def _create_outreach_batch(self, campaign_id: str, member_count: int) -> str:
     batch_id = str(uuid.uuid4())
 
     query = """
-        INSERT INTO engage360.outreach_batches
+        INSERT INTO ioe.outreach_batches
         (batch_id, campaign_id, batch_status, total_calls_intended, submitted_ts)
         VALUES (%s, %s, 'Pending', %s, SYSDATETIMEOFFSET())
     """
@@ -1608,7 +1608,7 @@ def _create_outreach_attempts(self, batch_id: str, members: list) -> list:
         attempt_id = str(uuid.uuid4())
 
         query = """
-            INSERT INTO engage360.outreach_attempts
+            INSERT INTO ioe.outreach_attempts
             (attempt_id, enrollment_id, batch_id, channel, disposition, retry_seq, attempt_ts)
             VALUES (%s, %s, %s, 'Voice', 'Pending', 0, SYSDATETIMEOFFSET())
         """

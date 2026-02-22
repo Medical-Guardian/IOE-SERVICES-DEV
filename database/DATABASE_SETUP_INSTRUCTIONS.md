@@ -27,7 +27,7 @@ You need to run **2 SQL scripts** to set up the database for Operations Device A
    - Find the voice_id (e.g., "maya", "grace", "ryan", etc.)
 
 2. **Verify Azure SQL Database Connection**
-   - Connect to: Azure SQL Database (engage360 schema)
+   - Connect to: Azure SQL Database (ioe schema)
    - Ensure you have ALTER TABLE and INSERT permissions
 
 ---
@@ -37,7 +37,7 @@ You need to run **2 SQL scripts** to set up the database for Operations Device A
 **File:** `database/add_salesforce_account_id_to_members.sql`
 
 ### What This Does
-- Adds a new column `salesforce_account_id` to the `engage360.members` table
+- Adds a new column `salesforce_account_id` to the `ioe.members` table
 - Creates an index for efficient lookups
 - This column stores the Salesforce Account ID from your CSV files
 
@@ -50,7 +50,7 @@ Run this query first:
 ```sql
 SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'members'
   AND COLUMN_NAME = 'salesforce_account_id';
 ```
@@ -67,14 +67,14 @@ Run the full script:
 
 ```sql
 -- Add salesforce_account_id column
-ALTER TABLE engage360.members
+ALTER TABLE ioe.members
 ADD salesforce_account_id NVARCHAR(50) NULL;
 
 GO
 
 -- Create index
 CREATE NONCLUSTERED INDEX IX_members_salesforce_account_id
-ON engage360.members (salesforce_account_id)
+ON ioe.members (salesforce_account_id)
 WHERE salesforce_account_id IS NOT NULL;
 
 GO
@@ -89,7 +89,7 @@ Run this verification query:
 ```sql
 SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'members'
   AND COLUMN_NAME = 'salesforce_account_id';
 ```
@@ -120,7 +120,7 @@ Run this query:
 
 ```sql
 SELECT campaign_id, name, campaign_type, operating_start_time, operating_end_time, timezone_flag, status
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE campaign_id IN (
     '0F69659B-491B-40E2-88C3-ABC7D87385B2',  -- Device Activation - Medicaid
     'BA865458-60F9-4EBB-9FB5-D195B532CF5A'   -- Device Activation - DTC/MA
@@ -149,8 +149,8 @@ SELECT
     c.name AS campaign_name,
     cc.config_status,
     cc.created_ts
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE cc.campaign_id IN (
     '0F69659B-491B-40E2-88C3-ABC7D87385B2',
     'BA865458-60F9-4EBB-9FB5-D195B532CF5A'
@@ -174,7 +174,7 @@ Then run:
 
 ```sql
 -- Insert config for Device Activation - Medicaid
-INSERT INTO engage360.campaign_call_configs_enhanced (
+INSERT INTO ioe.campaign_call_configs_enhanced (
     config_id,
     campaign_id,
     bland_parameters_global,
@@ -200,7 +200,7 @@ INSERT INTO engage360.campaign_call_configs_enhanced (
 );
 
 -- Insert config for Device Activation - DTC/MA
-INSERT INTO engage360.campaign_call_configs_enhanced (
+INSERT INTO ioe.campaign_call_configs_enhanced (
     config_id,
     campaign_id,
     bland_parameters_global,
@@ -233,7 +233,7 @@ INSERT INTO engage360.campaign_call_configs_enhanced (
 If configs already exist, UPDATE them instead:
 
 ```sql
-UPDATE engage360.campaign_call_configs_enhanced
+UPDATE ioe.campaign_call_configs_enhanced
 SET
     bland_parameters_global = '{
         "pathway_id": "YOUR_ACTUAL_MEDICAID_PATHWAY_ID",
@@ -251,7 +251,7 @@ SET
     updated_ts = SYSDATETIMEOFFSET()
 WHERE campaign_id = '0F69659B-491B-40E2-88C3-ABC7D87385B2';
 
-UPDATE engage360.campaign_call_configs_enhanced
+UPDATE ioe.campaign_call_configs_enhanced
 SET
     bland_parameters_global = '{
         "pathway_id": "YOUR_ACTUAL_DTCMA_PATHWAY_ID",
@@ -286,8 +286,8 @@ SELECT
     JSON_VALUE(cc.bland_parameters_global, '$.webhook_url') AS webhook_url,
     JSON_VALUE(cc.bland_parameters_global, '$.max_duration') AS max_duration,
     cc.created_ts
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE cc.campaign_id IN (
     '0F69659B-491B-40E2-88C3-ABC7D87385B2',
     'BA865458-60F9-4EBB-9FB5-D195B532CF5A'
@@ -318,7 +318,7 @@ SELECT
     DATA_TYPE,
     CHARACTER_MAXIMUM_LENGTH
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'member_identifiers'
 ORDER BY ORDINAL_POSITION;
 ```

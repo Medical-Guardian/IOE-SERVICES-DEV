@@ -20,7 +20,7 @@ This document contains detailed JIRA tickets for implementing the Device Activat
 ### Story 1.1: Create Device Activation Staging Table Schema
 
 **Description:**
-Create the staging table `engage360_stg.stg_device_activation_delta` to receive CSV file data from SFTP/blob storage. This table follows the established IOE pattern for file processing with metadata tracking, raw CSV columns, and cleaned columns for validation.
+Create the staging table `ioe_stg.stg_device_activation_delta` to receive CSV file data from SFTP/blob storage. This table follows the established IOE pattern for file processing with metadata tracking, raw CSV columns, and cleaned columns for validation.
 
 **Acceptance Criteria:**
 - [ ] Table created with 50+ columns covering all CSV fields from specification
@@ -33,7 +33,7 @@ Create the staging table `engage360_stg.stg_device_activation_delta` to receive 
 
 **Technical Implementation Notes:**
 - **File**: `database/create_device_activation_staging.sql`
-- **Schema**: `engage360_stg`
+- **Schema**: `ioe_stg`
 - **Table name**: `stg_device_activation_delta`
 - **Pattern reference**: See `database/partner_validation_tables.sql` for similar staging structure
 - **Data types**:
@@ -165,9 +165,9 @@ org_id UNIQUEIDENTIFIER,           -- Looked up from orgs table
 PRIMARY KEY (file_batch_id, row_number_in_file),
 
 -- Indexes for common queries
-CREATE INDEX idx_staging_status ON engage360_stg.stg_device_activation_delta(processing_status);
-CREATE INDEX idx_staging_batch ON engage360_stg.stg_device_activation_delta(file_batch_id);
-CREATE INDEX idx_staging_member ON engage360_stg.stg_device_activation_delta(member_id_processed) WHERE member_id_processed IS NOT NULL;
+CREATE INDEX idx_staging_status ON ioe_stg.stg_device_activation_delta(processing_status);
+CREATE INDEX idx_staging_batch ON ioe_stg.stg_device_activation_delta(file_batch_id);
+CREATE INDEX idx_staging_member ON ioe_stg.stg_device_activation_delta(member_id_processed) WHERE member_id_processed IS NOT NULL;
 ```
 
 **Acceptance**: Primary key and 3 indexes created successfully
@@ -177,7 +177,7 @@ CREATE INDEX idx_staging_member ON engage360_stg.stg_device_activation_delta(mem
 ### Story 1.2: Enhance member_devices Table for Device Activation
 
 **Description:**
-Add new columns to `engage360.member_devices` table to track device-specific information needed for activation campaign: delivery date, activation date, fall detection status, battery status, brand, and last signal received timestamp.
+Add new columns to `ioe.member_devices` table to track device-specific information needed for activation campaign: delivery date, activation date, fall detection status, battery status, brand, and last signal received timestamp.
 
 **Acceptance Criteria:**
 - [ ] Migration script adds 6 new columns to member_devices table
@@ -188,10 +188,10 @@ Add new columns to `engage360.member_devices` table to track device-specific inf
 
 **Technical Implementation Notes:**
 - **File**: `database/add_device_activation_columns_migration.sql`
-- **Table**: `engage360.member_devices`
+- **Table**: `ioe.member_devices`
 - **New columns**:
   ```sql
-  ALTER TABLE engage360.member_devices ADD
+  ALTER TABLE ioe.member_devices ADD
       brand NVARCHAR(100),                           -- Device brand (e.g., "Medical Guardian")
       delivery_date DATE,                            -- Date device was delivered
       activation_date DATE,                          -- Set when device first activates
@@ -250,17 +250,17 @@ Add columns to track device activation campaign lifecycle: activation_start_date
 
 **Technical Implementation Notes:**
 - **File**: `database/add_activation_lifecycle_columns_migration.sql`
-- **Table**: `engage360.member_campaign_enrollments_enhanced`
+- **Table**: `ioe.member_campaign_enrollments_enhanced`
 - **New columns**:
   ```sql
-  ALTER TABLE engage360.member_campaign_enrollments_enhanced ADD
+  ALTER TABLE ioe.member_campaign_enrollments_enhanced ADD
       activation_start_date DATE,                    -- delivery_date + 2 business days
       campaign_end_date DATE,                        -- activation_start_date + 90 days
       customer_type NVARCHAR(10),                    -- DTC or MS
       device_activated BIT DEFAULT 0,                -- TRUE when device sends signal
       activation_confirmed_ts DATETIMEOFFSET;        -- When activation confirmed
 
-  ALTER TABLE engage360.member_campaign_enrollments_enhanced ADD
+  ALTER TABLE ioe.member_campaign_enrollments_enhanced ADD
       CONSTRAINT CK_enrollment_customer_type CHECK (customer_type IN ('DTC', 'MS'));
   ```
 
@@ -303,7 +303,7 @@ Add columns to track device activation campaign lifecycle: activation_start_date
 ### Story 1.4: Enhance outreach_attempts for Call Sequence Tracking
 
 **Description:**
-Add columns to `engage360.outreach_attempts` to track device activation-specific call context: call_sequence_number (1, 2, 3, 4...), callback_type (scheduled/unboxing/charging), and device_status_at_call (unboxed/charged/testing).
+Add columns to `ioe.outreach_attempts` to track device activation-specific call context: call_sequence_number (1, 2, 3, 4...), callback_type (scheduled/unboxing/charging), and device_status_at_call (unboxed/charged/testing).
 
 **Acceptance Criteria:**
 - [ ] Migration adds 3 new columns to outreach_attempts
@@ -313,10 +313,10 @@ Add columns to `engage360.outreach_attempts` to track device activation-specific
 
 **Technical Implementation Notes:**
 - **File**: `database/add_call_sequence_tracking_migration.sql`
-- **Table**: `engage360.outreach_attempts`
+- **Table**: `ioe.outreach_attempts`
 - **New columns**:
   ```sql
-  ALTER TABLE engage360.outreach_attempts ADD
+  ALTER TABLE ioe.outreach_attempts ADD
       call_sequence_number INT,                      -- 1, 2, 3, 4, 5... (Call 1, Call 2, etc.)
       callback_type NVARCHAR(50),                    -- 'scheduled', 'unboxing', 'charging', NULL
       device_status_at_call NVARCHAR(50);            -- 'unboxed', 'charged', 'testing', NULL
@@ -360,7 +360,7 @@ Add columns to `engage360.outreach_attempts` to track device activation-specific
 ### Story 1.5: Create device_activation_campaign Master Record
 
 **Description:**
-Insert master campaign record into `engage360.campaigns_enhanced` for the Device Activation campaign with campaign_id, name, description, type='Device_Activation', and default configuration.
+Insert master campaign record into `ioe.campaigns_enhanced` for the Device Activation campaign with campaign_id, name, description, type='Device_Activation', and default configuration.
 
 **Acceptance Criteria:**
 - [ ] Campaign record created with specific UUID
@@ -373,10 +373,10 @@ Insert master campaign record into `engage360.campaigns_enhanced` for the Device
 
 **Technical Implementation Notes:**
 - **File**: `database/insert_device_activation_campaign.sql`
-- **Table**: `engage360.campaigns_enhanced`
+- **Table**: `ioe.campaigns_enhanced`
 - **Campaign record**:
   ```sql
-  INSERT INTO engage360.campaigns_enhanced (
+  INSERT INTO ioe.campaigns_enhanced (
       campaign_id,
       org_id,  -- Medical Guardian org_id
       name,
@@ -393,7 +393,7 @@ Insert master campaign record into `engage360.campaigns_enhanced` for the Device
       created_ts
   ) VALUES (
       '12345678-ABCD-EFGH-IJKL-MNOPQRSTUVWX',  -- Replace with actual UUID
-      (SELECT org_id FROM engage360.orgs WHERE org_name = 'Medical Guardian'),
+      (SELECT org_id FROM ioe.orgs WHERE org_name = 'Medical Guardian'),
       'Device Activation - Grace AI Agent',
       'Automated outreach to help customers activate MGMini devices when no signal detected within 5 days of delivery',
       'Device_Activation',
@@ -448,7 +448,7 @@ Insert master campaign record into `engage360.campaigns_enhanced` for the Device
 ### Story 1.6: Create Callback Queue Table
 
 **Description:**
-Create new table `engage360.device_activation_callback_queue` to manage scheduled callbacks for members who need time to prepare (unbox/charge device) or requested specific callback time.
+Create new table `ioe.device_activation_callback_queue` to manage scheduled callbacks for members who need time to prepare (unbox/charge device) or requested specific callback time.
 
 **Acceptance Criteria:**
 - [ ] Table created with callback_id (PK), enrollment_id (FK), callback_type, scheduled_time
@@ -459,11 +459,11 @@ Create new table `engage360.device_activation_callback_queue` to manage schedule
 
 **Technical Implementation Notes:**
 - **File**: `database/create_callback_queue_table.sql`
-- **Schema**: `engage360`
+- **Schema**: `ioe`
 - **Table**: `device_activation_callback_queue`
 - **Structure**:
   ```sql
-  CREATE TABLE engage360.device_activation_callback_queue (
+  CREATE TABLE ioe.device_activation_callback_queue (
       callback_id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
       enrollment_id UNIQUEIDENTIFIER NOT NULL,
       member_id UNIQUEIDENTIFIER NOT NULL,
@@ -479,15 +479,15 @@ Create new table `engage360.device_activation_callback_queue` to manage schedule
       notes NVARCHAR(MAX),
 
       CONSTRAINT FK_callback_enrollment FOREIGN KEY (enrollment_id)
-          REFERENCES engage360.member_campaign_enrollments_enhanced(enrollment_id),
+          REFERENCES ioe.member_campaign_enrollments_enhanced(enrollment_id),
       CONSTRAINT FK_callback_member FOREIGN KEY (member_id)
-          REFERENCES engage360.members(member_id),
+          REFERENCES ioe.members(member_id),
       CONSTRAINT CK_callback_type CHECK (callback_type IN ('scheduled', 'unboxing', 'charging')),
       CONSTRAINT CK_callback_status CHECK (callback_status IN ('PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED', 'EXPIRED'))
   );
 
-  CREATE INDEX idx_callback_status ON engage360.device_activation_callback_queue(callback_status, scheduled_time);
-  CREATE INDEX idx_callback_enrollment ON engage360.device_activation_callback_queue(enrollment_id);
+  CREATE INDEX idx_callback_status ON ioe.device_activation_callback_queue(callback_status, scheduled_time);
+  CREATE INDEX idx_callback_enrollment ON ioe.device_activation_callback_queue(enrollment_id);
   ```
 
 **Dependencies:**
@@ -539,7 +539,7 @@ Create blob-triggered Azure Function `device_activation_file_processor` to proce
 
 **Acceptance Criteria:**
 - [ ] Azure Function Blueprint created in `functions/device_activation_file_processor.py`
-- [ ] Blob trigger configured for path `fs-device-activation/landing/{name}`
+- [ ] Blob trigger configured for path `fs-ops/landing/{name}`
 - [ ] Filename validation against pattern: `MedicalGuardian_DeviceActivation_YYYYMMDD_Delta.csv`
 - [ ] Delegates processing to `af_code.af_device_activation_logic.process_device_activation_file_complete()`
 - [ ] Returns ProcessingResult with success/failure status
@@ -548,8 +548,8 @@ Create blob-triggered Azure Function `device_activation_file_processor` to proce
 **Technical Implementation Notes:**
 - **File**: `functions/device_activation_file_processor.py`
 - **Pattern reference**: `functions/partner_file_processor.py` (lines 1-40)
-- **Blob path**: `fs-device-activation/landing/{name}`
-- **Container**: `fs-device-activation` (new Azure Storage container)
+- **Blob path**: `fs-ops/landing/{name}`
+- **Container**: `fs-ops` (new Azure Storage container)
 - **Filename regex**: `^MedicalGuardian_DeviceActivation_(\d{8})_Delta\.csv$`
 - **Blueprint pattern**:
   ```python
@@ -560,7 +560,7 @@ Create blob-triggered Azure Function `device_activation_file_processor` to proce
   bp = func.Blueprint()
 
   @bp.function_name(name="ProcessDeviceActivationBlob")
-  @bp.blob_trigger(arg_name="myblob", path="fs-device-activation/landing/{name}",
+  @bp.blob_trigger(arg_name="myblob", path="fs-ops/landing/{name}",
                    connection="AzureWebJobsStorage")
   def process_device_activation_blob(myblob: func.InputStream) -> None:
       filename = myblob.name.split("/")[-1]
@@ -665,7 +665,7 @@ Create comprehensive business logic module `af_code/af_device_activation_logic.p
   @dataclass
   class ProcessingConfig:
       connection_string: str
-      staging_table: str = "engage360_stg.stg_device_activation_delta"
+      staging_table: str = "ioe_stg.stg_device_activation_delta"
       error_threshold_pct: float = 10.0
       max_retries: int = 3
       retry_delay_seconds: int = 5
@@ -875,7 +875,7 @@ Create modular validator classes for device activation CSV data following partne
 ### Story 2.4: Implement Core Table MERGE Logic
 
 **Description:**
-Implement SQL MERGE logic to upsert data from staging table into core tables: `engage360.members`, `engage360.member_devices`, `engage360.member_campaign_enrollments_enhanced`. Handle new enrollments, updates to existing members, and device linking.
+Implement SQL MERGE logic to upsert data from staging table into core tables: `ioe.members`, `ioe.member_devices`, `ioe.member_campaign_enrollments_enhanced`. Handle new enrollments, updates to existing members, and device linking.
 
 **Acceptance Criteria:**
 - [ ] MERGE into members table (UPSERT on salesforce_account_id + org_id)
@@ -894,8 +894,8 @@ Implement SQL MERGE logic to upsert data from staging table into core tables: `e
 
   **1. MERGE members**:
   ```sql
-  MERGE engage360.members AS target
-  USING engage360_stg.stg_device_activation_delta AS source
+  MERGE ioe.members AS target
+  USING ioe_stg.stg_device_activation_delta AS source
   ON target.salesforce_account_id = source.salesforce_account_id
       AND target.org_id = source.org_id
   WHEN MATCHED THEN
@@ -925,13 +925,13 @@ Implement SQL MERGE logic to upsert data from staging table into core tables: `e
 
   **2. MERGE member_devices**:
   ```sql
-  MERGE engage360.member_devices AS target
+  MERGE ioe.member_devices AS target
   USING (
       SELECT s.device_udi, m.member_id, s.device_phone_clean, s.is_device_callable_clean,
              s.device_name, s.brand, s.delivery_date_clean,
              s.fall_detection_status, s.battery_status
-      FROM engage360_stg.stg_device_activation_delta s
-      JOIN engage360.members m ON s.salesforce_account_id = m.salesforce_account_id
+      FROM ioe_stg.stg_device_activation_delta s
+      JOIN ioe.members m ON s.salesforce_account_id = m.salesforce_account_id
   ) AS source
   ON target.device_id = source.device_udi
   WHEN MATCHED THEN
@@ -954,7 +954,7 @@ Implement SQL MERGE logic to upsert data from staging table into core tables: `e
 
   **3. INSERT enrollments** (ENROLL only):
   ```sql
-  INSERT INTO engage360.member_campaign_enrollments_enhanced (
+  INSERT INTO ioe.member_campaign_enrollments_enhanced (
       enrollment_id, member_id, campaign_id, enrollment_ts, current_status,
       activation_start_date, campaign_end_date, customer_type
   )
@@ -967,12 +967,12 @@ Implement SQL MERGE logic to upsert data from staging table into core tables: `e
       dbo.add_business_days(s.delivery_date_clean, 2) AS activation_start_date,
       DATEADD(DAY, 90, dbo.add_business_days(s.delivery_date_clean, 2)) AS campaign_end_date,
       s.customer_type
-  FROM engage360_stg.stg_device_activation_delta s
-  JOIN engage360.members m ON s.salesforce_account_id = m.salesforce_account_id
+  FROM ioe_stg.stg_device_activation_delta s
+  JOIN ioe.members m ON s.salesforce_account_id = m.salesforce_account_id
   WHERE s.enrollment_status = 'ENROLL'
       AND s.processing_status = 'VALIDATED'
       AND NOT EXISTS (
-          SELECT 1 FROM engage360.member_campaign_enrollments_enhanced e
+          SELECT 1 FROM ioe.member_campaign_enrollments_enhanced e
           WHERE e.member_id = m.member_id AND e.campaign_id = @device_activation_campaign_id
       );
   ```
@@ -1288,12 +1288,12 @@ Create `MemberEligibilityService` to query eligible members for each call sequen
           oa.disposition,
           oa.call_sequence_number,
           ROW_NUMBER() OVER (PARTITION BY oa.enrollment_id ORDER BY oa.attempt_ts DESC) as rn
-      FROM engage360.outreach_attempts oa
+      FROM ioe.outreach_attempts oa
       WHERE oa.call_sequence_number = 1  -- Only Call 1 attempts
   ),
   TodayAttempts AS (
       SELECT DISTINCT enrollment_id
-      FROM engage360.outreach_attempts
+      FROM ioe.outreach_attempts
       WHERE CAST(attempt_ts AT TIME ZONE 'UTC' AS DATE) = CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AS DATE)
   ),
   EligibleForCall2 AS (
@@ -1309,8 +1309,8 @@ Create `MemberEligibilityService` to query eligible members for each call sequen
           mce.customer_type,
           la.attempt_ts AS last_attempt_ts,
           dbo.add_business_days(CAST(la.attempt_ts AS DATE), 2) AS next_eligible_date
-      FROM engage360.member_campaign_enrollments_enhanced mce
-      JOIN engage360.members m ON mce.member_id = m.member_id
+      FROM ioe.member_campaign_enrollments_enhanced mce
+      JOIN ioe.members m ON mce.member_id = m.member_id
       JOIN LastAttempts la ON mce.enrollment_id = la.enrollment_id AND la.rn = 1
       WHERE mce.campaign_id = @device_activation_campaign_id
           AND mce.current_status = 'ENROLLED'
@@ -1642,7 +1642,7 @@ BEGIN
         BEGIN
             -- Check if not a federal holiday (use separate holiday table)
             IF NOT EXISTS (
-                SELECT 1 FROM engage360.federal_holidays
+                SELECT 1 FROM ioe.federal_holidays
                 WHERE holiday_date = @current_date
             )
             BEGIN
@@ -1688,7 +1688,7 @@ END
 
 **Sub-task 4.1.3: Create Federal Holidays Reference Table**
 
-**Description**: Create engage360.federal_holidays table with 2025-2030 dates
+**Description**: Create ioe.federal_holidays table with 2025-2030 dates
 
 **Acceptance**: Table populated with all 10 federal holidays, includes observed dates
 
@@ -1748,9 +1748,9 @@ Create `CallbackQueueProcessor` service to manage device activation callback que
               m.primary_phone,
               m.timezone,
               mce.call_sequence_number
-          FROM engage360.device_activation_callback_queue cq
-          JOIN engage360.members m ON cq.member_id = m.member_id
-          JOIN engage360.member_campaign_enrollments_enhanced mce ON cq.enrollment_id = mce.enrollment_id
+          FROM ioe.device_activation_callback_queue cq
+          JOIN ioe.members m ON cq.member_id = m.member_id
+          JOIN ioe.member_campaign_enrollments_enhanced mce ON cq.enrollment_id = mce.enrollment_id
           WHERE cq.callback_status = 'PENDING'
               AND cq.scheduled_time <= SYSDATETIMEOFFSET()
               AND cq.expires_at > SYSDATETIMEOFFSET()
@@ -1762,7 +1762,7 @@ Create `CallbackQueueProcessor` service to manage device activation callback que
       def increment_attempt_count(self, callback_id: str):
           """Increment attempt count after each callback try"""
           query = """
-          UPDATE engage360.device_activation_callback_queue
+          UPDATE ioe.device_activation_callback_queue
           SET attempt_count = attempt_count + 1,
               last_attempt_ts = SYSDATETIMEOFFSET()
           WHERE callback_id = %s;
@@ -1772,7 +1772,7 @@ Create `CallbackQueueProcessor` service to manage device activation callback que
       def mark_expired_callbacks(self):
           """Mark callbacks older than 24 hours as expired"""
           query = """
-          UPDATE engage360.device_activation_callback_queue
+          UPDATE ioe.device_activation_callback_queue
           SET callback_status = 'EXPIRED',
               completion_ts = SYSDATETIMEOFFSET()
           WHERE callback_status = 'PENDING'
@@ -1867,7 +1867,7 @@ Create `CallSequencer` service to determine which call sequence number should be
           """Determine which call sequence number this should be"""
           query = """
           SELECT MAX(call_sequence_number) AS last_sequence
-          FROM engage360.outreach_attempts
+          FROM ioe.outreach_attempts
           WHERE enrollment_id = %s;
           """
           result = self.db_service.execute_query(query, params=(enrollment_id,), fetch_results=True)
@@ -2224,19 +2224,19 @@ WITH ExpiredCampaigns AS (
         mce.customer_type,
         mce.device_activated,
         m.salesforce_account_id
-    FROM engage360.member_campaign_enrollments_enhanced mce
-    JOIN engage360.members m ON mce.member_id = m.member_id
+    FROM ioe.member_campaign_enrollments_enhanced mce
+    JOIN ioe.members m ON mce.member_id = m.member_id
     WHERE mce.campaign_id = @device_activation_campaign_id
         AND mce.current_status = 'ENROLLED'
         AND CAST(SYSDATETIMEOFFSET() AS DATE) > mce.campaign_end_date
 )
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET current_status = 'TERMINATED',
     updated_ts = SYSDATETIMEOFFSET()
 WHERE enrollment_id IN (SELECT enrollment_id FROM ExpiredCampaigns);
 
 -- Flag MS customers for follow-up
-INSERT INTO engage360.ms_customer_follow_up_queue (
+INSERT INTO ioe.ms_customer_follow_up_queue (
     member_id, salesforce_account_id, campaign_id, reason, created_ts
 )
 SELECT

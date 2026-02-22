@@ -84,7 +84,7 @@ IOE-functions/
 
 ### Core Tables Used
 
-#### 1. `engage360.campaigns_enhanced`
+#### 1. `ioe.campaigns_enhanced`
 **Purpose**: Campaign configuration and scheduling settings
 
 | Column | Type | Description |
@@ -110,7 +110,7 @@ IOE-functions/
 | `start_ts` | datetimeoffset | Campaign start date (time ignored, date-only comparison in operating_tz) |
 | `end_ts` | datetimeoffset | Campaign end date (time ignored, date-only comparison in operating_tz) |
 
-#### 2. `engage360.campaign_call_configs_enhanced`
+#### 2. `ioe.campaign_call_configs_enhanced`
 **Purpose**: Bland AI configuration per campaign
 
 | Column | Type | Description |
@@ -145,7 +145,7 @@ IOE-functions/
 }
 ```
 
-#### 3. `engage360.member_campaign_enrollments_enhanced`
+#### 3. `ioe.member_campaign_enrollments_enhanced`
 **Purpose**: Tracks member enrollment in campaigns
 
 | Column | Type | Description |
@@ -156,7 +156,7 @@ IOE-functions/
 | `current_status` | nvarchar | Must be 'Active' to be eligible |
 | `enrollment_ts` | datetimeoffset | When member joined campaign |
 
-#### 4. `engage360.outreach_batches`
+#### 4. `ioe.outreach_batches`
 **Purpose**: Tracks batch submissions to Bland AI
 
 | Column | Type | Description |
@@ -168,7 +168,7 @@ IOE-functions/
 | `submitted_ts` | datetimeoffset | When batch was submitted |
 | `created_ts` | datetimeoffset | When batch was created |
 
-#### 5. `engage360.outreach_attempts`
+#### 5. `ioe.outreach_attempts`
 **Purpose**: Tracks individual call attempts per member
 
 | Column | Type | Description |
@@ -187,7 +187,7 @@ IOE-functions/
 - **Failed**: Failed call (blocks same-day retry, can retry next day)
 - **NoAnswer**: No answer (blocks same-day retry, can retry next day)
 
-#### 6. `engage360.members`
+#### 6. `ioe.members`
 **Purpose**: Member demographic and contact information
 
 | Column | Type | Description |
@@ -208,7 +208,7 @@ IOE-functions/
 - `omw_import_flag`, `bcs_import_flag`, `fall_risk_import_flag`
 - And 15+ more...
 
-#### 7. `engage360.care_gaps`
+#### 7. `ioe.care_gaps`
 **Purpose**: Maps care gap import flags to completion flags
 
 | Column | Type | Description |
@@ -219,7 +219,7 @@ IOE-functions/
 | `care_gap_name` | nvarchar | Display name (e.g., 'Annual Wellness Visit') |
 | `priority` | int | Priority for selection |
 
-#### 8. `engage360.orgs`
+#### 8. `ioe.orgs`
 **Purpose**: Organization details for campaigns
 
 | Column | Type | Description |
@@ -262,11 +262,11 @@ SELECT
     o.org_type,
     o.partner_contact_name,
     o.org_name
-FROM engage360.campaigns_enhanced c
-LEFT JOIN engage360.campaign_call_configs_enhanced cc
+FROM ioe.campaigns_enhanced c
+LEFT JOIN ioe.campaign_call_configs_enhanced cc
     ON c.campaign_id = cc.campaign_id
     AND cc.config_status = 'active'
-LEFT JOIN engage360.orgs o ON c.org_id = o.org_id
+LEFT JOIN ioe.orgs o ON c.org_id = o.org_id
 WHERE c.campaign_type = 'Partner'
   AND LOWER(c.status) IN ('active', 'testing')
   AND c.primary_channel = 'voice'
@@ -321,7 +321,7 @@ WITH LastSuccessfulAttempts AS (
     SELECT
         frequency_value,
         frequency_unit
-    FROM engage360.campaigns_enhanced
+    FROM ioe.campaigns_enhanced
     WHERE campaign_id = @campaign_id
 ),
 
@@ -330,9 +330,9 @@ FrequencyCheck AS (
     SELECT
         mce.member_id,
         COUNT(DISTINCT oa.attempt_id) as completed_attempts_in_window
-    FROM engage360.member_campaign_enrollments_enhanced mce
-    INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
-    INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
+    FROM ioe.member_campaign_enrollments_enhanced mce
+    INNER JOIN ioe.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
+    INNER JOIN ioe.outreach_batches ob ON oa.batch_id = ob.batch_id
     CROSS JOIN FrequencyConfig fc
     WHERE ob.campaign_id = @campaign_id
       AND oa.disposition = 'Completed'  -- Only count successful calls
@@ -355,9 +355,9 @@ TodayActiveAttempts AS (
     -- Block all dispositions from same-day retry per policy update
     -- One attempt per member per day regardless of outcome
     SELECT DISTINCT mce.member_id
-    FROM engage360.member_campaign_enrollments_enhanced mce
-    INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
-    INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
+    FROM ioe.member_campaign_enrollments_enhanced mce
+    INNER JOIN ioe.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
+    INNER JOIN ioe.outreach_batches ob ON oa.batch_id = ob.batch_id
     WHERE ob.campaign_id = @campaign_id
       AND oa.attempt_ts >= @TodayStartUtc  -- Range-based filtering (SARGable, better performance)
       AND oa.attempt_ts < @TodayEndUtc
@@ -399,16 +399,16 @@ RankedMembers AS (
                 CASE WHEN fc.last_attempt_ts IS NULL THEN 0 ELSE 1 END,
                 fc.last_attempt_ts ASC  -- Then oldest attempt first
         ) as rn
-    FROM engage360.member_campaign_enrollments_enhanced mce
-    INNER JOIN engage360.members m ON mce.member_id = m.member_id
+    FROM ioe.member_campaign_enrollments_enhanced mce
+    INNER JOIN ioe.members m ON mce.member_id = m.member_id
     LEFT JOIN (
         -- Subquery to get last attempt timestamp per member
         SELECT
             mce2.member_id,
             MAX(oa.attempt_ts) as last_attempt_ts
-        FROM engage360.member_campaign_enrollments_enhanced mce2
-        INNER JOIN engage360.outreach_attempts oa ON mce2.enrollment_id = oa.enrollment_id
-        INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
+        FROM ioe.member_campaign_enrollments_enhanced mce2
+        INNER JOIN ioe.outreach_attempts oa ON mce2.enrollment_id = oa.enrollment_id
+        INNER JOIN ioe.outreach_batches ob ON oa.batch_id = ob.batch_id
         WHERE ob.campaign_id = @campaign_id
         GROUP BY mce2.member_id
     ) fc ON mce.member_id = fc.member_id
@@ -483,7 +483,7 @@ ORDER BY
 SELECT
     csv_import_flag_name,
     completion_flag_name
-FROM engage360.care_gaps
+FROM ioe.care_gaps
 ```
 
 **Example Results**:
@@ -506,7 +506,7 @@ FROM engage360.care_gaps
 **Purpose**: Create a new outreach batch record with 'Pending' status.
 
 ```sql
-INSERT INTO engage360.outreach_batches (
+INSERT INTO ioe.outreach_batches (
     batch_id,
     campaign_id,
     batch_status,
@@ -535,7 +535,7 @@ VALUES (
 **Purpose**: Create individual attempt records for each member in the batch.
 
 ```sql
-INSERT INTO engage360.outreach_attempts (
+INSERT INTO ioe.outreach_attempts (
     attempt_id,
     batch_id,
     enrollment_id,
@@ -586,7 +586,7 @@ VALUES (
 **Purpose**: Update batch with vendor_batch_id after successful Bland AI submission.
 
 ```sql
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET
     batch_status = 'Submitted',
     vendor_batch_id = @vendor_batch_id,
@@ -606,14 +606,14 @@ WHERE batch_id = @batch_id
 
 **File**: `af_code/partner_campaign_scheduler/services/care_gap_mapper.py`
 
-The CareGapMapper service loads mappings from `engage360.care_gaps` table on initialization and provides lookup functionality.
+The CareGapMapper service loads mappings from `ioe.care_gaps` table on initialization and provides lookup functionality.
 
 **Class Definition**:
 ```python
 class CareGapMapper:
     """
     Service to map care gap import flags to completion flag names
-    Loads mappings from [engage360].[care_gaps] table on initialization.
+    Loads mappings from [ioe].[care_gaps] table on initialization.
     """
 
     def __init__(self, db_service: DatabaseService):
@@ -630,7 +630,7 @@ def _load_care_gap_mapping(self):
         SELECT
             csv_import_flag_name,
             completion_flag_name
-        FROM engage360.care_gaps
+        FROM ioe.care_gaps
     """
 
     results = self.db_service.execute_query(query, fetch_results=True)
@@ -720,7 +720,7 @@ def _select_care_gaps(self, member: EligibleMember, campaign: QualifiedCampaign)
 
 ### Complete Care Gap List
 
-**All 30+ Care Gap Flags** (from `engage360.members` table):
+**All 30+ Care Gap Flags** (from `ioe.members` table):
 
 | Import Flag | Completion Flag | Full Name |
 |------------|----------------|-----------|
@@ -1303,7 +1303,7 @@ This design:
 ### SQL Query Executed for Opt-Out
 
 ```sql
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
    SET current_status = 'OPTED_OUT',
        last_attempt_ts = SYSDATETIMEOFFSET()
  WHERE member_id = @member_id
@@ -1456,8 +1456,8 @@ FrequencyCheck AS (
     SELECT
         mce.member_id,
         COUNT(DISTINCT oa.attempt_id) as completed_attempts_in_window
-    FROM engage360.member_campaign_enrollments_enhanced mce
-    INNER JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
+    FROM ioe.member_campaign_enrollments_enhanced mce
+    INNER JOIN ioe.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
     CROSS JOIN FrequencyConfig fc  -- Get frequency_value and frequency_unit
     WHERE oa.disposition = 'Completed'  -- Only successful calls
       AND (
@@ -1679,7 +1679,7 @@ def _create_batch_record(self, campaign_id: uuid.UUID) -> uuid.UUID:
     batch_id = uuid.uuid4()
 
     query = """
-        INSERT INTO engage360.outreach_batches (
+        INSERT INTO ioe.outreach_batches (
             batch_id,
             campaign_id,
             batch_status,
@@ -1713,7 +1713,7 @@ def _create_attempt_records(self, batch_id: uuid.UUID, calls: List[Dict]) -> Non
         }
 
         query = """
-            INSERT INTO engage360.outreach_attempts (
+            INSERT INTO ioe.outreach_attempts (
                 attempt_id,
                 batch_id,
                 enrollment_id,
@@ -1745,7 +1745,7 @@ def _update_batch_with_vendor_id(self, batch_id: uuid.UUID, vendor_batch_id: str
     """Phase 3: Update batch with vendor_batch_id and Submitted status"""
 
     query = """
-        UPDATE engage360.outreach_batches
+        UPDATE ioe.outreach_batches
         SET
             batch_status = 'Submitted',
             vendor_batch_id = ?,
@@ -1817,7 +1817,7 @@ for tz_name, tz in us_timezones.items():
 ### Guide 1: Adding a New Partner Campaign
 
 **Prerequisites**:
-- Active organization in `engage360.orgs`
+- Active organization in `ioe.orgs`
 - Bland AI pathway created and pathway_id obtained
 - Bland AI voice configured and voice_id obtained
 - Member data imported with care gap flags
@@ -1827,7 +1827,7 @@ for tz_name, tz in us_timezones.items():
 #### Step 1: Create Campaign Record
 
 ```sql
-INSERT INTO engage360.campaigns_enhanced (
+INSERT INTO ioe.campaigns_enhanced (
     campaign_id,
     org_id,
     name,
@@ -1876,7 +1876,7 @@ VALUES (
 #### Step 2: Create Call Configuration
 
 ```sql
-INSERT INTO engage360.campaign_call_configs_enhanced (
+INSERT INTO ioe.campaign_call_configs_enhanced (
     config_id,
     campaign_id,
     call_type_id,
@@ -1913,7 +1913,7 @@ VALUES (
 
 ```sql
 -- Enroll all members from audience file batch with at least one care gap
-INSERT INTO engage360.member_campaign_enrollments_enhanced (
+INSERT INTO ioe.member_campaign_enrollments_enhanced (
     enrollment_id,
     member_id,
     campaign_id,
@@ -1926,7 +1926,7 @@ SELECT
     '<campaign_id>',            -- campaign_id
     'Active',                   -- current_status
     SYSDATETIMEOFFSET()         -- enrollment_ts
-FROM engage360.members m
+FROM ioe.members m
 WHERE m.file_batch = 'partner_2024_q1'  -- Match audience_file_batch
   AND (
       -- Has at least one care gap
@@ -1952,10 +1952,10 @@ SELECT
     cc.config_id,
     cc.bland_parameters_global,
     COUNT(DISTINCT mce.member_id) as enrolled_members
-FROM engage360.campaigns_enhanced c
-LEFT JOIN engage360.campaign_call_configs_enhanced cc
+FROM ioe.campaigns_enhanced c
+LEFT JOIN ioe.campaign_call_configs_enhanced cc
     ON c.campaign_id = cc.campaign_id
-LEFT JOIN engage360.member_campaign_enrollments_enhanced mce
+LEFT JOIN ioe.member_campaign_enrollments_enhanced mce
     ON c.campaign_id = mce.campaign_id
 WHERE c.campaign_id = '<campaign_id>'
 GROUP BY
@@ -2008,8 +2008,8 @@ Check that all required parameters are configured:
 SELECT
     c.name,
     cc.bland_parameters_global
-FROM engage360.campaigns_enhanced c
-INNER JOIN engage360.campaign_call_configs_enhanced cc
+FROM ioe.campaigns_enhanced c
+INNER JOIN ioe.campaign_call_configs_enhanced cc
     ON c.campaign_id = cc.campaign_id
 WHERE c.campaign_id = '<campaign_id>'
 ```
@@ -2096,8 +2096,8 @@ SELECT
     SUM(CASE WHEN oa.disposition = 'Pending' THEN 1 ELSE 0 END) as pending_calls,
     SUM(CASE WHEN oa.disposition = 'Failed' THEN 1 ELSE 0 END) as failed_calls,
     SUM(CASE WHEN oa.disposition = 'NoAnswer' THEN 1 ELSE 0 END) as no_answer_calls
-FROM engage360.outreach_batches ob
-LEFT JOIN engage360.outreach_attempts oa ON ob.batch_id = oa.batch_id
+FROM ioe.outreach_batches ob
+LEFT JOIN ioe.outreach_attempts oa ON ob.batch_id = oa.batch_id
 WHERE ob.campaign_id = '<campaign_id>'
   AND ob.submitted_ts >= DATEADD(day, -7, SYSDATETIMEOFFSET())  -- Last 7 days
 GROUP BY
@@ -2120,9 +2120,9 @@ SELECT
     oa.disposition,
     ob.vendor_batch_id,
     oa.call_details
-FROM engage360.members m
-INNER JOIN engage360.outreach_attempts oa ON m.member_id = oa.member_id
-INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
+FROM ioe.members m
+INNER JOIN ioe.outreach_attempts oa ON m.member_id = oa.member_id
+INNER JOIN ioe.outreach_batches ob ON oa.batch_id = ob.batch_id
 WHERE m.member_id = '<member_id>'
   AND ob.campaign_id = '<campaign_id>'
 ORDER BY oa.attempt_ts DESC
@@ -2137,8 +2137,8 @@ SELECT
     COUNT(DISTINCT oa.attempt_id) as total_attempts,
     SUM(CASE WHEN oa.disposition = 'Completed' THEN 1 ELSE 0 END) as completed_calls,
     CAST(SUM(CASE WHEN oa.disposition = 'Completed' THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS DECIMAL(5,2)) as completion_rate
-FROM engage360.outreach_attempts oa
-INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
+FROM ioe.outreach_attempts oa
+INNER JOIN ioe.outreach_batches ob ON oa.batch_id = ob.batch_id
 WHERE ob.campaign_id = '<campaign_id>'
   AND ob.submitted_ts >= DATEADD(day, -30, SYSDATETIMEOFFSET())
 GROUP BY JSON_VALUE(oa.call_details, '$.care_gaps[0].name')
@@ -2185,8 +2185,8 @@ SELECT
     c.operating_tz,
     c.timezone_flag,
     cc.bland_parameters_global
-FROM engage360.campaigns_enhanced c
-LEFT JOIN engage360.campaign_call_configs_enhanced cc
+FROM ioe.campaigns_enhanced c
+LEFT JOIN ioe.campaign_call_configs_enhanced cc
     ON c.campaign_id = cc.campaign_id
 WHERE c.campaign_type = 'Partner'
   AND LOWER(c.status) IN ('active', 'testing')
@@ -2226,10 +2226,10 @@ SELECT
     COUNT(*) as total_enrolled,
     SUM(CASE WHEN mce.current_status = 'Active' THEN 1 ELSE 0 END) as active_enrolled,
     SUM(CASE WHEN m.file_batch = c.audience_file_batch THEN 1 ELSE 0 END) as matching_batch
-FROM engage360.campaigns_enhanced c
-LEFT JOIN engage360.member_campaign_enrollments_enhanced mce
+FROM ioe.campaigns_enhanced c
+LEFT JOIN ioe.member_campaign_enrollments_enhanced mce
     ON c.campaign_id = mce.campaign_id
-LEFT JOIN engage360.members m
+LEFT JOIN ioe.members m
     ON mce.member_id = m.member_id
 WHERE c.campaign_id = '<campaign_id>'
 ```
@@ -2302,7 +2302,7 @@ The batch orchestrator logs detailed timezone information for each member:
        c.operating_tz,
        c.operating_start_time,
        c.operating_end_time
-   FROM engage360.campaigns_enhanced c
+   FROM ioe.campaigns_enhanced c
    WHERE c.campaign_id = '<campaign_id>'
    ```
 
@@ -2311,8 +2311,8 @@ The batch orchestrator logs detailed timezone information for each member:
    SELECT
        m.timezone,
        COUNT(*) as member_count
-   FROM engage360.members m
-   INNER JOIN engage360.member_campaign_enrollments_enhanced mce
+   FROM ioe.members m
+   INNER JOIN ioe.member_campaign_enrollments_enhanced mce
        ON m.member_id = mce.member_id
    WHERE mce.campaign_id = '<campaign_id>'
        AND mce.current_status = 'Active'
@@ -2423,8 +2423,8 @@ SELECT
     oa.attempt_ts,
     ob.vendor_batch_id,
     DATEDIFF(hour, oa.attempt_ts, SYSDATETIMEOFFSET()) as hours_pending
-FROM engage360.outreach_attempts oa
-INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
+FROM ioe.outreach_attempts oa
+INNER JOIN ioe.outreach_batches ob ON oa.batch_id = ob.batch_id
 WHERE oa.disposition = 'Pending'
   AND oa.attempt_ts < DATEADD(hour, -24, SYSDATETIMEOFFSET())
 ORDER BY oa.attempt_ts ASC

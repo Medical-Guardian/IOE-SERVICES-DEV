@@ -7,7 +7,7 @@
 
 ## Storage Location
 
-**Table:** `engage360.campaign_call_configs_enhanced`
+**Table:** `ioe.campaign_call_configs_enhanced`
 **Column:** `bland_parameters_global` (NVARCHAR(MAX) - stores JSON)
 
 All campaigns (DTC, Partner, Device Activation, Operations) store their Bland AI configuration in this table.
@@ -30,8 +30,8 @@ SELECT
     JSON_VALUE(cc.bland_parameters_global, '$.pathway_id') AS pathway_id,
     JSON_VALUE(cc.bland_parameters_global, '$.voice_id') AS voice_id,
     cc.bland_parameters_global
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE cc.config_status = 'active'
 ORDER BY c.name;
 ```
@@ -46,8 +46,8 @@ GET_CAMPAIGN_CONFIG_QUERY = """
 SELECT
     ccc.bland_parameters_global,
     ccc.call_type
-FROM engage360.campaign_call_configs_enhanced ccc
-JOIN engage360.campaigns_enhanced c ON ccc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced ccc
+JOIN ioe.campaigns_enhanced c ON ccc.campaign_id = c.campaign_id
 WHERE ccc.campaign_id = %s AND ccc.config_status = 'active'
 """
 
@@ -245,7 +245,7 @@ Edit `database/create_operations_device_activation_bland_configs.sql`:
 
 ```sql
 -- Insert config for Device Activation - Medicaid
-INSERT INTO engage360.campaign_call_configs_enhanced (
+INSERT INTO ioe.campaign_call_configs_enhanced (
     config_id,
     campaign_id,
     bland_parameters_global,
@@ -271,7 +271,7 @@ INSERT INTO engage360.campaign_call_configs_enhanced (
 );
 
 -- Insert config for Device Activation - DTC/MA
-INSERT INTO engage360.campaign_call_configs_enhanced (
+INSERT INTO ioe.campaign_call_configs_enhanced (
     config_id,
     campaign_id,
     bland_parameters_global,
@@ -307,8 +307,8 @@ SELECT
     JSON_VALUE(cc.bland_parameters_global, '$.pathway_id') AS pathway_id,
     JSON_VALUE(cc.bland_parameters_global, '$.voice_id') AS voice_id,
     cc.created_ts
-FROM engage360.campaign_call_configs_enhanced cc
-JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE cc.campaign_id IN (
     '0F69659B-491B-40E2-88C3-ABC7D87385B2',  -- Medicaid
     'BA865458-60F9-4EBB-9FB5-D195B532CF5A'   -- DTC/MA
@@ -337,7 +337,7 @@ The batch orchestrator for Device Activation campaigns retrieves Bland AI config
 # Query bland_parameters_global from database
 bland_config_query = """
     SELECT bland_parameters_global
-    FROM engage360.campaign_call_configs_enhanced
+    FROM ioe.campaign_call_configs_enhanced
     WHERE campaign_id = %s
       AND config_status = 'active'
 """

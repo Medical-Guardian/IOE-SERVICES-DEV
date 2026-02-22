@@ -17,13 +17,13 @@
 IF NOT EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360'
+    WHERE TABLE_SCHEMA = 'ioe'
     AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
     AND COLUMN_NAME = 'activation_start_date'
 )
 BEGIN
     -- Add activation_start_date column
-    ALTER TABLE engage360.member_campaign_enrollments_enhanced
+    ALTER TABLE ioe.member_campaign_enrollments_enhanced
     ADD activation_start_date DATE NULL;
 
     PRINT '✅ Successfully added activation_start_date column';
@@ -38,13 +38,13 @@ GO
 IF NOT EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360'
+    WHERE TABLE_SCHEMA = 'ioe'
     AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
     AND COLUMN_NAME = 'campaign_end_date'
 )
 BEGIN
     -- Add campaign_end_date column
-    ALTER TABLE engage360.member_campaign_enrollments_enhanced
+    ALTER TABLE ioe.member_campaign_enrollments_enhanced
     ADD campaign_end_date DATE NULL;
 
     PRINT '✅ Successfully added campaign_end_date column';
@@ -59,13 +59,13 @@ GO
 IF NOT EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360'
+    WHERE TABLE_SCHEMA = 'ioe'
     AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
     AND COLUMN_NAME = 'device_activated'
 )
 BEGIN
     -- Add device_activated column with default value 0
-    ALTER TABLE engage360.member_campaign_enrollments_enhanced
+    ALTER TABLE ioe.member_campaign_enrollments_enhanced
     ADD device_activated BIT NULL DEFAULT 0;
 
     PRINT '✅ Successfully added device_activated column (default: 0)';
@@ -87,7 +87,7 @@ SELECT
     IS_NULLABLE,
     COLUMN_DEFAULT
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
 AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
 AND COLUMN_NAME IN ('activation_start_date', 'campaign_end_date', 'device_activated')
 ORDER BY COLUMN_NAME;

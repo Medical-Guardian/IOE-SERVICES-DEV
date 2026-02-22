@@ -4,7 +4,7 @@ Custom US Holidays for Medical Guardian Business Operations
 Filters the standard Python `holidays` package to use only 6 business-critical
 US holidays instead of all 11 federal holidays.
 
-BusinessCaseID: BC-TBD (Business Operations)
+BusinessCaseID: BC-DA-003 (Business Hours Utils)
 
 Usage:
     from af_code.shared.custom_holidays import CustomUSHolidays

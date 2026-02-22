@@ -12,19 +12,22 @@ from azure.identity import DefaultAzureCredential
 import logging
 import time
 import pandas as pd
+import pyodbc
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Tuple, List
 from dataclasses import dataclass, field
-import pymssql
 import json
 import re
+
 try:
     from azure.storage.blob import BlobServiceClient
+
     AZURE_STORAGE_AVAILABLE = True
 except ImportError:
     BlobServiceClient = None
     AZURE_STORAGE_AVAILABLE = False
 from io import BytesIO
+from af_code.shared.schema_config import IOE_SCHEMA
 
 
 # ================================================================
@@ -68,11 +71,11 @@ class PartnerCampaignConfig:
     connection_string: str
 
     # Database table names
-    file_log_table: str = "engage360.partner_file_processing_log"
-    row_results_table: str = "engage360.partner_row_validation_results"
-    file_errors_table: str = "engage360.partner_validation_error_details_file"
-    row_errors_table: str = "engage360.partner_validation_error_details_row"
-    care_gap_stats_table: str = "engage360.partner_file_care_gap_stats"
+    file_log_table: str = f"{IOE_SCHEMA}.partner_file_processing_log"
+    row_results_table: str = f"{IOE_SCHEMA}.partner_row_validation_results"
+    file_errors_table: str = f"{IOE_SCHEMA}.partner_validation_error_details_file"
+    row_errors_table: str = f"{IOE_SCHEMA}.partner_validation_error_details_row"
+    care_gap_stats_table: str = f"{IOE_SCHEMA}.partner_file_care_gap_stats"
 
     # Processing thresholds
     error_threshold_pct: float = 15.0  # Allow up to 15% row errors
@@ -129,58 +132,47 @@ class DataCleanerAndValidator:
     def _to_e164_phone(
         phone_str: str, row_number: int, field_name: str
     ) -> Tuple[Optional[str], Optional[ValidationError]]:
-        """Attempts to convert a phone number to E.164 format."""
+        """
+        Attempts to convert a phone number to E.164 format.
+
+        Uses shared standardize_phone utility with proper area code validation.
+        """
         if not phone_str:
             return None, None
 
-        # Strip all non-digit characters
-        digits = re.sub(r"\D", "", phone_str)
+        # Use shared standardize_phone utility (validates area codes properly)
+        from af_code.shared.phone_utils import standardize_phone
 
-        # Handle US numbers
-        if len(digits) == 10:
-            e164_phone = f"+1{digits}"
-            # If original wasn't already in E.164, it was reformatted -> Warning
-            if phone_str != e164_phone:
-                warning = ValidationError(
-                    category="Format",
-                    error_type="PhoneNumberReformatted",
-                    message=f"Row {row_number}: {field_name} was reformatted to E.164.",
-                    severity=ValidationSeverity.WARNING,
-                    field=field_name,
-                    row_number=row_number,
-                )
-                return e164_phone, warning
-            return e164_phone, None
+        e164_phone = standardize_phone(phone_str)
 
-        if len(digits) == 11 and digits.startswith("1"):
-            e164_phone = f"+{digits}"
-            if phone_str != e164_phone:
-                warning = ValidationError(
-                    category="Format",
-                    error_type="PhoneNumberReformatted",
-                    message=f"Row {row_number}: {field_name} was reformatted to E.164.",
-                    severity=ValidationSeverity.WARNING,
-                    field=field_name,
-                    row_number=row_number,
-                )
-                return e164_phone, warning
-            return e164_phone, None
+        if e164_phone is None:
+            # Phone validation failed
+            error = ValidationError(
+                category="Format",
+                error_type="InvalidPhoneNumber",
+                message=f"Row {row_number}: {field_name} is not a valid phone number.",
+                severity=ValidationSeverity.ERROR,
+                field=field_name,
+                error_value=phone_str,
+                row_number=row_number,
+            )
+            return None, error
 
-        # If it's another format that already matches E.164 (e.g., international)
-        if re.match(r"^\+\d{7,15}$", phone_str):
-            return phone_str, None
+        # Phone was standardized successfully
+        # If original wasn't already in E.164, it was reformatted -> Warning
+        if phone_str != e164_phone:
+            warning = ValidationError(
+                category="Format",
+                error_type="PhoneNumberReformatted",
+                message=f"Row {row_number}: {field_name} was reformatted to E.164.",
+                severity=ValidationSeverity.WARNING,
+                field=field_name,
+                row_number=row_number,
+            )
+            return e164_phone, warning
 
-        # If all attempts fail, it's an unfixable error
-        error = ValidationError(
-            category="Format",
-            error_type="InvalidPhoneNumber",
-            message=f"Row {row_number}: {field_name} is not a valid phone number.",
-            severity=ValidationSeverity.ERROR,
-            field=field_name,
-            error_value=phone_str,
-            row_number=row_number,
-        )
-        return None, error
+        # Already in correct format
+        return e164_phone, None
 
     @staticmethod
     def _to_iso8601_date(
@@ -265,7 +257,11 @@ class DataCleanerAndValidator:
         for col in name_columns:
             cleaned_df[col] = cleaned_df[col].str.strip().str.title()
 
-        phone_columns = ["member_phone_number", "caregiver_phone_number", "device_phone_number"]
+        phone_columns = [
+            "member_phone_number",
+            "caregiver_phone_number",
+            "device_phone_number",
+        ]
         for col in phone_columns:
             results = [
                 self._to_e164_phone(val, idx + 2, col)
@@ -750,7 +746,11 @@ class ChannelTypeValidator:
                 )
 
             # Check required device fields
-            required_device_fields = ["device_phone_number", "device_udi", "device_name"]
+            required_device_fields = [
+                "device_phone_number",
+                "device_udi",
+                "device_name",
+            ]
             for field in required_device_fields:
                 value = str(row_data.get(field, "")).strip()
                 if not value:
@@ -794,9 +794,9 @@ class CareGapsValidator:
             with db_logger.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    """
+                    f"""
                     SELECT csv_import_flag_name, is_active 
-                    FROM engage360.care_gaps
+                    FROM {IOE_SCHEMA}.care_gaps
                 """
                 )
 
@@ -953,10 +953,10 @@ class DatabaseLogger:
                 for care_gap_name, stats in care_gap_summary.items():
                     # Note: We assume the reference table status (is_active_in_reference_table) would be joined in a view later.
                     cursor.execute(
-                        """
-                            INSERT INTO [engage360].[partner_file_care_gap_stats]
+                        f"""
+                            INSERT INTO {IOE_SCHEMA}.partner_file_care_gap_stats
                             (file_processing_id, care_gap_name, active_member_count, total_member_count)
-                            VALUES (%s, %s, %s, %s)
+                            VALUES (?, ?, ?, ?)
                         """,
                         (
                             file_processing_id,
@@ -973,53 +973,33 @@ class DatabaseLogger:
             logging.error(f"Error logging care gap statistics: {e}")
             raise
 
-    def _get_connection_params(self, conn_string: str) -> dict:
-        """Educational: Parse connection string into pymssql parameters"""
-        conn_params = {}
-        for param in conn_string.split(";"):
-            if "=" not in param:
-                continue
-            key, value = param.split("=", 1)
-            key = key.strip().lower()
-            value = value.strip()
-
-            if key == "server":
-                server_value = value
-                if server_value.lower().startswith("tcp:"):
-                    server_value = server_value[4:]
-                if "," in server_value:
-                    host, port = server_value.split(",", 1)
-                    conn_params["server"] = host
-                    conn_params["port"] = int(port)
-                else:
-                    conn_params["server"] = server_value
-            elif key in ("initial catalog", "database"):
-                conn_params["database"] = value
-            elif key == "user id":
-                conn_params["user"] = value
-            elif key == "password":
-                conn_params["password"] = value
-
-        return conn_params
-
-    def get_connection(self):
-        """Educational: Create database connection using secure connection string"""
+    def get_connection(self) -> pyodbc.Connection:
+        """Create database connection using pyodbc with Managed Identity."""
         try:
-            # LOGGING: Added detailed logging for DB connection
-            logging.info("Attempting to get database connection string from Key Vault...")
-            key_vault_url = os.environ["KEY_VAULT_URL"]
-            secret_name = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
-            credential = DefaultAzureCredential()
-            client = SecretClient(vault_url=key_vault_url, credential=credential)
-            secure_conn = client.get_secret(secret_name).value
-            logging.info("Successfully retrieved database connection string from Key Vault.")
+            logging.info("Attempting database connection via pyodbc (Managed Identity)...")
+            conn_str = os.environ.get("SqlConnectionString", "")
 
-            conn_kwargs = self._get_connection_params(secure_conn)
-            logging.info(
-                f"Connecting to database '{conn_kwargs.get('database')}' on server '{conn_kwargs.get('server')}'..."
+            params = {}
+            for part in conn_str.split(";"):
+                if "=" in part:
+                    key, value = part.split("=", 1)
+                    params[key.strip()] = value.strip()
+
+            server = params.get("Server", "").replace("tcp:", "").split(",")[0]
+            database = params.get("Database", "") or params.get("Initial Catalog", "")
+
+            connection_string = (
+                f"Driver={{ODBC Driver 18 for SQL Server}};"
+                f"Server={server};"
+                f"Database={database};"
+                "Authentication=ActiveDirectoryMsi;"
+                "Encrypt=yes;"
+                "TrustServerCertificate=no;"
+                "Connection Timeout=30;"
+                "Login Timeout=30;"
             )
-            conn = pymssql.connect(**conn_kwargs, login_timeout=30)
-            conn.autocommit(False)  # Manage transactions manually
+            conn = pyodbc.connect(connection_string)
+            conn.autocommit = False
             logging.info("Database connection established successfully.")
             return conn
         except Exception as e:
@@ -1043,12 +1023,12 @@ class DatabaseLogger:
                 for result in row_results:
                     # FIX: Added a missing column 'healthcare_member_id' from the original code that wasn't being passed. Assuming it should be extracted.
                     cursor.execute(
-                        """
-                        INSERT INTO [engage360].[partner_row_validation_results]
+                        f"""
+                        INSERT INTO {IOE_SCHEMA}.partner_row_validation_results
                         (file_processing_id, row_number, validation_status, total_errors_count, 
                          total_warnings_count, partner_name, campaign_name_source, salesforce_account_number,
                          active_care_gaps, healthcare_member_id)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             file_processing_id,
@@ -1086,11 +1066,11 @@ class DatabaseLogger:
 
                 for error in errors:
                     cursor.execute(
-                        """
-                        INSERT INTO [engage360].[partner_validation_error_details_row]
+                        f"""
+                        INSERT INTO {IOE_SCHEMA}.partner_validation_error_details_row
                         (file_processing_id, row_number, error_category, error_type, error_field,
                          error_message, error_value, expected_value, severity)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             file_processing_id,
@@ -1130,11 +1110,11 @@ class DatabaseLogger:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    """
-                    INSERT INTO [engage360].[partner_file_processing_log] 
+                    f"""
+                    INSERT INTO {IOE_SCHEMA}.partner_file_processing_log 
                     (file_name, original_file_path, final_file_path, file_size_bytes, 
                      partner_name, campaign_name_source, processing_status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                     (
                         file_name,
@@ -1171,10 +1151,10 @@ class DatabaseLogger:
                 cursor = conn.cursor()
 
                 # Refresh views by running a simple select to ensure they're updated
-                cursor.execute("SELECT COUNT(*) FROM [engage360].[vw_partner_file_summary]")
+                cursor.execute(f"SELECT COUNT(*) FROM {IOE_SCHEMA}.vw_partner_file_summary")
                 cursor.fetchone()
 
-                cursor.execute("SELECT COUNT(*) FROM [engage360].[vw_partner_error_summary]")
+                cursor.execute(f"SELECT COUNT(*) FROM {IOE_SCHEMA}.vw_partner_error_summary")
                 cursor.fetchone()
 
                 conn.commit()
@@ -1201,11 +1181,11 @@ class DatabaseLogger:
 
                 for error in errors:
                     cursor.execute(
-                        """
-                        INSERT INTO [engage360].[partner_validation_error_details_file]
+                        f"""
+                        INSERT INTO {IOE_SCHEMA}.partner_validation_error_details_file
                         (file_processing_id, error_category, error_type, error_field,
                          error_message, error_value, expected_value, severity)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                         (
                             file_processing_id,
@@ -1269,9 +1249,12 @@ class PartnerCampaignProcessor:
                 name_components["partner_name"],
                 name_components["campaign_name"],
             )
-            original_path, validated_path = f"landing/{file_name}", f"validated/{file_name}"
+            original_path, validated_path = (
+                f"landing/{file_name}",
+                f"validated/{file_name}",
+            )
 
-            logging.info(f"✅ Filename validation passed")
+            logging.info("✅ Filename validation passed")
             logging.info(f"   Partner: {partner_name}")
             logging.info(f"   Campaign: {campaign_name}")
             logging.info(f"   Date: {name_components['date']}")
@@ -1302,9 +1285,9 @@ class PartnerCampaignProcessor:
             logging.info(f"   Rows: {len(df)}")
             logging.info(f"   Columns: {len(df.columns)}")
             logging.info(f"   Size: {file_size_mb:.2f} MB")
-            sample_cols = ', '.join(df.columns[:5])
+            sample_cols = ", ".join(df.columns[:5])
             if len(df.columns) > 5:
-                sample_cols += '...'
+                sample_cols += "..."
             logging.info(f"   Sample columns: {sample_cols}")
 
             file_processing_id = self.db_logger.log_file_processing_start(
@@ -1318,7 +1301,9 @@ class PartnerCampaignProcessor:
             logging.info(f"✅ File processing record created (ID: {file_processing_id})")
 
             # STEP 4: Validate column schema
-            logging.info("STEP 4: COLUMN SCHEMA VALIDATION - Checking mandatory and optional columns")
+            logging.info(
+                "STEP 4: COLUMN SCHEMA VALIDATION - Checking mandatory and optional columns"
+            )
             column_start = time.time()
 
             column_errors, missing_mandatory = ColumnValidator.validate(list(df.columns))
@@ -1335,7 +1320,12 @@ class PartnerCampaignProcessor:
                 logging.error(f"❌ Missing mandatory columns: {', '.join(missing_mandatory)}")
                 self.db_logger.log_file_level_errors(file_processing_id, column_errors)
                 self._update_file_processing_completion(
-                    file_processing_id, ProcessingStatus.REJECTED, len(df), 0, len(df), 0
+                    file_processing_id,
+                    ProcessingStatus.REJECTED,
+                    len(df),
+                    0,
+                    len(df),
+                    0,
                 )
                 return ProcessingResult(
                     success=False,
@@ -1343,7 +1333,7 @@ class PartnerCampaignProcessor:
                     validation_errors=column_errors,
                 )
 
-            logging.info(f"✅ Column validation passed")
+            logging.info("✅ Column validation passed")
 
             # Add missing optional columns with null values
             for col in PartnerCampaignRules.EXPECTED_COLUMNS:
@@ -1364,9 +1354,13 @@ class PartnerCampaignProcessor:
             logging.info(f"   Validation issues found: {len(row_level_validation_errors)}")
 
             # Count by severity
-            error_count = len([e for e in row_level_validation_errors if e.severity == ValidationSeverity.ERROR])
-            warning_count = len([e for e in row_level_validation_errors if e.severity == ValidationSeverity.WARNING])
-            logging.info(f"   Error severity breakdown:")
+            error_count = len(
+                [e for e in row_level_validation_errors if e.severity == ValidationSeverity.ERROR]
+            )
+            warning_count = len(
+                [e for e in row_level_validation_errors if e.severity == ValidationSeverity.WARNING]
+            )
+            logging.info("   Error severity breakdown:")
             logging.info(f"      Errors: {error_count}")
             logging.info(f"      Warnings: {warning_count}")
 
@@ -1394,13 +1388,15 @@ class PartnerCampaignProcessor:
             logging.info(f"   Total rows: {total_rows}")
             logging.info(f"   ✅ Valid rows: {valid_rows} ({valid_rows/total_rows*100:.1f}%)")
             logging.info(f"   ❌ Invalid rows: {invalid_rows} ({invalid_rows/total_rows*100:.1f}%)")
-            logging.info(f"   ⚠️  Warning rows: {warning_rows_count} ({warning_rows_count/total_rows*100:.1f}%)")
+            logging.info(
+                f"   ⚠️  Warning rows: {warning_rows_count} ({warning_rows_count/total_rows*100:.1f}%)"
+            )
             logging.info(f"   Error rate: {invalid_rows/total_rows*100:.1f}%")
             if error_rows_set:
                 sample_errors = list(error_rows_set)[:5]
-                sample_str = ', '.join(str(r) for r in sample_errors)
+                sample_str = ", ".join(str(r) for r in sample_errors)
                 if len(error_rows_set) > 5:
-                    sample_str += '...'
+                    sample_str += "..."
                 logging.info(f"   Sample error rows: {sample_str}")
             logging.info("=" * 70)
 
@@ -1436,7 +1432,9 @@ class PartnerCampaignProcessor:
 
             # Log sample care gaps
             for gap_name, stats in list(care_gap_summary.items())[:5]:
-                logging.info(f"      {gap_name}: {stats['active_count']}/{stats['total_count']} active")
+                logging.info(
+                    f"      {gap_name}: {stats['active_count']}/{stats['total_count']} active"
+                )
             if len(care_gap_summary) > 5:
                 logging.info(f"      ... and {len(care_gap_summary) - 5} more care gaps")
 
@@ -1463,7 +1461,7 @@ class PartnerCampaignProcessor:
             # STEP 10: Refresh summary views
             logging.info("STEP 10: VIEW REFRESH - Updating summary materialized views")
             self.db_logger.refresh_summary_views()
-            logging.info(f"✅ Summary views refreshed")
+            logging.info("✅ Summary views refreshed")
 
             duration = time.time() - start_time
 
@@ -1477,13 +1475,15 @@ class PartnerCampaignProcessor:
             logging.info(f"File processing ID: {file_processing_id}")
             logging.info(f"Total duration: {duration:.2f}s")
             logging.info("")
-            logging.info(f"Processing Results:")
+            logging.info("Processing Results:")
             logging.info(f"   Rows processed: {total_rows}")
             logging.info(f"   ✅ Valid rows: {valid_rows} ({valid_rows/total_rows*100:.1f}%)")
             logging.info(f"   ❌ Invalid rows: {invalid_rows} ({invalid_rows/total_rows*100:.1f}%)")
-            logging.info(f"   ⚠️  Warning rows: {warning_rows_count} ({warning_rows_count/total_rows*100:.1f}%)")
+            logging.info(
+                f"   ⚠️  Warning rows: {warning_rows_count} ({warning_rows_count/total_rows*100:.1f}%)"
+            )
             logging.info("")
-            logging.info(f"Performance Breakdown:")
+            logging.info("Performance Breakdown:")
             logging.info(f"   File movement: {move_duration:.2f}s")
             logging.info(f"   Parse & load: {parse_duration:.2f}s")
             logging.info(f"   Column validation: {column_duration:.2f}s")
@@ -1522,7 +1522,9 @@ class PartnerCampaignProcessor:
                 )
 
             return ProcessingResult(
-                success=False, message=f"Critical error in processing: {e}", error_details=str(e)
+                success=False,
+                message=f"Critical error in processing: {e}",
+                error_details=str(e),
             )
 
     def _calculate_care_gap_summary(self, df: pd.DataFrame) -> Dict[str, Dict[str, int]]:
@@ -1661,15 +1663,15 @@ class PartnerCampaignProcessor:
             with self.db_logger.get_connection() as conn:
                 cursor = conn.cursor()
                 cursor.execute(
-                    """
-                    UPDATE [engage360].[partner_file_processing_log] 
+                    f"""
+                    UPDATE {IOE_SCHEMA}.partner_file_processing_log 
                     SET processing_end_time = GETUTCDATE(),
-                        processing_status = %s,
-                        total_rows_in_file = %s,
-                        valid_rows_count = %s,
-                        invalid_rows_count = %s,
-                        warning_rows_count = %s
-                    WHERE file_processing_id = %s
+                        processing_status = ?,
+                        total_rows_in_file = ?,
+                        valid_rows_count = ?,
+                        invalid_rows_count = ?,
+                        warning_rows_count = ?
+                    WHERE file_processing_id = ?
                 """,
                     (
                         status,
@@ -1793,7 +1795,9 @@ if __name__ == "__main__":
 
     try:
         success, message, details = process_partner_campaign_file_complete(
-            file_path=test_file, uploaded_by_user="local.test@system.com", error_threshold_pct=15.0
+            file_path=test_file,
+            uploaded_by_user="local.test@system.com",
+            error_threshold_pct=15.0,
         )
 
         print("\n--- Local Test Result ---")

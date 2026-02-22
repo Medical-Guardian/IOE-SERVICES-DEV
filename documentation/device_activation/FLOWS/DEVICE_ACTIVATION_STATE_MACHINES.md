@@ -1,7 +1,7 @@
 # Device Activation - State Machine Diagrams
 
 **Date:** 2025-12-24
-**BusinessCaseID:** BC-DA-002 (File Processing), BC-DA-004 (Batch Orchestration), BC-DA-007 (Webhook Processing)
+**BusinessCaseID:** BC-DA-002 (File Processing), BC-DA-004 (Batch Orchestration), BC-DA-007 (Campaign Closure), BC-102 (Webhook Processing)
 **Purpose:** Visual documentation of state transitions for enrollments, batches, attempts, and callbacks throughout the Device Activation lifecycle
 
 ---
@@ -201,7 +201,7 @@ Terminal States (No Further Transitions):
 **Check Active Enrollments:**
 ```sql
 SELECT enrollment_id, member_id, current_status, activation_start_date, campaign_end_date
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE current_status = 'ENROLLED'
   AND activation_start_date IS NOT NULL
   AND activation_start_date <= CAST(SYSDATETIMEOFFSET() AS DATE);
@@ -209,7 +209,7 @@ WHERE current_status = 'ENROLLED'
 
 **Update to COMPLETED (Time-Based):**
 ```sql
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET current_status = 'COMPLETED',
     updated_at = SYSDATETIMEOFFSET()
 WHERE current_status = 'ENROLLED'
@@ -219,7 +219,7 @@ WHERE current_status = 'ENROLLED'
 
 **Update to OPTED_OUT (Webhook):**
 ```sql
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET current_status = 'OPTED_OUT',
     updated_at = SYSDATETIMEOFFSET()
 WHERE enrollment_id = @enrollment_id
@@ -412,7 +412,7 @@ Submitted → Cancelled:
 
 **Create Batch (Phase 1):**
 ```sql
-INSERT INTO engage360.outreach_batches (
+INSERT INTO ioe.outreach_batches (
     batch_id, campaign_id, batch_status, batch_size, created_at
 )
 VALUES (
@@ -426,7 +426,7 @@ VALUES (
 
 **Update to Submitted (Phase 3):**
 ```sql
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET batch_status = 'Submitted',
     vendor_batch_id = @vendor_batch_id,  -- From Bland AI response
     updated_at = SYSDATETIMEOFFSET()
@@ -438,11 +438,11 @@ WHERE batch_id = @batch_id
 ```sql
 -- Find batches ready to be marked as Completed
 SELECT b.batch_id, b.vendor_batch_id
-FROM engage360.outreach_batches b
+FROM ioe.outreach_batches b
 WHERE b.batch_status = 'Submitted'
   AND NOT EXISTS (
       SELECT 1
-      FROM engage360.outreach_attempts oa
+      FROM ioe.outreach_attempts oa
       WHERE oa.batch_id = b.batch_id
         AND oa.disposition = 'Pending'
   );
@@ -619,7 +619,7 @@ Frequency protection uses ALL terminal dispositions (not just Completed).
 
 **Create Attempt (Pending):**
 ```sql
-INSERT INTO engage360.outreach_attempts (
+INSERT INTO ioe.outreach_attempts (
     attempt_id,
     enrollment_id,
     batch_id,
@@ -639,7 +639,7 @@ VALUES (
 
 **Update Disposition (Webhook):**
 ```sql
-UPDATE engage360.outreach_attempts
+UPDATE ioe.outreach_attempts
 SET disposition = @disposition,        -- From StatusMapper
     completed_at = SYSDATETIMEOFFSET(),
     updated_at = SYSDATETIMEOFFSET()
@@ -659,18 +659,18 @@ See: `eligibility_service.py:666-730` (uses `get_business_days_between()` functi
 -- Device Activation: Check last attempt time for Calls 2-3 (2 BUSINESS days)
 -- NOW DONE IN PYTHON: eligibility_service.py:666-730
 SELECT COUNT(*)
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE enrollment_id = @enrollment_id
   -- Business day check removed - filtered in Python
-  AND (SELECT COUNT(*) FROM engage360.outreach_attempts WHERE enrollment_id = @enrollment_id) BETWEEN 1 AND 2;
+  AND (SELECT COUNT(*) FROM ioe.outreach_attempts WHERE enrollment_id = @enrollment_id) BETWEEN 1 AND 2;
 
 -- Device Activation: Check last attempt time for Call 4 (5 BUSINESS days)
 -- NOW DONE IN PYTHON: eligibility_service.py:666-730
 SELECT COUNT(*)
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE enrollment_id = @enrollment_id
   -- Business day check removed - filtered in Python
-  AND (SELECT COUNT(*) FROM engage360.outreach_attempts WHERE enrollment_id = @enrollment_id) = 3;
+  AND (SELECT COUNT(*) FROM ioe.outreach_attempts WHERE enrollment_id = @enrollment_id) = 3;
 
 -- Python filtering logic determines eligibility based on business days
 ```
@@ -884,7 +884,7 @@ Example:
 
 **Create Callback (Pending):**
 ```sql
-INSERT INTO engage360.outreach_callback_queue (
+INSERT INTO ioe.outreach_callback_queue (
     callback_id,
     enrollment_id,
     scheduled_callback_time,
@@ -905,7 +905,7 @@ VALUES (
 **Get Pending Callbacks:**
 ```sql
 SELECT callback_id, enrollment_id, scheduled_callback_time, attempt_count, created_at
-FROM engage360.outreach_callback_queue
+FROM ioe.outreach_callback_queue
 WHERE status = 'Pending'
   AND scheduled_callback_time <= SYSDATETIMEOFFSET()
   AND (
@@ -916,7 +916,7 @@ WHERE status = 'Pending'
 
 **Reschedule Callback:**
 ```sql
-UPDATE engage360.outreach_callback_queue
+UPDATE ioe.outreach_callback_queue
 SET scheduled_callback_time = @new_scheduled_time,  -- Next business day 9 AM
     attempt_count = attempt_count + 1,
     updated_at = SYSDATETIMEOFFSET()
@@ -926,7 +926,7 @@ WHERE callback_id = @callback_id
 
 **Mark Timeout:**
 ```sql
-UPDATE engage360.outreach_callback_queue
+UPDATE ioe.outreach_callback_queue
 SET status = 'Timeout',
     updated_at = SYSDATETIMEOFFSET()
 WHERE status = 'Pending'
@@ -938,7 +938,7 @@ WHERE status = 'Pending'
 
 **Mark Completed:**
 ```sql
-UPDATE engage360.outreach_callback_queue
+UPDATE ioe.outreach_callback_queue
 SET status = 'Completed',
     completed_at = SYSDATETIMEOFFSET(),
     updated_at = SYSDATETIMEOFFSET()

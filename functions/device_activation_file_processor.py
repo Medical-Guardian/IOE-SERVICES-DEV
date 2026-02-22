@@ -5,6 +5,7 @@ from io import BytesIO
 from af_code.af_device_activation_logic import process_device_activation_file_complete
 from af_code.bland_ai_webhook.services.config_manager import ConfigManager
 from af_code.bland_ai_webhook.services.database_service import DatabaseService
+from af_code.shared.schema_config import IOE_SCHEMA
 
 # Create a "Blueprint" to organize this function
 bp = func.Blueprint()
@@ -20,7 +21,7 @@ def get_campaign_id_from_csv(blob_content: bytes) -> tuple:
     Returns:
         Tuple of (campaign_id, campaign_name) or (None, None) if not found
 
-    BusinessCaseID: BC-TBD (Device Activation System)
+    BusinessCaseID: BC-DA-002 (File Processing & ETL Pipeline)
     """
     try:
         # Read first row of CSV to get campaign_name_source
@@ -37,10 +38,10 @@ def get_campaign_id_from_csv(blob_content: bytes) -> tuple:
         config_manager = ConfigManager()
         db_service = DatabaseService(config_manager)
 
-        query = """
+        query = f"""
         SELECT campaign_id, name, status
-        FROM engage360.campaigns_enhanced
-        WHERE name = %s
+        FROM {IOE_SCHEMA}.campaigns_enhanced
+        WHERE name = ?
         """
 
         results = db_service.execute_query(query, (campaign_name,), fetch_results=True)
@@ -67,7 +68,8 @@ def get_campaign_id_from_csv(blob_content: bytes) -> tuple:
 
     except Exception as e:
         logging.error(
-            f"❌ [DEVICE-ACTIVATION] Error reading campaign from CSV: {str(e)}", exc_info=True
+            f"❌ [DEVICE-ACTIVATION] Error reading campaign from CSV: {str(e)}",
+            exc_info=True,
         )
         return None, None
 
@@ -81,7 +83,7 @@ def process_blob(myblob: func.InputStream):
     Triggered by a new file in the 'fs-ops/landing' folder.
     Expected filename pattern: MedicalGuardian_DeviceActivation[suffix]_YYYYMMDD_DELTA.csv
 
-    BusinessCaseID: BC-TBD (Device Activation System)
+    BusinessCaseID: BC-DA-002 (File Processing & ETL Pipeline)
 
     Args:
         myblob: InputStream from Azure Blob Storage containing the CSV file

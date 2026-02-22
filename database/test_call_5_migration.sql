@@ -4,7 +4,7 @@
 -- Purpose: Validate that migration was successful
 -- =====================================================
 
-USE engage360;
+USE ioe;
 GO
 
 PRINT '========================================';
@@ -23,7 +23,7 @@ SELECT
     IS_NULLABLE,
     COLUMN_DEFAULT
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
   AND COLUMN_NAME = 'call_5_timestamp';
 
@@ -32,7 +32,7 @@ WHERE TABLE_SCHEMA = 'engage360'
 DECLARE @column_exists INT;
 SELECT @column_exists = COUNT(*)
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
   AND COLUMN_NAME = 'call_5_timestamp';
 
@@ -54,7 +54,7 @@ SELECT
     i.is_unique,
     i.filter_definition
 FROM sys.indexes i
-WHERE i.object_id = OBJECT_ID('engage360.member_campaign_enrollments_enhanced')
+WHERE i.object_id = OBJECT_ID('ioe.member_campaign_enrollments_enhanced')
   AND i.name = 'IX_enrollments_call5_device_activation';
 
 -- Expected: 1 row, type_desc = NONCLUSTERED
@@ -62,7 +62,7 @@ WHERE i.object_id = OBJECT_ID('engage360.member_campaign_enrollments_enhanced')
 DECLARE @index_exists INT;
 SELECT @index_exists = COUNT(*)
 FROM sys.indexes
-WHERE object_id = OBJECT_ID('engage360.member_campaign_enrollments_enhanced')
+WHERE object_id = OBJECT_ID('ioe.member_campaign_enrollments_enhanced')
   AND name = 'IX_enrollments_call5_device_activation';
 
 IF @index_exists = 1
@@ -82,11 +82,11 @@ DECLARE @total_count INT;
 DECLARE @non_null_count INT;
 
 SELECT @null_count = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE call_5_timestamp IS NULL;
 
 SELECT @total_count = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced;
+FROM ioe.member_campaign_enrollments_enhanced;
 
 SET @non_null_count = @total_count - @null_count;
 
@@ -114,7 +114,7 @@ PRINT 'Test 4: Test eligibility query with new logic...';
 DECLARE @calls_1_4_count INT;
 
 SELECT @calls_1_4_count = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced e
+FROM ioe.member_campaign_enrollments_enhanced e
 WHERE
     e.current_status = 'ENROLLED'
     AND e.device_activated = 0
@@ -130,7 +130,7 @@ PRINT '  Members eligible for Calls 1-4 (no 90-day limit): ' + CAST(@calls_1_4_c
 DECLARE @calls_5_plus_eligible INT;
 
 SELECT @calls_5_plus_eligible = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced e
+FROM ioe.member_campaign_enrollments_enhanced e
 WHERE
     e.current_status = 'ENROLLED'
     AND e.device_activated = 0
@@ -147,7 +147,7 @@ PRINT '  Members eligible for Calls 5+ (within 90-day window): ' + CAST(@calls_5
 DECLARE @calls_5_plus_expired INT;
 
 SELECT @calls_5_plus_expired = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced e
+FROM ioe.member_campaign_enrollments_enhanced e
 WHERE
     e.current_status = 'ENROLLED'
     AND e.device_activated = 0
@@ -172,7 +172,7 @@ PRINT 'Test 5: Simulate Call 5 update logic...';
 DECLARE @ready_for_call_5 INT;
 
 SELECT @ready_for_call_5 = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced e
+FROM ioe.member_campaign_enrollments_enhanced e
 WHERE
     e.call_5_timestamp IS NULL
     AND (
@@ -181,7 +181,7 @@ WHERE
     )
     AND (
         SELECT COUNT(*)
-        FROM engage360.outreach_attempts oa
+        FROM ioe.outreach_attempts oa
         WHERE oa.enrollment_id = e.enrollment_id
     ) = 5;
 
@@ -212,7 +212,7 @@ SELECT
         ELSE 'Call 5+ (past 90-day window)'
     END AS enrollment_stage,
     COUNT(*) AS enrollment_count
-FROM engage360.member_campaign_enrollments_enhanced e
+FROM ioe.member_campaign_enrollments_enhanced e
 WHERE
     (
         e.campaign_id = '0F69659B-491B-40E2-88C3-ABC7D87385B2'  -- Medicaid

@@ -166,7 +166,7 @@ SELECT TOP 1
     member_first_name,
     enrollment_status,
     unenrollment_reason
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE source_filename LIKE 'TEST_DTC_NaN%'
 ORDER BY load_timestamp DESC;
 
@@ -207,7 +207,7 @@ SELECT TOP 10
     processing_status,
     error_message,
     load_timestamp
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE load_timestamp >= DATEADD(hour, -24, GETDATE())
   AND processing_status = 'ERROR'
 ORDER BY load_timestamp DESC;

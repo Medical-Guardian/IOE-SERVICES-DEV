@@ -207,7 +207,7 @@ SELECT TOP 1
     unenrollment_reason,
     processing_status,
     error_message
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE source_filename LIKE '%REPROCESS%'
 ORDER BY load_timestamp DESC;
 ```
@@ -268,7 +268,7 @@ SELECT TOP 20
     load_timestamp,
     member_first_name,
     enrollment_status
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE load_timestamp >= DATEADD(hour, -24, GETDATE())
   AND processing_status = 'ERROR'
 ORDER BY load_timestamp DESC;
@@ -282,7 +282,7 @@ SELECT
     COUNT(*) as total_records,
     COUNT(unenrollment_reason) as non_null_unenrollment,
     COUNT(*) - COUNT(unenrollment_reason) as null_unenrollment
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE load_timestamp >= DATEADD(hour, -24, GETDATE());
 ```
 

@@ -193,12 +193,12 @@ Medical Guardian,Device Activation - Medicaid,001ABC123,ACC-123456,John,Doe,5551
 
 ### ✅ Files with All Required Fields
 - Will process successfully
-- Will be moved to `fs-device-activation/processed/`
+- Will be moved to `fs-ops/processed/`
 
 ### ❌ Files Missing Required Fields
 - Will fail validation
-- Will be moved to `fs-device-activation/error/`
-- Error details logged in `engage360_stg.stg_device_activation_delta` table
+- Will be moved to `fs-ops/error/`
+- Error details logged in `ioe_stg.stg_device_activation_delta` table
 - Specific error messages identify which fields are missing
 
 ### Error Threshold
@@ -226,7 +226,7 @@ Before uploading CSV to production:
 - [ ] `powersaver_mode` uses Default/Standard/Battery Saver
 - [ ] `monitoring_system_id` not empty
 - [ ] `campaign_parameters` can be empty (optional)
-- [ ] Test file uploaded to `fs-device-activation/landing/`
+- [ ] Test file uploaded to `fs-ops/landing/`
 - [ ] Verify file moves to `processed/` (not `error/`)
 
 ---
@@ -234,7 +234,7 @@ Before uploading CSV to production:
 ## Support
 
 **For Questions or Issues:**
-- Review error messages in `engage360_stg.stg_device_activation_delta`
+- Review error messages in `ioe_stg.stg_device_activation_delta`
 - Check Azure Function logs in Application Insights
 - Contact: AI-POD Team - Data Science at Medical Guardian
 

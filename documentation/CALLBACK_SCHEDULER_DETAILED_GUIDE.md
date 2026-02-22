@@ -62,7 +62,7 @@ AI Grace: "Great! I'll talk to you at 2:00 PM. Have a great day!"
 **What Happens in Database:**
 ```sql
 -- Webhook creates callback entry
-INSERT INTO engage360.outreach_callback_queue (
+INSERT INTO ioe.outreach_callback_queue (
     callback_id,
     enrollment_id,
     member_id,
@@ -99,7 +99,7 @@ Member Maria: "Thank you!"
 
 **Database Entry:**
 ```sql
-INSERT INTO engage360.outreach_callback_queue (
+INSERT INTO ioe.outreach_callback_queue (
     ...
     scheduled_callback_time = '2025-12-07 10:30:00-05:00',  -- 30 minutes later
     callback_reason = 'UNBOXING',
@@ -123,7 +123,7 @@ Member Robert: "Yes, that would be great."
 
 **Database Entry:**
 ```sql
-INSERT INTO engage360.outreach_callback_queue (
+INSERT INTO ioe.outreach_callback_queue (
     ...
     scheduled_callback_time = '2025-12-07 14:00:00-05:00',  -- 2 hours later
     callback_reason = 'CHARGING',
@@ -204,8 +204,8 @@ SELECT
     m.last_name,
     m.primary_phone,
     m.timezone
-FROM engage360.outreach_callback_queue cq
-JOIN engage360.members m ON cq.member_id = m.member_id
+FROM ioe.outreach_callback_queue cq
+JOIN ioe.members m ON cq.member_id = m.member_id
 WHERE
     cq.status = 'PENDING'
     AND cq.attempt_count < cq.max_attempts
@@ -285,7 +285,7 @@ Action: Reschedule to tomorrow 9:00 AM EST
 
 **SQL Update:**
 ```sql
-UPDATE engage360.outreach_callback_queue
+UPDATE ioe.outreach_callback_queue
 SET status = 'TIMED_OUT', updated_ts = SYSDATETIMEOFFSET()
 WHERE status = 'PENDING'
 AND (
@@ -545,10 +545,10 @@ Batch created and submitted to Bland AI
 
 ## Database Tables
 
-### Main Table: `engage360.outreach_callback_queue`
+### Main Table: `ioe.outreach_callback_queue`
 
 ```sql
-CREATE TABLE engage360.outreach_callback_queue (
+CREATE TABLE ioe.outreach_callback_queue (
     callback_id UNIQUEIDENTIFIER PRIMARY KEY,
     enrollment_id UNIQUEIDENTIFIER NOT NULL,
     member_id UNIQUEIDENTIFIER NOT NULL,
@@ -641,7 +641,7 @@ def create_device_activation_batch():
 ```sql
 -- From eligibility_service.py
 SELECT ...
-FROM engage360.member_campaign_enrollments_enhanced e
+FROM ioe.member_campaign_enrollments_enhanced e
 ...
 WHERE
     -- Standard eligibility criteria
@@ -651,7 +651,7 @@ WHERE
     -- ✅ EXCLUSION: Members with pending callbacks
     AND NOT EXISTS (
         SELECT 1
-        FROM engage360.outreach_callback_queue cq
+        FROM ioe.outreach_callback_queue cq
         WHERE cq.enrollment_id = e.enrollment_id
         AND cq.status = 'PENDING'
     )

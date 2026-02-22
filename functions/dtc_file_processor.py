@@ -20,7 +20,8 @@ def process_blob(myblob: func.InputStream):
 
     # Validate naming pattern using shared validator
     is_valid, error_msg, date_str, pattern_type = validate_dtc_wellness_filename(
-        filename, allow_legacy=True  # Phase 1: Accept both patterns (set to False for Phase 2)
+        filename,
+        allow_legacy=True,  # Phase 1: Accept both patterns (set to False for Phase 2)
     )
 
     if not is_valid:
@@ -40,7 +41,9 @@ def process_blob(myblob: func.InputStream):
 
     # Call your shared logic to process the file
     success, msg, _ = process_dtc_file_complete(
-        file_path=filename, connection_string="", uploaded_by_user="ai.admin@medicalguardian.com"
+        file_path=filename,
+        connection_string="",
+        uploaded_by_user="ai.admin@medicalguardian.com",
     )
 
     if success:

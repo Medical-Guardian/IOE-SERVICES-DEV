@@ -20,14 +20,14 @@ def test_dtc_logic_sql_queries():
         content = f.read()
 
     # Check intro enrollment MERGE has channel in source CTE
-    assert "stg.channel_type_clean AS channel" in content, (
-        "❌ Missing: 'stg.channel_type_clean AS channel' in intro enrollment MERGE"
-    )
+    assert (
+        "stg.channel_type_clean AS channel" in content
+    ), "❌ Missing: 'stg.channel_type_clean AS channel' in intro enrollment MERGE"
 
     # Check intro enrollment MERGE updates channel
-    assert "channel = ISNULL(src.channel, tgt.channel)" in content, (
-        "❌ Missing: 'channel = ISNULL(src.channel, tgt.channel)' in intro MERGE UPDATE"
-    )
+    assert (
+        "channel = ISNULL(src.channel, tgt.channel)" in content
+    ), "❌ Missing: 'channel = ISNULL(src.channel, tgt.channel)' in intro MERGE UPDATE"
 
     # Check intro enrollment MERGE inserts channel
     assert re.search(
@@ -56,32 +56,30 @@ def test_dtc_config_queries():
         content = f.read()
 
     # Check GET_MEMBERS_WITH_ATTEMPTS_QUERY uses mce.channel
-    assert "mce.channel," in content, (
-        "❌ Missing: 'mce.channel' in GET_MEMBERS_WITH_ATTEMPTS_QUERY"
-    )
+    assert "mce.channel," in content, "❌ Missing: 'mce.channel' in GET_MEMBERS_WITH_ATTEMPTS_QUERY"
 
     # Ensure old member-level Channel is not used
-    assert "m.Channel," not in content, (
-        "❌ Found deprecated: 'm.Channel' in queries (should be mce.channel)"
-    )
+    assert (
+        "m.Channel," not in content
+    ), "❌ Found deprecated: 'm.Channel' in queries (should be mce.channel)"
 
     # Check ELIGIBLE_MEMBERS_QUERY_INTRO has device validation
-    assert "LEFT JOIN" in content and "engage360.member_devices md" in content, (
-        "❌ Missing: LEFT JOIN for member_devices in eligibility query"
-    )
+    assert (
+        "LEFT JOIN" in content and "{IOE_SCHEMA}.member_devices md" in content
+    ), "❌ Missing: LEFT JOIN for member_devices in eligibility query"
 
-    assert "md.service_status = 'In Service'" in content, (
-        "❌ Missing: service_status filter in member_devices JOIN"
-    )
+    assert (
+        "md.service_status = 'In Service'" in content
+    ), "❌ Missing: service_status filter in member_devices JOIN"
 
     # Check channel validation logic
-    assert "mce.channel != 'device'" in content, (
-        "❌ Missing: channel validation logic (mce.channel != 'device')"
-    )
+    assert (
+        "mce.channel != 'device'" in content
+    ), "❌ Missing: channel validation logic (mce.channel != 'device')"
 
-    assert "mce.channel = 'device' AND md.device_id IS NOT NULL" in content, (
-        "❌ Missing: device validation logic (mce.channel = 'device' AND md.device_id IS NOT NULL)"
-    )
+    assert (
+        "mce.channel = 'device' AND md.device_id IS NOT NULL" in content
+    ), "❌ Missing: device validation logic (mce.channel = 'device' AND md.device_id IS NOT NULL)"
 
     print("✅ af_dtc_intro_call/utils/config.py: All queries updated correctly")
 
@@ -94,28 +92,28 @@ def test_phone_selector():
         content = f.read()
 
     # Check field name changed to enrollment-level channel
-    assert 'member_channel = member_data.get("channel")' in content, (
-        "❌ Missing: member_data.get('channel') - should use enrollment-level channel"
-    )
+    assert (
+        'member_channel = member_data.get("channel")' in content
+    ), "❌ Missing: member_data.get('channel') - should use enrollment-level channel"
 
     # Ensure old member-level Channel is not used
-    assert 'member_data.get("Channel")' not in content, (
-        "❌ Found deprecated: member_data.get('Channel') - should be 'channel'"
-    )
+    assert (
+        'member_data.get("Channel")' not in content
+    ), "❌ Found deprecated: member_data.get('Channel') - should be 'channel'"
 
     # Check fallback logic is removed
-    assert "Using fallback" not in content, (
-        "❌ Found: 'Using fallback' - fallback logic should be removed"
-    )
+    assert (
+        "Using fallback" not in content
+    ), "❌ Found: 'Using fallback' - fallback logic should be removed"
 
     # Check ineligibility logging is present
-    assert "INELIGIBLE" in content and "No fallback" in content, (
-        "❌ Missing: Ineligibility logging with 'INELIGIBLE' and 'No fallback' keywords"
-    )
+    assert (
+        "INELIGIBLE" in content and "No fallback" in content
+    ), "❌ Missing: Ineligibility logging with 'INELIGIBLE' and 'No fallback' keywords"
 
-    assert "respecting member preference" in content or "respecting enrollment preference" in content, (
-        "❌ Missing: 'respecting member preference' in ineligibility log"
-    )
+    assert (
+        "respecting member preference" in content or "respecting enrollment preference" in content
+    ), "❌ Missing: 'respecting member preference' in ineligibility log"
 
     print("✅ af_dtc_intro_call/utils/phone_selector.py: Updated correctly")
 
@@ -124,17 +122,13 @@ def test_partner_batch_orchestrator():
     """Test that batch_orchestrator.py removes fallback logic."""
     print("Testing partner_campaign_scheduler/services/batch_orchestrator.py...")
 
-    with open(
-        "af_code/partner_campaign_scheduler/services/batch_orchestrator.py", "r"
-    ) as f:
+    with open("af_code/partner_campaign_scheduler/services/batch_orchestrator.py", "r") as f:
         content = f.read()
 
     # Check fallback logic is removed in member_preference mode
     # Look for the section after device validation
     pattern = re.compile(
-        r"member\.channel.*==.*device.*device_phone_number.*"
-        r"(.*?)"
-        r"return None",
+        r"member\.channel.*==.*device.*device_phone_number.*" r"(.*?)" r"return None",
         re.DOTALL,
     )
 
@@ -142,22 +136,20 @@ def test_partner_batch_orchestrator():
     if match:
         section = match.group(1)
         # Ensure no "Fallback to" messages in this section
-        assert "Fallback to" not in section, (
-            "❌ Found: 'Fallback to' - fallback logic should be removed"
-        )
+        assert (
+            "Fallback to" not in section
+        ), "❌ Found: 'Fallback to' - fallback logic should be removed"
 
     # Check ineligibility logging is present
-    assert "INELIGIBLE" in content and "No fallback" in content, (
-        "❌ Missing: Ineligibility logging with 'INELIGIBLE' and 'No fallback' keywords"
-    )
+    assert (
+        "INELIGIBLE" in content and "No fallback" in content
+    ), "❌ Missing: Ineligibility logging with 'INELIGIBLE' and 'No fallback' keywords"
 
-    assert "respecting enrollment preference" in content, (
-        "❌ Missing: 'respecting enrollment preference' in ineligibility log"
-    )
+    assert (
+        "respecting enrollment preference" in content
+    ), "❌ Missing: 'respecting enrollment preference' in ineligibility log"
 
-    print(
-        "✅ partner_campaign_scheduler/services/batch_orchestrator.py: Updated correctly"
-    )
+    print("✅ partner_campaign_scheduler/services/batch_orchestrator.py: Updated correctly")
 
 
 def main():

@@ -5,6 +5,7 @@
 -- BusinessCaseID: BC-TBD (Device Activation System)
 -- Created: 2025-12-12
 -- Updated: 2025-12-16 - Updated Day 0 logic (first business day on or after enrollment)
+-- Updated: 2025-12-23 - Added address_country, member_brand; removed obsolete cleaned columns
 --
 -- This table stores raw CSV data from Device Activation file uploads and tracks
 -- the 5-phase ETL processing workflow:
@@ -14,18 +15,18 @@
 -- Phase 4: Transform & Load Core (MERGE into members/devices/enrollments, UPDATE to PROCESSED)
 -- Phase 5: Audit & Log (File processing log)
 --
--- Pattern: Follows engage360_stg.stg_dtc_wellness_delta structure
+-- Pattern: Follows ioe_stg.stg_dtc_wellness_delta structure
 -- =====================================================================================
 
 -- Step 1: Check if table already exists
 IF EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.TABLES
-    WHERE TABLE_SCHEMA = 'engage360_stg'
+    WHERE TABLE_SCHEMA = 'ioe_stg'
     AND TABLE_NAME = 'stg_device_activation_delta'
 )
 BEGIN
-    PRINT '⚠️  Table engage360_stg.stg_device_activation_delta already exists.'
+    PRINT '⚠️  Table ioe_stg.stg_device_activation_delta already exists.'
     PRINT 'ℹ️  Skipping table creation.'
     PRINT 'ℹ️  To modify the table, use ALTER TABLE statements or DROP and recreate.'
 
@@ -37,7 +38,7 @@ BEGIN
         IS_NULLABLE,
         COLUMN_DEFAULT
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360_stg'
+    WHERE TABLE_SCHEMA = 'ioe_stg'
     AND TABLE_NAME = 'stg_device_activation_delta'
     ORDER BY ORDINAL_POSITION;
 END
@@ -46,7 +47,7 @@ BEGIN
     PRINT '✅ Creating stg_device_activation_delta table...'
 
     -- Step 2: Create staging table
-    CREATE TABLE engage360_stg.stg_device_activation_delta (
+    CREATE TABLE ioe_stg.stg_device_activation_delta (
         -- =================================================================
         -- File Metadata Columns
         -- =================================================================
@@ -59,7 +60,7 @@ BEGIN
         error_message NVARCHAR(MAX),
 
         -- =================================================================
-        -- CSV Fields (27 columns from actual source file)
+        -- CSV Fields (28 columns from actual source file)
         -- =================================================================
 
         -- Campaign Metadata (NEW - first columns in actual CSV)
@@ -81,11 +82,13 @@ BEGIN
         city NVARCHAR(100),                                    -- From member_address_city
         state NVARCHAR(2),                                     -- From member_address_state
         zip NVARCHAR(10),                                      -- From member_address_zip
+        address_country NVARCHAR(50),                          -- Country code (US, CA, etc.)
 
         -- Member Demographics
         dob DATE,                                              -- Date of birth
         timezone NVARCHAR(50),                                 -- Mapped to IANA format (America/New_York)
         language_pref NVARCHAR(10),                            -- Mapped to EN/ES/Other
+        member_brand NVARCHAR(100),                            -- Member brand/plan (MedScope, MG State Pay, etc.)
 
         -- Device Information
         device_udi NVARCHAR(100),                              -- Device UDI/Serial Number (REQUIRED)
@@ -94,9 +97,9 @@ BEGIN
         device_phone_number NVARCHAR(20),                      -- Device's phone number (E.164)
         is_device_callable BIT,                                -- Can device be called? (1/0)
 
-        -- Device Status (stored as converted values)
-        fall_detection_status NVARCHAR(50),                    -- Active/Inactive (converted from 1/0)
-        battery_status NVARCHAR(50),                           -- Good/Low/Critical (converted from Standard)
+        -- Device Status (normalized to Title Case)
+        fall_detection NVARCHAR(10),                           -- 'true'/'false' from CSV (lowercase)
+        powersaver_mode NVARCHAR(50),                          -- 'Default'/'Standard'/'Battery Saver' (Title Case)
 
         -- Campaign Tracking (NEW columns from actual CSV)
         campaign_parameters NVARCHAR(MAX),                     -- NEW: JSON or text parameters
@@ -116,8 +119,6 @@ BEGIN
         language_pref_clean NVARCHAR(10),                      -- Mapped to EN/ES/Other
         service_address_clean NVARCHAR(500),                   -- Combined from 5 address fields
         brand_clean NVARCHAR(100),                             -- Cleaned brand value
-        fall_detection_status_clean NVARCHAR(50),              -- Converted from numeric (1/0 → Active/Inactive)
-        battery_status_clean NVARCHAR(50),                     -- Converted from mode (Standard → Good)
         org_id UNIQUEIDENTIFIER,                               -- Looked up from partner_name
 
         -- =================================================================
@@ -163,20 +164,20 @@ BEGIN
 
     -- Index for file batch queries
     CREATE INDEX idx_stg_device_activation_file_batch
-    ON engage360_stg.stg_device_activation_delta(file_batch_id, processing_status);
+    ON ioe_stg.stg_device_activation_delta(file_batch_id, processing_status);
 
     PRINT '✅ Index created: idx_stg_device_activation_file_batch'
 
     -- Index for error tracking
     CREATE INDEX idx_stg_device_activation_error
-    ON engage360_stg.stg_device_activation_delta(processing_status, uploaded_ts DESC)
+    ON ioe_stg.stg_device_activation_delta(processing_status, uploaded_ts DESC)
     WHERE processing_status = 'ERROR';
 
     PRINT '✅ Index created: idx_stg_device_activation_error'
 
     -- Index for member lookup during transformation
     CREATE INDEX idx_stg_device_activation_member
-    ON engage360_stg.stg_device_activation_delta(salesforce_account_number, org_id, processing_status);
+    ON ioe_stg.stg_device_activation_delta(salesforce_account_number, org_id, processing_status);
 
     PRINT '✅ Index created: idx_stg_device_activation_member'
 
@@ -184,9 +185,9 @@ BEGIN
     PRINT '✅ STAGING TABLE CREATION COMPLETE'
     PRINT ''
     PRINT '📋 Table Details:'
-    PRINT '   Schema: engage360_stg'
+    PRINT '   Schema: ioe_stg'
     PRINT '   Table: stg_device_activation_delta'
-    PRINT '   Columns: 51 total (7 metadata + 27 CSV + 11 cleaned + 4 timestamps + 2 tracking)'
+    PRINT '   Columns: 51 total (7 metadata + 28 CSV + 10 cleaned + 4 timestamps + 2 tracking)'
     PRINT '   Indexes: 3 created'
     PRINT '   Constraints: 4 CHECK constraints'
     PRINT ''
@@ -204,7 +205,7 @@ END
 /*
 DECLARE @file_batch_id UNIQUEIDENTIFIER = NEWID()
 
-INSERT INTO engage360_stg.stg_device_activation_delta (
+INSERT INTO ioe_stg.stg_device_activation_delta (
     file_batch_id,
     row_number_in_file,
     uploaded_by_user,
@@ -236,7 +237,7 @@ INSERT INTO engage360_stg.stg_device_activation_delta (
     'ENROLL'
 );
 
-SELECT * FROM engage360_stg.stg_device_activation_delta WHERE file_batch_id = @file_batch_id;
+SELECT * FROM ioe_stg.stg_device_activation_delta WHERE file_batch_id = @file_batch_id;
 */
 
 -- Example 2: Query pending rows for processing
@@ -251,14 +252,14 @@ SELECT
     processing_status,
     validation_status,
     uploaded_ts
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE validation_status = 'PENDING'
 ORDER BY uploaded_ts DESC;
 */
 
 -- Example 3: Update row to VALIDATED after cleansing
 /*
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET
     processing_status = 'VALIDATED',
     validation_status = 'VALIDATED',
@@ -267,7 +268,7 @@ SET
     primary_phone_clean = '+16076440277',
     timezone_clean = 'America/New_York',
     language_pref_clean = 'EN',
-    org_id = (SELECT org_id FROM engage360.orgs WHERE org_name = 'Medical Guardian'),
+    org_id = (SELECT org_id FROM ioe.orgs WHERE org_name = 'Medical Guardian'),
     cleansing_completed_ts = SYSDATETIMEOFFSET()
 WHERE file_batch_id = '<file-batch-id>' AND validation_status = 'PENDING';
 */
@@ -281,7 +282,7 @@ SELECT
     first_name,
     error_message,
     uploaded_ts
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE validation_status = 'VALIDATION_ERROR'
 ORDER BY uploaded_ts DESC;
 */
@@ -295,7 +296,7 @@ SELECT
     SUM(CASE WHEN validation_status = 'VALIDATION_ERROR' THEN 1 ELSE 0 END) as errors,
     MIN(uploaded_ts) as file_loaded_at,
     MAX(enrollment_completed_ts) as processing_completed_at
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 GROUP BY file_batch_id
 ORDER BY MIN(uploaded_ts) DESC;
 */

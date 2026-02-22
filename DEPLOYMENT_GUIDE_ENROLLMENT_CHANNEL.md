@@ -68,7 +68,7 @@ All quality checks passed:
 **Verification Query:**
 ```sql
 SELECT COUNT(*) AS null_channels_remaining
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',  -- DTC Intro
     'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'   -- DTC Wellness
@@ -131,8 +131,8 @@ SELECT
     m.salesforce_account_number,
     m.first_name,
     m.last_name
-FROM engage360.member_campaign_enrollments_enhanced mce
-JOIN engage360.members m ON mce.member_id = m.member_id
+FROM ioe.member_campaign_enrollments_enhanced mce
+JOIN ioe.members m ON mce.member_id = m.member_id
 WHERE m.salesforce_account_number IN ('SF-TEST-001', 'SF-TEST-002')
   AND mce.campaign_id = '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC';
 -- Expected: SF-TEST-001 has channel='device', SF-TEST-002 has channel='phone'
@@ -224,7 +224,7 @@ Alternative flow (if SQL filter missed):
 -- Clear enrollment channel values (revert to member-level)
 UPDATE mce
 SET mce.channel = NULL
-FROM engage360.member_campaign_enrollments_enhanced mce
+FROM ioe.member_campaign_enrollments_enhanced mce
 WHERE mce.campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',
     'E5ABE3F0-A4D8-4AB3-81CD-96DD6394833B'
@@ -278,9 +278,9 @@ func azure functionapp publish IOE-function --python
 **Query:**
 ```sql
 SELECT COUNT(*) AS ineligible_device_members
-FROM engage360.member_campaign_enrollments_enhanced mce
-JOIN engage360.members m ON mce.member_id = m.member_id
-LEFT JOIN engage360.member_devices md
+FROM ioe.member_campaign_enrollments_enhanced mce
+JOIN ioe.members m ON mce.member_id = m.member_id
+LEFT JOIN ioe.member_devices md
     ON mce.member_id = md.member_id
     AND md.service_status = 'In Service'
 WHERE mce.campaign_id IN (
@@ -304,8 +304,8 @@ AND md.device_id IS NULL;
 SELECT
     md.service_status,
     COUNT(*) AS device_count
-FROM engage360.member_devices md
-JOIN engage360.member_campaign_enrollments_enhanced mce
+FROM ioe.member_devices md
+JOIN ioe.member_campaign_enrollments_enhanced mce
     ON md.member_id = mce.member_id
 WHERE mce.campaign_id IN (
     '34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC',

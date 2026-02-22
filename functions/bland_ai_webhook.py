@@ -52,6 +52,6 @@ async def handle_bland_ai_webhook(req: func.HttpRequest) -> func.HttpResponse:
     """
     HTTP endpoint to receive and process webhooks from Bland AI.
     """
-    logging.info(f"🚀 Bland AI Webhook received a request.")
+    logging.info("🚀 Bland AI Webhook received a request.")
     # Call the main handler method to process the request
     return await webhook_handler_instance.handle_webhook(req)

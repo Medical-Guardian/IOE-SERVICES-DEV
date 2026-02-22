@@ -73,7 +73,7 @@ SELECT SYSDATETIMEOFFSET() AS current_time;
 # List recent files in landing folder
 az storage blob list \
   --account-name stioefstorage \
-  --container-name fs-device-activation \
+  --container-name fs-ops \
   --prefix landing/ \
   --auth-mode login \
   --query "[].{Name:name, Size:properties.contentLength, Modified:properties.lastModified}" -o table
@@ -112,7 +112,7 @@ traces
 ### Issue 2.1: CSV Files Not Processing (Blob Trigger Not Firing)
 
 **Symptoms:**
-- CSV uploaded to `fs-device-activation/landing/` but no processing occurs
+- CSV uploaded to `fs-ops/landing/` but no processing occurs
 - No logs in Application Insights for `device_activation_file_processor`
 - File remains in `landing/` folder indefinitely
 
@@ -139,7 +139,7 @@ az functionapp function show \
 # Step 2: Check filename pattern
 az storage blob list \
   --account-name stioefstorage \
-  --container-name fs-device-activation \
+  --container-name fs-ops \
   --prefix landing/ \
   --auth-mode login \
   --query "[].name" -o tsv
@@ -177,16 +177,16 @@ az functionapp function update \
 # Fix 2: Rename file to match pattern
 az storage blob copy start \
   --account-name stioefstorage \
-  --destination-container fs-device-activation \
+  --destination-container fs-ops \
   --destination-blob landing/MedicalGuardian_DeviceActivation_20251224_Delta.csv \
-  --source-container fs-device-activation \
+  --source-container fs-ops \
   --source-blob landing/wrong_filename.csv \
   --auth-mode login
 
 # Delete old file
 az storage blob delete \
   --account-name stioefstorage \
-  --container-name fs-device-activation \
+  --container-name fs-ops \
   --name landing/wrong_filename.csv \
   --auth-mode login
 
@@ -218,7 +218,7 @@ az functionapp restart \
 # Step 1: Download error file from blob storage
 az storage blob download \
   --account-name stioefstorage \
-  --container-name fs-device-activation \
+  --container-name fs-ops \
   --name error/MedicalGuardian_DeviceActivation_20251224_Delta.csv \
   --file /tmp/error_file.csv \
   --auth-mode login
@@ -309,7 +309,7 @@ SELECT TOP 20
     processing_status,
     error_message,
     created_at
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE processing_status = 'Failed'
 ORDER BY created_at DESC;
 
@@ -317,7 +317,7 @@ ORDER BY created_at DESC;
 SELECT
     error_message,
     COUNT(*) as occurrence_count
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE processing_status = 'Failed'
   AND created_at > DATEADD(hour, -1, SYSDATETIMEOFFSET())
 GROUP BY error_message
@@ -337,8 +337,8 @@ ORDER BY COUNT(*) DESC;
 
 ```sql
 -- Option A: Update existing member instead of INSERT (change to MERGE)
-MERGE engage360.members AS target
-USING engage360_stg.stg_device_activation_delta AS source
+MERGE ioe.members AS target
+USING ioe_stg.stg_device_activation_delta AS source
 ON target.member_id = source.member_id_clean
 WHEN MATCHED THEN
     UPDATE SET
@@ -353,9 +353,9 @@ WHEN NOT MATCHED THEN
 WITH Deduplicated AS (
     SELECT *,
         ROW_NUMBER() OVER (PARTITION BY member_id_clean ORDER BY created_at DESC) as rn
-    FROM engage360_stg.stg_device_activation_delta
+    FROM ioe_stg.stg_device_activation_delta
 )
-INSERT INTO engage360.members (...)
+INSERT INTO ioe.members (...)
 SELECT ... FROM Deduplicated WHERE rn = 1;
 ```
 
@@ -439,7 +439,7 @@ grep -A 5 "timer_trigger" functions/device_activation_scheduler.py
 
 ```sql
 SELECT *
-FROM engage360.system_locks
+FROM ioe.system_locks
 WHERE lock_name = 'device_activation_scheduler'
   AND lock_expiration > SYSDATETIMEOFFSET();
 
@@ -469,7 +469,7 @@ az functionapp restart \
 
 ```sql
 -- Fix 4: Clear stuck lock
-DELETE FROM engage360.system_locks
+DELETE FROM ioe.system_locks
 WHERE lock_name = 'device_activation_scheduler';
 ```
 
@@ -502,10 +502,10 @@ az monitor app-insights query \
 ```sql
 -- Step 2: Check enrolled members count
 SELECT COUNT(*) as enrolled_members
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE campaign_id IN (
     SELECT campaign_id
-    FROM engage360.campaigns_enhanced
+    FROM ioe.campaigns_enhanced
     WHERE name LIKE '%Device Activation%'
 )
 AND current_status = 'ENROLLED';
@@ -520,10 +520,10 @@ SELECT
         ELSE 'PAST_OR_TODAY'
     END AS activation_status,
     COUNT(*) as member_count
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE campaign_id IN (
     SELECT campaign_id
-    FROM engage360.campaigns_enhanced
+    FROM ioe.campaigns_enhanced
     WHERE name LIKE '%Device Activation%'
 )
 AND current_status = 'ENROLLED'
@@ -548,7 +548,7 @@ SELECT
     operating_tz,
     operating_start_time,
     operating_end_time
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE name LIKE '%Device Activation%';
 
 -- Expected:
@@ -565,32 +565,32 @@ WHERE name LIKE '%Device Activation%';
 
 ```sql
 -- Fix 1: Set activation_start_date for members with NULL
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET activation_start_date = CAST(DATEADD(DAY, 2, SYSDATETIMEOFFSET()) AS DATE)  -- delivery_date + 2 days
 WHERE activation_start_date IS NULL
-  AND campaign_id IN (SELECT campaign_id FROM engage360.campaigns_enhanced WHERE name LIKE '%Device Activation%');
+  AND campaign_id IN (SELECT campaign_id FROM ioe.campaigns_enhanced WHERE name LIKE '%Device Activation%');
 
 -- Fix 2: Activate campaign if inactive
-UPDATE engage360.campaigns_enhanced
+UPDATE ioe.campaigns_enhanced
 SET current_status = 'Active',
     updated_at = SYSDATETIMEOFFSET()
 WHERE name LIKE '%Device Activation%'
   AND current_status != 'Active';
 
 -- Fix 3: Adjust operating hours (if too restrictive)
-UPDATE engage360.campaigns_enhanced
+UPDATE ioe.campaigns_enhanced
 SET operating_start_time = '08:00:00',  -- Expand from 9 AM to 8 AM
     operating_end_time = '18:00:00',    -- Expand from 5 PM to 6 PM
     updated_at = SYSDATETIMEOFFSET()
 WHERE name LIKE '%Device Activation%';
 
 -- Fix 4: Clear pending batches (if stuck)
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET batch_status = 'Completed',
     updated_at = SYSDATETIMEOFFSET()
 WHERE batch_status IN ('Pending', 'Submitted')
   AND created_at < DATEADD(hour, -2, SYSDATETIMEOFFSET())  -- Older than 2 hours
-  AND campaign_id IN (SELECT campaign_id FROM engage360.campaigns_enhanced WHERE name LIKE '%Device Activation%');
+  AND campaign_id IN (SELECT campaign_id FROM ioe.campaigns_enhanced WHERE name LIKE '%Device Activation%');
 ```
 
 ---
@@ -671,7 +671,7 @@ SET STATISTICS IO ON;
 ```sql
 -- Fix 1: Create missing indexes (if not exist)
 CREATE NONCLUSTERED INDEX IX_enrollments_eligibility
-ON engage360.member_campaign_enrollments_enhanced (
+ON ioe.member_campaign_enrollments_enhanced (
     current_status,
     activation_start_date,
     call_5_timestamp
@@ -679,23 +679,23 @@ ON engage360.member_campaign_enrollments_enhanced (
 INCLUDE (enrollment_id, member_id, campaign_id, campaign_end_date);
 
 CREATE NONCLUSTERED INDEX IX_attempts_enrollment_ts
-ON engage360.outreach_attempts (
+ON ioe.outreach_attempts (
     enrollment_id,
     attempt_ts DESC
 )
 INCLUDE (disposition);
 
 CREATE NONCLUSTERED INDEX IX_callbacks_pending
-ON engage360.outreach_callback_queue (
+ON ioe.outreach_callback_queue (
     status,
     scheduled_callback_time
 )
 INCLUDE (enrollment_id, attempt_count, created_at);
 
 -- Fix 2: Update statistics (ensure index usage)
-UPDATE STATISTICS engage360.member_campaign_enrollments_enhanced;
-UPDATE STATISTICS engage360.outreach_attempts;
-UPDATE STATISTICS engage360.outreach_callback_queue;
+UPDATE STATISTICS ioe.member_campaign_enrollments_enhanced;
+UPDATE STATISTICS ioe.outreach_attempts;
+UPDATE STATISTICS ioe.outreach_callback_queue;
 
 -- Fix 3: Optimize subqueries (in eligibility_service.py)
 -- Replace correlated subqueries with JOINs or window functions
@@ -746,7 +746,7 @@ SELECT
     DATEDIFF(DAY, LAG(attempt_ts) OVER (ORDER BY attempt_ts), attempt_ts) as calendar_days_since_last,
     disposition,
     ROW_NUMBER() OVER (ORDER BY attempt_ts) as attempt_number
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE enrollment_id = @enrollment_id
 ORDER BY attempt_ts DESC;
 
@@ -770,9 +770,9 @@ SELECT
     e.call_5_timestamp,
     e.campaign_end_date,
     DATEDIFF(DAY, e.call_5_timestamp, e.campaign_end_date) as days_in_window
-FROM engage360.member_campaign_enrollments_enhanced e
-LEFT JOIN engage360.outreach_attempts oa ON e.enrollment_id = oa.enrollment_id
-WHERE e.campaign_id IN (SELECT campaign_id FROM engage360.campaigns_enhanced WHERE name LIKE '%Device Activation%')
+FROM ioe.member_campaign_enrollments_enhanced e
+LEFT JOIN ioe.outreach_attempts oa ON e.enrollment_id = oa.enrollment_id
+WHERE e.campaign_id IN (SELECT campaign_id FROM ioe.campaigns_enhanced WHERE name LIKE '%Device Activation%')
 GROUP BY e.enrollment_id, e.member_id, e.call_5_timestamp, e.campaign_end_date
 HAVING COUNT(oa.attempt_id) >= 5;
 
@@ -800,7 +800,7 @@ SET
         FROM (
             SELECT attempt_ts,
                 ROW_NUMBER() OVER (ORDER BY attempt_ts) as rn
-            FROM engage360.outreach_attempts oa
+            FROM ioe.outreach_attempts oa
             WHERE oa.enrollment_id = e.enrollment_id
         ) ranked
         WHERE rn = 5
@@ -810,15 +810,15 @@ SET
         FROM (
             SELECT attempt_ts,
                 ROW_NUMBER() OVER (ORDER BY attempt_ts) as rn
-            FROM engage360.outreach_attempts oa
+            FROM ioe.outreach_attempts oa
             WHERE oa.enrollment_id = e.enrollment_id
         ) ranked
         WHERE rn = 5
     ))
-FROM engage360.member_campaign_enrollments_enhanced e
-WHERE e.campaign_id IN (SELECT campaign_id FROM engage360.campaigns_enhanced WHERE name LIKE '%Device Activation%')
+FROM ioe.member_campaign_enrollments_enhanced e
+WHERE e.campaign_id IN (SELECT campaign_id FROM ioe.campaigns_enhanced WHERE name LIKE '%Device Activation%')
   AND e.call_5_timestamp IS NULL
-  AND (SELECT COUNT(*) FROM engage360.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) >= 5;
+  AND (SELECT COUNT(*) FROM ioe.outreach_attempts oa WHERE oa.enrollment_id = e.enrollment_id) >= 5;
 
 -- Fix 2: ⚠️ DEPRECATED - Business day filtering is now in PYTHON (eligibility_service.py:666-730)
 -- The SQL query NO LONGER filters by business days.
@@ -907,9 +907,9 @@ SELECT
     vendor_batch_id,
     created_at,
     DATEDIFF(MINUTE, created_at, SYSDATETIMEOFFSET()) as minutes_pending
-FROM engage360.outreach_batches
+FROM ioe.outreach_batches
 WHERE batch_status = 'Pending'
-  AND campaign_id IN (SELECT campaign_id FROM engage360.campaigns_enhanced WHERE name LIKE '%Device Activation%')
+  AND campaign_id IN (SELECT campaign_id FROM ioe.campaigns_enhanced WHERE name LIKE '%Device Activation%')
 ORDER BY created_at DESC;
 
 -- If minutes_pending > 10: Submission likely failed
@@ -950,7 +950,7 @@ def submit_to_bland_ai(batch_request):
 
 ```sql
 -- Fix 5: Manually mark failed batches as Failed (cleanup)
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET batch_status = 'Failed',
     updated_at = SYSDATETIMEOFFSET()
 WHERE batch_status = 'Pending'
@@ -993,7 +993,7 @@ SELECT
     vendor_batch_id,
     batch_size,
     created_at
-FROM engage360.outreach_batches
+FROM ioe.outreach_batches
 WHERE batch_status = 'Pending'
   AND vendor_batch_id IS NULL
   AND created_at > DATEADD(hour, -2, SYSDATETIMEOFFSET())
@@ -1003,10 +1003,10 @@ ORDER BY created_at DESC;
 SELECT
     COUNT(*) as attempt_count,
     batch_id
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE batch_id IN (
     SELECT batch_id
-    FROM engage360.outreach_batches
+    FROM ioe.outreach_batches
     WHERE batch_status = 'Pending'
       AND vendor_batch_id IS NULL
 )
@@ -1036,7 +1036,7 @@ except Exception as e:
 
 ```sql
 -- Fix 2: Manually set vendor_batch_id (if known from Bland AI dashboard)
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET
     vendor_batch_id = 'bland_batch_abc123',  -- From Bland AI dashboard
     batch_status = 'Submitted',
@@ -1045,7 +1045,7 @@ WHERE batch_id = '<batch-id-here>';
 
 -- Fix 3: Cleanup orphaned batches (if vendor_batch_id unknown)
 -- Mark as Failed to allow re-processing
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET batch_status = 'Failed',
     updated_at = SYSDATETIMEOFFSET()
 WHERE batch_status = 'Pending'
@@ -1053,10 +1053,10 @@ WHERE batch_status = 'Pending'
   AND created_at < DATEADD(hour, -2, SYSDATETIMEOFFSET());
 
 -- Delete orphaned attempts (allow re-creation)
-DELETE FROM engage360.outreach_attempts
+DELETE FROM ioe.outreach_attempts
 WHERE batch_id IN (
     SELECT batch_id
-    FROM engage360.outreach_batches
+    FROM ioe.outreach_batches
     WHERE batch_status = 'Failed'
       AND vendor_batch_id IS NULL
 );
@@ -1109,7 +1109,7 @@ az monitor app-insights query \
 ```sql
 -- Step 4: Check attempts stuck in Pending
 SELECT COUNT(*) as pending_count
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE disposition = 'Pending'
   AND attempt_ts < DATEADD(hour, -1, SYSDATETIMEOFFSET());
 
@@ -1185,7 +1185,7 @@ az monitor app-insights query \
 ```sql
 -- Step 2: Check if attempt_id exists in database
 SELECT *
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE attempt_id = '<attempt-id-from-webhook-metadata>';
 
 -- If no rows: Metadata incorrect or attempt not created
@@ -1197,14 +1197,14 @@ SELECT TOP 10
     disposition,
     answered_by,
     created_at
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 ORDER BY created_at DESC;
 
 -- If call_id exists: Webhook was logged but database update failed
 
 -- Step 4: Check for disposition mapping issues
 SELECT DISTINCT disposition
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 WHERE created_at > DATEADD(hour, -24, SYSDATETIMEOFFSET());
 
 -- Check if all dispositions are known (INTERESTED, NOT_INTERESTED, etc.)
@@ -1249,14 +1249,14 @@ def map_disposition(bland_disposition: str) -> str:
 ```sql
 -- Fix 3: Manually update attempts if metadata correct
 -- Get attempt_id from webhook payload metadata
-UPDATE engage360.outreach_attempts
+UPDATE ioe.outreach_attempts
 SET
     disposition = 'Completed',  -- From webhook
     updated_at = SYSDATETIMEOFFSET()
 WHERE attempt_id = '<attempt-id-from-webhook>';
 
 -- Also update enrollment status
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET
     current_status = 'COMPLETED',
     updated_at = SYSDATETIMEOFFSET()
@@ -1300,13 +1300,13 @@ az keyvault secret show \
 
 # Verify:
 # - Server: sql-ioe-prod.database.windows.net
-# - Database: engage360
+# - Database: ioe
 # - User ID: correct username
 # - Password: correct (test by connecting via SSMS)
 
 # Step 3: Check Azure SQL database status
 az sql db show \
-  --name engage360 \
+  --name ioe \
   --server sql-ioe-prod \
   --resource-group rg-ioe-prod \
   --query "{Name:name, Status:status, State:state}" -o table
@@ -1343,7 +1343,7 @@ az sql server firewall-rule create \
 
 # Fix 3: Resume database if paused
 az sql db resume \
-  --name engage360 \
+  --name ioe \
   --server sql-ioe-prod \
   --resource-group rg-ioe-prod
 
@@ -1351,7 +1351,7 @@ az sql db resume \
 az keyvault secret set \
   --vault-name kv-ioe-prod \
   --name SqlConnectionStringIOE \
-  --value "Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=engage360;User ID=correct_user;Password=correct_password;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+  --value "Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=ioe;User ID=correct_user;Password=correct_password;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
 ```
 
 ---
@@ -1405,9 +1405,9 @@ SELECT TOP 10
         WHEN LEN(m.primary_phone) < 12 OR LEN(m.primary_phone) > 16 THEN 'Invalid length'
         ELSE 'Valid'
     END AS phone_validation
-FROM engage360.members m
-INNER JOIN engage360.member_campaign_enrollments_enhanced e ON m.member_id = e.member_id
-WHERE e.campaign_id IN (SELECT campaign_id FROM engage360.campaigns_enhanced WHERE name LIKE '%Device Activation%')
+FROM ioe.members m
+INNER JOIN ioe.member_campaign_enrollments_enhanced e ON m.member_id = e.member_id
+WHERE e.campaign_id IN (SELECT campaign_id FROM ioe.campaigns_enhanced WHERE name LIKE '%Device Activation%')
   AND e.current_status = 'ENROLLED';
 
 -- If phone_validation != 'Valid': Phone numbers invalid
@@ -1432,7 +1432,7 @@ WHERE e.campaign_id IN (SELECT campaign_id FROM engage360.campaigns_enhanced WHE
 
 ```sql
 -- Fix 4: Correct phone number format in database
-UPDATE engage360.members
+UPDATE ioe.members
 SET
     primary_phone = CONCAT('+1', REPLACE(REPLACE(REPLACE(primary_phone, '-', ''), '(', ''), ')', ''))
 WHERE primary_phone NOT LIKE '+%'
@@ -1440,11 +1440,11 @@ WHERE primary_phone NOT LIKE '+%'
 
 -- Verify correction
 SELECT TOP 10 primary_phone
-FROM engage360.members
+FROM ioe.members
 WHERE member_id IN (
     SELECT member_id
-    FROM engage360.member_campaign_enrollments_enhanced
-    WHERE campaign_id IN (SELECT campaign_id FROM engage360.campaigns_enhanced WHERE name LIKE '%Device Activation%')
+    FROM ioe.member_campaign_enrollments_enhanced
+    WHERE campaign_id IN (SELECT campaign_id FROM ioe.campaigns_enhanced WHERE name LIKE '%Device Activation%')
 );
 -- All should start with '+1'
 ```
@@ -1473,7 +1473,7 @@ WHERE member_id IN (
 # Step 1: Check file size
 az storage blob show \
   --account-name stioefstorage \
-  --container-name fs-device-activation \
+  --container-name fs-ops \
   --name landing/MedicalGuardian_DeviceActivation_20251224_Delta.csv \
   --auth-mode login \
   --query "properties.contentLength" -o tsv
@@ -1510,7 +1510,7 @@ for idx, row in df.iterrows():
 
 # Single INSERT with multiple VALUES
 bulk_insert_query = f"""
-INSERT INTO engage360_stg.stg_device_activation_delta (member_id, first_name, ...)
+INSERT INTO ioe_stg.stg_device_activation_delta (member_id, first_name, ...)
 VALUES {', '.join(values_list)};
 """
 db_service.execute_query(bulk_insert_query)
@@ -1524,7 +1524,7 @@ engine = create_engine(f"mssql+pymssql://{connection_string}")
 # Bulk insert using pandas
 df.to_sql(
     name='stg_device_activation_delta',
-    schema='engage360_stg',
+    schema='ioe_stg',
     con=engine,
     if_exists='append',
     index=False,
@@ -1567,7 +1567,7 @@ az functionapp config set \
 SELECT
     member_id,
     COUNT(*) as duplicate_count
-FROM engage360.members
+FROM ioe.members
 GROUP BY member_id
 HAVING COUNT(*) > 1
 ORDER BY COUNT(*) DESC;
@@ -1578,7 +1578,7 @@ ORDER BY COUNT(*) DESC;
 SELECT
     member_id_clean,
     COUNT(*) as row_count
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE file_id = '<most-recent-file-id>'
   AND validation_status = 'Valid'
 GROUP BY member_id_clean
@@ -1594,10 +1594,10 @@ SELECT
     primary_phone,
     email,
     created_at
-FROM engage360.members
+FROM ioe.members
 WHERE member_id IN (
     SELECT member_id
-    FROM engage360.members
+    FROM ioe.members
     GROUP BY member_id
     HAVING COUNT(*) > 1
 )
@@ -1614,9 +1614,9 @@ WITH Duplicates AS (
     SELECT
         member_id,
         ROW_NUMBER() OVER (PARTITION BY member_id ORDER BY created_at DESC) as rn
-    FROM engage360.members
+    FROM ioe.members
 )
-DELETE FROM engage360.members
+DELETE FROM ioe.members
 WHERE EXISTS (
     SELECT 1
     FROM Duplicates d
@@ -1628,11 +1628,11 @@ WHERE EXISTS (
 WITH Deduplicated AS (
     SELECT *,
         ROW_NUMBER() OVER (PARTITION BY member_id_clean ORDER BY created_at DESC) as rn
-    FROM engage360_stg.stg_device_activation_delta
+    FROM ioe_stg.stg_device_activation_delta
     WHERE file_id = %s
       AND validation_status = 'Valid'
 )
-MERGE engage360.members AS target
+MERGE ioe.members AS target
 USING (SELECT * FROM Deduplicated WHERE rn = 1) AS source
 ON target.member_id = source.member_id_clean
 WHEN MATCHED THEN UPDATE ...

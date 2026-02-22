@@ -23,8 +23,8 @@ This implementation adds complete support for an optional `transfer_phone_number
 **File:** `database/add_transfer_phone_number_column.sql`
 
 Adds `transfer_phone_number VARCHAR(20) NULL` column to:
-- `engage360_stg.stg_device_activation_delta` (staging table)
-- `engage360.member_campaign_enrollments_enhanced` (core table)
+- `ioe_stg.stg_device_activation_delta` (staging table)
+- `ioe.member_campaign_enrollments_enhanced` (core table)
 
 **⚠️ CRITICAL:** This migration MUST be run BEFORE code deployment.
 
@@ -111,7 +111,7 @@ SELECT
     %s AS campaign_end_date,
     %s AS call_5_timestamp,
     stg.transfer_phone_number  -- NEW
-FROM engage360_stg.stg_device_activation_delta stg
+FROM ioe_stg.stg_device_activation_delta stg
 ```
 
 #### B. ENROLL MERGE - UPDATE SET (line ~2396)
@@ -153,9 +153,9 @@ SET e.activation_start_date = %s,
     e.campaign_end_date = %s,
     e.transfer_phone_number = stg.transfer_phone_number,  -- NEW
     e.enrollment_ts = SYSDATETIMEOFFSET()
-FROM engage360.member_campaign_enrollments_enhanced e
-JOIN engage360.members m ON e.member_id = m.member_id
-JOIN engage360_stg.stg_device_activation_delta stg
+FROM ioe.member_campaign_enrollments_enhanced e
+JOIN ioe.members m ON e.member_id = m.member_id
+JOIN ioe_stg.stg_device_activation_delta stg
     ON m.org_id = stg.org_id
     AND m.salesforce_account_number = stg.salesforce_account_number
 WHERE stg.file_batch_id = %s
@@ -215,10 +215,10 @@ request_data = {
    - Missing: NULL
    ↓
 4. Staging Table (transfer_phone_clean)
-   - engage360_stg.stg_device_activation_delta
+   - ioe_stg.stg_device_activation_delta
    ↓
 5. Enrollments MERGE (src.transfer_phone_number)
-   - engage360.member_campaign_enrollments_enhanced
+   - ioe.member_campaign_enrollments_enhanced
    ↓
 6. Eligibility Query (e.transfer_phone_number)
    - SQL SELECT for eligible members
@@ -252,12 +252,12 @@ request_data = {
 ```sql
 -- Check staging table
 SELECT enrollment_id, transfer_phone_number
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE file_batch_id = '<test_batch_id>';
 
 -- Check enrollments table
 SELECT enrollment_id, transfer_phone_number, primary_phone
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_id IN ('<test_enrollment_ids>');
 
 -- Verify E.164 format compliance
@@ -269,7 +269,7 @@ SELECT
         WHEN transfer_phone_number IS NULL THEN 'NULL'
         ELSE 'Invalid Format'
     END as format_check
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_ts > DATEADD(day, -7, GETDATE());
 ```
 
@@ -279,8 +279,8 @@ WHERE enrollment_ts > DATEADD(day, -7, GETDATE());
 
 ### Phase 1: Database Migration (MUST BE FIRST)
 1. Backup tables:
-   - `engage360_stg.stg_device_activation_delta`
-   - `engage360.member_campaign_enrollments_enhanced`
+   - `ioe_stg.stg_device_activation_delta`
+   - `ioe.member_campaign_enrollments_enhanced`
 
 2. Run migration script:
    ```bash
@@ -292,12 +292,12 @@ WHERE enrollment_ts > DATEADD(day, -7, GETDATE());
    ```sql
    -- Should return 1 row each
    SELECT * FROM INFORMATION_SCHEMA.COLUMNS
-   WHERE TABLE_SCHEMA = 'engage360_stg'
+   WHERE TABLE_SCHEMA = 'ioe_stg'
      AND TABLE_NAME = 'stg_device_activation_delta'
      AND COLUMN_NAME = 'transfer_phone_number';
 
    SELECT * FROM INFORMATION_SCHEMA.COLUMNS
-   WHERE TABLE_SCHEMA = 'engage360'
+   WHERE TABLE_SCHEMA = 'ioe'
      AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
      AND COLUMN_NAME = 'transfer_phone_number';
    ```
@@ -305,18 +305,18 @@ WHERE enrollment_ts > DATEADD(day, -7, GETDATE());
 4. Test INSERT with sample data:
    ```sql
    -- Test staging INSERT
-   INSERT INTO engage360_stg.stg_device_activation_delta (
+   INSERT INTO ioe_stg.stg_device_activation_delta (
        file_batch_id, transfer_phone_number, processing_status
    ) VALUES ('test-batch', '+15551234567', 'TEST');
 
    -- Test enrollments INSERT
-   INSERT INTO engage360.member_campaign_enrollments_enhanced (
+   INSERT INTO ioe.member_campaign_enrollments_enhanced (
        enrollment_id, member_id, campaign_id, transfer_phone_number
    ) VALUES (NEWID(), '<test_member_id>', '<test_campaign_id>', '+15551234567');
 
    -- Clean up test data
-   DELETE FROM engage360_stg.stg_device_activation_delta WHERE file_batch_id = 'test-batch';
-   DELETE FROM engage360.member_campaign_enrollments_enhanced WHERE transfer_phone_number = '+15551234567';
+   DELETE FROM ioe_stg.stg_device_activation_delta WHERE file_batch_id = 'test-batch';
+   DELETE FROM ioe.member_campaign_enrollments_enhanced WHERE transfer_phone_number = '+15551234567';
    ```
 
 5. **BLOCK code deployment until verification complete**
@@ -349,10 +349,10 @@ WHERE enrollment_ts > DATEADD(day, -7, GETDATE());
 ### Option 2: Full Rollback (Remove Everything)
 ```sql
 -- Remove columns
-ALTER TABLE engage360_stg.stg_device_activation_delta
+ALTER TABLE ioe_stg.stg_device_activation_delta
 DROP COLUMN transfer_phone_number;
 
-ALTER TABLE engage360.member_campaign_enrollments_enhanced
+ALTER TABLE ioe.member_campaign_enrollments_enhanced
 DROP COLUMN transfer_phone_number;
 
 -- Restore from backup if needed

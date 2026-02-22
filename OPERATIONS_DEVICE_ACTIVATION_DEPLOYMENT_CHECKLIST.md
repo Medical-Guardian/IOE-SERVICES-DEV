@@ -29,6 +29,13 @@
   - Changed from 30 to 15 minute intervals (line 43)
   - Updated documentation for Operations support
 
+- ✅ **Campaign Closure Scheduler** - `functions/device_activation_campaign_closure.py`
+  - Timer trigger: Every hour at :00 minutes (`0 0 * * * *`)
+  - HTTP endpoint: `/api/device_activation_campaign_closure`
+  - Auto-unenrolls members when 90-day campaign window expires
+  - Distributed locking prevents concurrent executions
+  - BusinessCaseID: BC-DA-007
+
 - ✅ **Eligibility Service** - `af_code/device_activation_scheduler/services/eligibility_service.py` (lines 93-95)
   - Added `campaign_type = 'Operations'` to SQL WHERE clause
   - Supports both Device Activation and Operations campaigns
@@ -53,7 +60,7 @@
 
 - ✅ **member_identifiers Table** - Already exists (no changes needed)
 
-- ✅ **Staging Table** - `engage360_stg.stg_device_activation_delta` (already exists)
+- ✅ **Staging Table** - `ioe_stg.stg_device_activation_delta` (already exists)
   - Includes `monitoring_system_id` column
   - Includes `campaign_parameters` column
   - Ready for Operations campaigns
@@ -89,7 +96,7 @@
 ```sql
 SELECT COLUMN_NAME
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'members'
   AND COLUMN_NAME = 'salesforce_account_id';
 ```
@@ -122,7 +129,10 @@ func azure functionapp publish IOE-function --python
 
 **Verify deployment in Azure Portal:**
 1. Navigate to Function App: `IOE-function`
-2. Go to Functions → Check for `operations_device_activation_file_processor`
+2. Go to Functions → Check for:
+   - `operations_device_activation_file_processor` (Blob trigger)
+   - `device_activation_scheduler` (Timer trigger: 15 min)
+   - `device_activation_campaign_closure` (Timer trigger: hourly)
 3. Go to Monitor → Check for successful startup logs
 
 ---
@@ -142,6 +152,37 @@ traces
 - `⏰ [TIMER] Device Activation Scheduler TRIGGERED`
 - `🔍 [ELIGIBILITY-SERVICE] Starting member eligibility query...`
 - `✅ [TIMER] Device Activation Scheduler COMPLETED`
+
+**Verify campaign closure scheduler:**
+```kusto
+traces
+| where message contains "DA-CLOSURE"
+| where timestamp > ago(3h)
+| project timestamp, message, severityLevel
+| order by timestamp desc
+```
+
+**Expected logs (every hour at :00 minutes):**
+- `⏰ [DA-CLOSURE] Device Activation Campaign Closure Scheduler TRIGGERED`
+- `✅ [DA-CLOSURE] Distributed lock acquired successfully`
+- `✅ [DA-CLOSURE] Found X enrollments to close`
+- `✅ [DA-CLOSURE] Successfully unenrolled X members`
+
+**Test HTTP endpoint:**
+```bash
+curl -X GET "https://ioe-function.azurewebsites.net/api/device_activation_campaign_closure?code=<function-key>"
+
+# Expected response:
+# {
+#   "success": true,
+#   "request_id": "da-closure-http-...",
+#   "result": {
+#     "enrollments_closed": X,
+#     "campaigns_affected": ["Device Activation - Medicaid", "Device Activation - DTC/MA"],
+#     "members_unenrolled": X
+#   }
+# }
+```
 
 ---
 
@@ -170,10 +211,10 @@ az storage blob upload \
 - Blob trigger fires
 - File processed successfully
 - File moved to `fs-ops/processed/`
-- Data in `engage360_stg.stg_device_activation_delta`
-- Members upserted in `engage360.members`
-- Devices upserted in `engage360.member_devices`
-- Enrollments created in `engage360.member_campaign_enrollments_enhanced`
+- Data in `ioe_stg.stg_device_activation_delta`
+- Members upserted in `ioe.members`
+- Devices upserted in `ioe.member_devices`
+- Enrollments created in `ioe.member_campaign_enrollments_enhanced`
 
 ---
 
@@ -198,10 +239,10 @@ traces
 **Verify staging table:**
 ```sql
 SELECT TOP 10 *
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE file_batch_id IN (
     SELECT TOP 1 file_batch_id
-    FROM engage360_stg.stg_device_activation_delta
+    FROM ioe_stg.stg_device_activation_delta
     ORDER BY created_ts DESC
 )
 ORDER BY created_ts DESC;
@@ -226,9 +267,9 @@ SELECT
     m.primary_phone,
     e.activation_start_date,
     e.campaign_end_date
-FROM engage360.member_campaign_enrollments_enhanced e
-JOIN engage360.members m ON e.member_id = m.member_id
-JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+JOIN ioe.members m ON e.member_id = m.member_id
+JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE
     (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
     AND c.status = 'Active'
@@ -276,8 +317,8 @@ SELECT TOP 5
     b.total_calls_intended,
     b.vendor_batch_id,
     b.created_ts
-FROM engage360.outreach_batches b
-JOIN engage360.campaigns_enhanced c ON b.campaign_id = c.campaign_id
+FROM ioe.outreach_batches b
+JOIN ioe.campaigns_enhanced c ON b.campaign_id = c.campaign_id
 WHERE b.campaign_id IN (
     '0F69659B-491B-40E2-88C3-ABC7D87385B2',
     'BA865458-60F9-4EBB-9FB5-D195B532CF5A'
@@ -309,10 +350,10 @@ SELECT TOP 5
     bcl.call_length,
     bcl.price,
     bcl.created_ts
-FROM engage360.bland_call_logs bcl
+FROM ioe.bland_call_logs bcl
 WHERE bcl.batch_id IN (
     SELECT batch_id
-    FROM engage360.outreach_batches
+    FROM ioe.outreach_batches
     WHERE campaign_id IN (
         '0F69659B-491B-40E2-88C3-ABC7D87385B2',
         'BA865458-60F9-4EBB-9FB5-D195B532CF5A'
@@ -411,8 +452,8 @@ SELECT
     COUNT(*) AS batch_count,
     SUM(b.total_calls_intended) AS total_calls,
     AVG(b.total_calls_intended) AS avg_calls_per_batch
-FROM engage360.outreach_batches b
-JOIN engage360.campaigns_enhanced c ON b.campaign_id = c.campaign_id
+FROM ioe.outreach_batches b
+JOIN ioe.campaigns_enhanced c ON b.campaign_id = c.campaign_id
 WHERE b.campaign_id IN (
     '0F69659B-491B-40E2-88C3-ABC7D87385B2',
     'BA865458-60F9-4EBB-9FB5-D195B532CF5A'

@@ -323,7 +323,7 @@ pytest tests/test_dtc_filename_validation.py -v
 
 **Verification Steps:**
 1. Check Azure Function logs for expected warnings/errors
-2. Query database: `SELECT TOP 10 source_filename, current_status FROM engage360_stg.file_processing_log ORDER BY created_ts DESC`
+2. Query database: `SELECT TOP 10 source_filename, current_status FROM ioe_stg.file_processing_log ORDER BY created_ts DESC`
 3. Verify files moved to `processed/` or `error/` folders
 
 ---
@@ -468,7 +468,7 @@ traces
 **No schema changes required.**
 
 The `source_filename` column already supports both patterns:
-- Table: `engage360_stg.file_processing_log`
+- Table: `ioe_stg.file_processing_log`
 - Column: `source_filename VARCHAR(500)`
 - Storage: Filename stored as-is (no parsing)
 

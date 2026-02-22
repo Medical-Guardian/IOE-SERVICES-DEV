@@ -4,6 +4,7 @@ from ..models.qualified_campaign import QualifiedCampaign
 from ..models.eligible_member import EligibleMember
 from ..models.batch_request import BatchResult
 from ...bland_ai_webhook.services.database_service import DatabaseService
+from af_code.shared.schema_config import IOE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,10 @@ class StatusTracker:
         logger.info("🔧 [STATUS-TRACKER] Service initialized")
 
     def log_batch_submission(
-        self, campaign: QualifiedCampaign, members: List[EligibleMember], batch_result: BatchResult
+        self,
+        campaign: QualifiedCampaign,
+        members: List[EligibleMember],
+        batch_result: BatchResult,
     ) -> None:
         """
         Log successful batch submission using existing outreach tables
@@ -50,8 +54,8 @@ class StatusTracker:
         """
         logger.info("📝 [STATUS-TRACKER] Creating batch tracking record...")
 
-        query = """
-            INSERT INTO engage360.outreach_batches (
+        query = f"""
+            INSERT INTO {IOE_SCHEMA}.outreach_batches (
                 batch_id,
                 campaign_id, 
                 vendor_batch_id, 
@@ -59,7 +63,7 @@ class StatusTracker:
                 total_calls_intended,
                 submitted_ts
             ) OUTPUT INSERTED.batch_id
-            VALUES (NEWID(), %s, %s, %s, %s, SYSDATETIMEOFFSET())
+            VALUES (NEWID(), ?, ?, ?, ?, SYSDATETIMEOFFSET())
         """
 
         params = (
@@ -96,7 +100,7 @@ class StatusTracker:
         for member in members:
             # Only create records for members who were actually submitted (have valid phone numbers)
             if member.member_id in (batch_result.submitted_members or []):
-                values_list.append("(NEWID(), %s, %s, %s, %s, SYSUTCDATETIME(), %s, %s)")
+                values_list.append("(NEWID(), ?, ?, ?, ?, SYSUTCDATETIME(), ?, ?)")
                 params.extend(
                     [
                         member.enrollment_id,  # Use enrollment_id FK (existing table structure)
@@ -113,7 +117,7 @@ class StatusTracker:
             return
 
         query = f"""
-            INSERT INTO engage360.outreach_attempts (
+            INSERT INTO {IOE_SCHEMA}.outreach_attempts (
                 attempt_id, 
                 enrollment_id, 
                 batch_id, 
@@ -139,12 +143,12 @@ class StatusTracker:
         """
         logger.info(f"🔄 [STATUS-TRACKER] Updating batch status: {vendor_batch_id} -> {new_status}")
 
-        query = """
-            UPDATE engage360.outreach_batches
-            SET batch_status = %s,
-                status_reason = %s,
+        query = f"""
+            UPDATE {IOE_SCHEMA}.outreach_batches
+            SET batch_status = ?,
+                status_reason = ?,
                 updated_ts = SYSDATETIMEOFFSET()
-            WHERE vendor_batch_id = %s
+            WHERE vendor_batch_id = ?
         """
 
         params = (new_status, error_message, vendor_batch_id)
@@ -161,15 +165,15 @@ class StatusTracker:
         """
         logger.info(f"📊 [STATUS-TRACKER] Getting batch statistics for campaign: {campaign_id}")
 
-        query = """
+        query = f"""
             SELECT 
                 COUNT(*) as total_batches,
                 SUM(total_calls_intended) as total_members_submitted,
                 COUNT(CASE WHEN batch_status = 'Submitted' THEN 1 END) as submitted_batches,
                 COUNT(CASE WHEN batch_status = 'Failed' THEN 1 END) as failed_batches,
                 MAX(submitted_ts) as last_submission_ts
-            FROM engage360.outreach_batches
-            WHERE campaign_id = %s
+            FROM {IOE_SCHEMA}.outreach_batches
+            WHERE campaign_id = ?
               AND CAST(submitted_ts AS DATE) = CAST(SYSDATETIMEOFFSET() AS DATE)
         """
 

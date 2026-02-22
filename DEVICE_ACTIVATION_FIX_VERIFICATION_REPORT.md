@@ -313,11 +313,11 @@ WITH CallAttempts AS (
         oa.disposition,
         ROW_NUMBER() OVER (PARTITION BY oa.enrollment_id ORDER BY oa.attempt_ts) as call_number,
         LAG(oa.attempt_ts) OVER (PARTITION BY oa.enrollment_id ORDER BY oa.attempt_ts) as prev_attempt_ts
-    FROM engage360.outreach_attempts oa
-    INNER JOIN engage360.member_campaign_enrollments_enhanced e ON oa.enrollment_id = e.enrollment_id
-    INNER JOIN engage360.members m ON e.member_id = m.member_id
-    INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
-    INNER JOIN engage360.campaigns_enhanced c ON ob.campaign_id = c.campaign_id
+    FROM ioe.outreach_attempts oa
+    INNER JOIN ioe.member_campaign_enrollments_enhanced e ON oa.enrollment_id = e.enrollment_id
+    INNER JOIN ioe.members m ON e.member_id = m.member_id
+    INNER JOIN ioe.outreach_batches ob ON oa.batch_id = ob.batch_id
+    INNER JOIN ioe.campaigns_enhanced c ON ob.campaign_id = c.campaign_id
     WHERE c.campaign_type = 'Device Activation'
       AND oa.attempt_ts >= '2026-01-21'  -- After fix deployment
 )

@@ -17,7 +17,7 @@ SELECT
     IS_NULLABLE,
     COLUMN_DEFAULT
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360_stg'
+WHERE TABLE_SCHEMA = 'ioe_stg'
   AND TABLE_NAME = 'stg_device_activation_delta'
   AND COLUMN_NAME = 'transfer_phone_number'
 
@@ -34,7 +34,7 @@ SELECT
     IS_NULLABLE,
     COLUMN_DEFAULT
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
   AND COLUMN_NAME = 'transfer_phone_number';
 
@@ -42,8 +42,8 @@ WHERE TABLE_SCHEMA = 'engage360'
 -- Expected Results:
 -- ============================================================================
 -- table_location         TABLE_SCHEMA    TABLE_NAME                              COLUMN_NAME             DATA_TYPE   MAX_LENGTH  IS_NULLABLE  DEFAULT
--- Staging Table          engage360_stg   stg_device_activation_delta             transfer_phone_number   varchar     20          YES          NULL
--- Enrollments Table      engage360       member_campaign_enrollments_enhanced    transfer_phone_number   varchar     20          YES          NULL
+-- Staging Table          ioe_stg   stg_device_activation_delta             transfer_phone_number   varchar     20          YES          NULL
+-- Enrollments Table      ioe       member_campaign_enrollments_enhanced    transfer_phone_number   varchar     20          YES          NULL
 -- ============================================================================
 
 -- ============================================================================

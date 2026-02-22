@@ -3,12 +3,12 @@
 -- ============================================================================
 -- Purpose: Optimize device ownership validation queries for cross-member
 --          device conflict detection
--- Table: engage360.member_devices
+-- Table: ioe.member_devices
 -- Created: 2026-02-13
 -- BusinessCaseID: BC-DEVICE-OWNERSHIP-VALIDATION
 -- ============================================================================
 
-USE [engage360];
+USE [ioe];
 GO
 
 -- ============================================================================
@@ -21,7 +21,7 @@ PRINT '🔨 Creating non-clustered index for device ownership validation...';
 GO
 
 CREATE NONCLUSTERED INDEX [IX_member_devices_device_member_lookup]
-ON [engage360].[member_devices] ([device_id] ASC, [member_id] ASC)
+ON [ioe].[member_devices] ([device_id] ASC, [member_id] ASC)
 INCLUDE ([device_phone_number], [service_status], [created_ts])
 WITH (
     ONLINE = ON,              -- Allow concurrent access during creation
@@ -57,7 +57,7 @@ JOIN sys.data_spaces ds
 JOIN sys.dm_db_partition_stats ps
     ON i.object_id = ps.object_id
     AND i.index_id = ps.index_id
-WHERE i.object_id = OBJECT_ID('engage360.member_devices')
+WHERE i.object_id = OBJECT_ID('ioe.member_devices')
   AND i.name = 'IX_member_devices_device_member_lookup'
 GROUP BY i.name, i.type_desc, ds.name, p.rows;
 GO
@@ -80,7 +80,7 @@ DECLARE @test_device_ids TABLE (device_id VARCHAR(100));
 
 -- Insert some sample device IDs (replace with actual test data)
 INSERT INTO @test_device_ids (device_id)
-SELECT TOP 10 device_id FROM engage360.member_devices;
+SELECT TOP 10 device_id FROM ioe.member_devices;
 
 -- Query: Check device ownership (should use new index)
 SELECT
@@ -89,8 +89,8 @@ SELECT
     m.salesforce_account_number,
     md.service_status,
     md.created_ts
-FROM engage360.member_devices md
-JOIN engage360.members m ON md.member_id = m.member_id
+FROM ioe.member_devices md
+JOIN ioe.members m ON md.member_id = m.member_id
 WHERE md.device_id IN (SELECT device_id FROM @test_device_ids);
 
 -- Disable execution statistics
@@ -111,7 +111,7 @@ PRINT '⚠️ Dropping index IX_member_devices_device_member_lookup...';
 GO
 
 DROP INDEX [IX_member_devices_device_member_lookup]
-ON [engage360].[member_devices];
+ON [ioe].[member_devices];
 GO
 
 PRINT '✅ Index dropped successfully';

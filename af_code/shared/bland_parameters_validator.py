@@ -136,7 +136,10 @@ class BlandParametersValidator:
     }
 
     def validate(
-        self, bland_params: Optional[Dict[str, Any]], campaign_name: str, strict: bool = True
+        self,
+        bland_params: Optional[Dict[str, Any]],
+        campaign_name: str,
+        strict: bool = True,
     ) -> ValidationResult:
         """
         Validate Bland AI parameters from bland_parameters_global JSON

@@ -18,7 +18,7 @@
 -- 2. Index for efficient eligibility queries
 -- =====================================================
 
-USE engage360;
+USE ioe;
 GO
 
 PRINT '========================================';
@@ -34,12 +34,12 @@ PRINT 'Step 1: Adding call_5_timestamp column...';
 IF NOT EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360'
+    WHERE TABLE_SCHEMA = 'ioe'
       AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
       AND COLUMN_NAME = 'call_5_timestamp'
 )
 BEGIN
-    ALTER TABLE engage360.member_campaign_enrollments_enhanced
+    ALTER TABLE ioe.member_campaign_enrollments_enhanced
     ADD call_5_timestamp DATETIMEOFFSET(7) NULL;
 
     PRINT '✓ Column call_5_timestamp added successfully';
@@ -60,11 +60,11 @@ IF NOT EXISTS (
     SELECT 1
     FROM sys.indexes
     WHERE name = 'IX_enrollments_call5_device_activation'
-      AND object_id = OBJECT_ID('engage360.member_campaign_enrollments_enhanced')
+      AND object_id = OBJECT_ID('ioe.member_campaign_enrollments_enhanced')
 )
 BEGIN
     CREATE NONCLUSTERED INDEX IX_enrollments_call5_device_activation
-    ON engage360.member_campaign_enrollments_enhanced (call_5_timestamp ASC)
+    ON ioe.member_campaign_enrollments_enhanced (call_5_timestamp ASC)
     INCLUDE (campaign_end_date, device_activated, current_status)
     WHERE call_5_timestamp IS NOT NULL;
 
@@ -85,12 +85,12 @@ PRINT 'Step 3: Adding column description...';
 IF NOT EXISTS (
     SELECT 1
     FROM sys.extended_properties
-    WHERE major_id = OBJECT_ID('engage360.member_campaign_enrollments_enhanced')
+    WHERE major_id = OBJECT_ID('ioe.member_campaign_enrollments_enhanced')
       AND name = N'MS_Description'
       AND minor_id = (
           SELECT column_id
           FROM sys.columns
-          WHERE object_id = OBJECT_ID('engage360.member_campaign_enrollments_enhanced')
+          WHERE object_id = OBJECT_ID('ioe.member_campaign_enrollments_enhanced')
             AND name = 'call_5_timestamp'
       )
 )
@@ -98,7 +98,7 @@ BEGIN
     EXEC sp_addextendedproperty
         @name = N'MS_Description',
         @value = N'Timestamp when Call 5 was made. Used to calculate 90-day window for Calls 5+ (call_5_timestamp + 90 days). NULL for enrollments that haven''t reached Call 5 yet. Set automatically by batch_orchestrator when 5th outreach attempt is created.',
-        @level0type = N'SCHEMA', @level0name = N'engage360',
+        @level0type = N'SCHEMA', @level0name = N'ioe',
         @level1type = N'TABLE', @level1name = N'member_campaign_enrollments_enhanced',
         @level2type = N'COLUMN', @level2name = N'call_5_timestamp';
 
@@ -124,7 +124,7 @@ SELECT
     IS_NULLABLE,
     COLUMN_DEFAULT
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME = 'member_campaign_enrollments_enhanced'
   AND COLUMN_NAME = 'call_5_timestamp';
 
@@ -137,7 +137,7 @@ SELECT
     i.is_unique,
     i.filter_definition
 FROM sys.indexes i
-WHERE i.object_id = OBJECT_ID('engage360.member_campaign_enrollments_enhanced')
+WHERE i.object_id = OBJECT_ID('ioe.member_campaign_enrollments_enhanced')
   AND i.name = 'IX_enrollments_call5_device_activation';
 
 PRINT '';
@@ -147,11 +147,11 @@ DECLARE @null_count INT;
 DECLARE @total_count INT;
 
 SELECT @null_count = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE call_5_timestamp IS NULL;
 
 SELECT @total_count = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced;
+FROM ioe.member_campaign_enrollments_enhanced;
 
 PRINT 'Enrollment counts:';
 PRINT '  Total enrollments: ' + CAST(@total_count AS VARCHAR(10));

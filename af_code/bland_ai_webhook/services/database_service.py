@@ -1,5 +1,5 @@
 import logging
-import pymssql
+import pyodbc
 import os
 from typing import List, Dict, Optional, Any, Tuple
 
@@ -7,89 +7,79 @@ from .config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
 
-# Verify critical environment variables
-KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL")
-DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
 
-logger.info(f"🔍 [DB-SERVICE] Environment check:")
-logger.info(f"   KEY_VAULT_URL: {'✅ Set' if KEY_VAULT_URL else '❌ Missing'}")
-logger.info(f"   DB_SECRET_NAME: {'✅ Set' if DB_SECRET_NAME else '❌ Missing'}")
+def _get_pyodbc_connection() -> pyodbc.Connection:
+    """Create pyodbc connection using Managed Identity via ActiveDirectoryMsi."""
+    conn_str = os.environ.get("SqlConnectionString", "")
 
-if not KEY_VAULT_URL:
-    logger.error("❌ [DB-SERVICE] CRITICAL: KEY_VAULT_URL environment variable is not set!")
-    logger.error("   This will cause database connections to fail.")
+    params = {}
+    for part in conn_str.split(";"):
+        if "=" in part:
+            key, value = part.split("=", 1)
+            params[key.strip()] = value.strip()
+
+    server = params.get("Server", "").replace("tcp:", "").split(",")[0]
+    database = params.get("Database", "") or params.get("Initial Catalog", "")
+
+    connection_string = (
+        f"Driver={{ODBC Driver 18 for SQL Server}};"
+        f"Server={server};"
+        f"Database={database};"
+        "Authentication=ActiveDirectoryMsi;"
+        "Encrypt=yes;"
+        "TrustServerCertificate=no;"
+        "Connection Timeout=30;"
+        "Login Timeout=30;"
+    )
+    return pyodbc.connect(connection_string)
+
+
+def _fetchall_as_dicts(cursor: pyodbc.Cursor) -> list[dict]:
+    """Convert pyodbc cursor results to a list of dicts (replaces cursor(as_dict=True))."""
+    if not cursor.description:
+        return []
+    cols = [col[0] for col in cursor.description]
+    return [dict(zip(cols, row)) for row in cursor.fetchall()]
 
 
 class DatabaseService:
     """
     Handles all database interactions, including single queries and atomic transactions.
     This is the sole authority for database connections in the application.
+    Uses pyodbc with Azure Managed Identity (ActiveDirectoryMsi) for authentication.
     """
 
     def __init__(self, config_manager: ConfigManager):
         """Initializes with the required ConfigManager dependency."""
         self.config_manager = config_manager
-        self._db_connection_params: Optional[Dict[str, Any]] = None
-        logger.info("🔧 [DB-SERVICE] Initialized. Depends on ConfigManager for connection details.")
-
-    def _get_connection_params(self) -> Dict[str, Any]:
-        """Gets and parses the connection string from ConfigManager, caching the result."""
-        if self._db_connection_params:
-            return self._db_connection_params
-        try:
-            connection_string = self.config_manager.get_db_connection_string()
-            self._db_connection_params = self._parse_to_pymssql_params(connection_string)
-            logger.info("✅ [DB-SERVICE] Database connection parameters parsed and cached.")
-            return self._db_connection_params
-        except Exception as e:
-            logger.error(f"💥 [DB-SERVICE] Failed to get or parse connection string: {str(e)}")
-            raise
-
-    def _parse_to_pymssql_params(self, conn_string: str) -> Dict[str, Any]:
-        """Parses a standard Azure SQL connection string into a pymssql-compatible dictionary."""
-        params = {}
-        for part in conn_string.split(";"):
-            if "=" not in part:
-                continue
-            key, value = part.split("=", 1)
-            key_map = {
-                "server": "server",
-                "database": "database",
-                "initial catalog": "database",
-                "user id": "user",
-                "password": "password",
-            }
-            std_key = key_map.get(key.strip().lower())
-            if std_key:
-                if std_key == "server" and "," in value:
-                    server_val, port_val = value.replace("tcp:", "").split(",")
-                    params["server"] = server_val
-                    params["port"] = port_val
-                else:
-                    params[std_key] = value.replace("tcp:", "")
-        return params
+        logger.info(
+            "🔧 [DB-SERVICE] Initialized. Uses pyodbc with Managed Identity for DB connections."
+        )
 
     def execute_query(
         self, query: str, params: tuple = None, fetch_results: bool = True
     ) -> Optional[List[Dict[str, Any]]]:
         """Executes a single, auto-committed SQL query."""
         logger.info(f"💾 [DB-SERVICE] Executing single query (Fetch={fetch_results}).")
+        conn = None
         try:
-            conn_params = self._get_connection_params()
-            with pymssql.connect(**conn_params, login_timeout=30) as conn:
-                with conn.cursor(as_dict=True) as cursor:
-                    cursor.execute(query, params)
-                    if fetch_results:
-                        return cursor.fetchall()
-                    else:
-                        conn.commit()
-                        return cursor.rowcount
-        except pymssql.Error as db_err:
-            logger.error(f"💥 [DB-SERVICE] pymssql error during single query: {db_err}")
+            conn = _get_pyodbc_connection()
+            conn.autocommit = True
+            with conn.cursor() as cursor:
+                cursor.execute(query, params)
+                if fetch_results:
+                    return _fetchall_as_dicts(cursor)
+                else:
+                    return cursor.rowcount
+        except pyodbc.Error as db_err:
+            logger.error(f"💥 [DB-SERVICE] pyodbc error during single query: {db_err}")
             raise
         except Exception as e:
             logger.error(f"💥 [DB-SERVICE] Unexpected error during single query: {e}")
             raise
+        finally:
+            if conn:
+                conn.close()
 
     def execute_transaction(self, queries: List[Tuple[str, tuple]]) -> int:
         """
@@ -106,9 +96,9 @@ class DatabaseService:
         total_rows_affected = 0
         conn = None
         try:
-            conn_params = self._get_connection_params()
-            conn = pymssql.connect(**conn_params, login_timeout=30)
-            with conn.cursor(as_dict=True) as cursor:
+            conn = _get_pyodbc_connection()
+            conn.autocommit = False
+            with conn.cursor() as cursor:
                 for query, params in queries:
                     cursor.execute(query, params)
                     total_rows_affected += cursor.rowcount
@@ -117,11 +107,11 @@ class DatabaseService:
                 f"✅ [DB-SERVICE] Transaction committed successfully. Rows affected: {total_rows_affected}."
             )
             return total_rows_affected
-        except pymssql.Error as db_err:
+        except pyodbc.Error as db_err:
             logger.error(f"💥 [DB-SERVICE] Transaction failed: {db_err}. Rolling back.")
             if conn:
                 conn.rollback()
-            raise  # Re-raise to be handled by the orchestrator
+            raise
         except Exception as e:
             logger.error(f"💥 [DB-SERVICE] Unexpected transaction error: {e}. Rolling back.")
             if conn:

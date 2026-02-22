@@ -179,6 +179,8 @@ Basic usage in scheduler:
     ...           f"Attempt {callback['attempt_count']}/{callback['max_attempts']}")
 """
 
+from af_code.shared.schema_config import IOE_SCHEMA
+
 import logging
 from typing import List, Dict, Any, Tuple
 from datetime import datetime, timedelta
@@ -360,7 +362,7 @@ class CallbackScheduler:
     """
 
     # SQL query to find pending callbacks due for execution
-    PENDING_CALLBACKS_QUERY = """
+    PENDING_CALLBACKS_QUERY = f"""
     SELECT
         cq.callback_id,
         cq.enrollment_id,
@@ -392,10 +394,10 @@ class CallbackScheduler:
         e.campaign_end_date,
         e.customer_type
 
-    FROM engage360.outreach_callback_queue cq
-    JOIN engage360.members m ON cq.member_id = m.member_id
-    JOIN engage360.member_devices md ON m.member_id = md.member_id
-    JOIN engage360.member_campaign_enrollments_enhanced e ON cq.enrollment_id = e.enrollment_id
+    FROM {IOE_SCHEMA}.outreach_callback_queue cq
+    JOIN {IOE_SCHEMA}.members m ON cq.member_id = m.member_id
+    JOIN {IOE_SCHEMA}.member_devices md ON m.member_id = md.member_id
+    JOIN {IOE_SCHEMA}.member_campaign_enrollments_enhanced e ON cq.enrollment_id = e.enrollment_id
 
     WHERE
         -- Only pending callbacks
@@ -528,7 +530,7 @@ class CallbackScheduler:
             for callback in pending_callbacks:
                 callback_id = callback.get("callback_id")
                 member_timezone = callback.get("timezone")
-                member_id = callback.get("member_id")
+                _member_id = callback.get("member_id")
 
                 # Validate business hours
                 can_call_now, reason = self._validate_callback_business_hours(
@@ -660,10 +662,10 @@ class CallbackScheduler:
             next_callback_time_utc = next_day_9am.astimezone(pytz.UTC)
 
             # Update database
-            update_sql = """
-            UPDATE engage360.outreach_callback_queue
-            SET scheduled_callback_time = %s, updated_ts = SYSDATETIMEOFFSET()
-            WHERE callback_id = %s
+            update_sql = f"""
+            UPDATE {IOE_SCHEMA}.outreach_callback_queue
+            SET scheduled_callback_time = ?, updated_ts = SYSDATETIMEOFFSET()
+            WHERE callback_id = ?
             """
 
             self.db_service.execute_query(
@@ -717,8 +719,8 @@ class CallbackScheduler:
         BusinessCaseID: BC-DA-005
         """
         try:
-            timeout_sql = """
-            UPDATE engage360.outreach_callback_queue
+            timeout_sql = f"""
+            UPDATE {IOE_SCHEMA}.outreach_callback_queue
             SET status = 'TIMED_OUT', updated_ts = SYSDATETIMEOFFSET()
             WHERE status = 'PENDING'
             AND (
@@ -734,9 +736,9 @@ class CallbackScheduler:
             self.db_service.execute_query(timeout_sql, fetch_results=False)
 
             # Count how many were timed out
-            count_sql = """
+            count_sql = f"""
             SELECT COUNT(*) as timeout_count
-            FROM engage360.outreach_callback_queue
+            FROM {IOE_SCHEMA}.outreach_callback_queue
             WHERE status = 'TIMED_OUT'
             AND updated_ts >= DATEADD(MINUTE, -5, SYSDATETIMEOFFSET())
             """
@@ -778,14 +780,14 @@ class CallbackScheduler:
         BusinessCaseID: BC-DA-005
         """
         try:
-            update_sql = """
-            UPDATE engage360.outreach_callback_queue
+            update_sql = f"""
+            UPDATE {IOE_SCHEMA}.outreach_callback_queue
             SET
                 attempt_count = attempt_count + 1,
                 status = 'IN_PROGRESS',
                 last_attempt_ts = SYSDATETIMEOFFSET(),
                 updated_ts = SYSDATETIMEOFFSET()
-            WHERE callback_id = %s
+            WHERE callback_id = ?
             """
 
             self.db_service.execute_query(update_sql, (str(callback_id),), fetch_results=False)
@@ -823,10 +825,10 @@ class CallbackScheduler:
         BusinessCaseID: BC-DA-005
         """
         try:
-            update_sql = """
-            UPDATE engage360.outreach_callback_queue
+            update_sql = f"""
+            UPDATE {IOE_SCHEMA}.outreach_callback_queue
             SET status = 'COMPLETED', updated_ts = SYSDATETIMEOFFSET()
-            WHERE callback_id = %s
+            WHERE callback_id = ?
             """
 
             self.db_service.execute_query(update_sql, (str(callback_id),), fetch_results=False)
@@ -860,10 +862,10 @@ class CallbackScheduler:
         BusinessCaseID: BC-DA-005
         """
         try:
-            update_sql = """
-            UPDATE engage360.outreach_callback_queue
+            update_sql = f"""
+            UPDATE {IOE_SCHEMA}.outreach_callback_queue
             SET status = 'FAILED', updated_ts = SYSDATETIMEOFFSET()
-            WHERE callback_id = %s
+            WHERE callback_id = ?
             """
 
             self.db_service.execute_query(update_sql, (str(callback_id),), fetch_results=False)

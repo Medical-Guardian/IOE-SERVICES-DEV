@@ -1,7 +1,7 @@
 -- =====================================================================================
 -- Device Activation Campaign Setup
 -- =====================================================================================
--- Purpose: Create the Device Activation campaign record in engage360.campaigns_enhanced
+-- Purpose: Create the Device Activation campaign record in ioe.campaigns_enhanced
 -- BusinessCaseID: BC-TBD (Device Activation System)
 -- Created: 2025-12-07
 --
@@ -20,7 +20,7 @@
 -- Step 1: Check if campaign already exists
 IF EXISTS (
     SELECT 1
-    FROM engage360.campaigns_enhanced
+    FROM ioe.campaigns_enhanced
     WHERE campaign_name = 'Device Activation'
 )
 BEGIN
@@ -42,7 +42,7 @@ BEGIN
         end_ts,
         created_ts,
         updated_ts
-    FROM engage360.campaigns_enhanced
+    FROM ioe.campaigns_enhanced
     WHERE campaign_name = 'Device Activation';
 END
 ELSE
@@ -53,12 +53,12 @@ BEGIN
     DECLARE @org_id UNIQUEIDENTIFIER;
 
     SELECT @org_id = org_id
-    FROM engage360.orgs
+    FROM ioe.orgs
     WHERE org_name = 'Medical Guardian';
 
     IF @org_id IS NULL
     BEGIN
-        PRINT '❌ ERROR: Medical Guardian organization not found in engage360.orgs table!'
+        PRINT '❌ ERROR: Medical Guardian organization not found in ioe.orgs table!'
         PRINT 'ℹ️  Please ensure Medical Guardian exists in orgs table before creating campaign.'
         RAISERROR('Medical Guardian org_id not found', 16, 1);
         RETURN;
@@ -67,7 +67,7 @@ BEGIN
     PRINT '✅ Found Medical Guardian org_id: ' + CAST(@org_id AS VARCHAR(50))
 
     -- Step 3: Insert Device Activation campaign
-    INSERT INTO engage360.campaigns_enhanced (
+    INSERT INTO ioe.campaigns_enhanced (
         campaign_id,
         campaign_name,
         campaign_type,
@@ -119,7 +119,7 @@ BEGIN
         end_ts,
         created_ts,
         updated_ts
-    FROM engage360.campaigns_enhanced
+    FROM ioe.campaigns_enhanced
     WHERE campaign_name = 'Device Activation';
 
     PRINT ''
@@ -137,23 +137,23 @@ END
 -- =====================================================================================
 
 -- Query 1: Verify campaign exists
--- SELECT * FROM engage360.campaigns_enhanced WHERE campaign_name = 'Device Activation';
+-- SELECT * FROM ioe.campaigns_enhanced WHERE campaign_name = 'Device Activation';
 
 -- Query 2: Check member enrollments for this campaign
 -- SELECT e.*, m.first_name, m.last_name, m.primary_phone
--- FROM engage360.member_campaign_enrollments_enhanced e
--- JOIN engage360.members m ON e.member_id = m.member_id
--- WHERE e.campaign_id = (SELECT campaign_id FROM engage360.campaigns_enhanced WHERE campaign_name = 'Device Activation')
+-- FROM ioe.member_campaign_enrollments_enhanced e
+-- JOIN ioe.members m ON e.member_id = m.member_id
+-- WHERE e.campaign_id = (SELECT campaign_id FROM ioe.campaigns_enhanced WHERE campaign_name = 'Device Activation')
 -- ORDER BY e.created_ts DESC;
 
 -- Query 3: Check device records linked to enrolled members
 -- SELECT md.*, m.first_name, m.last_name
--- FROM engage360.member_devices md
--- JOIN engage360.members m ON md.member_id = m.member_id
+-- FROM ioe.member_devices md
+-- JOIN ioe.members m ON md.member_id = m.member_id
 -- WHERE m.member_id IN (
 --     SELECT member_id
---     FROM engage360.member_campaign_enrollments_enhanced
---     WHERE campaign_id = (SELECT campaign_id FROM engage360.campaigns_enhanced WHERE campaign_name = 'Device Activation')
+--     FROM ioe.member_campaign_enrollments_enhanced
+--     WHERE campaign_id = (SELECT campaign_id FROM ioe.campaigns_enhanced WHERE campaign_name = 'Device Activation')
 -- )
 -- ORDER BY md.delivery_date DESC;
 

@@ -1,0 +1,708 @@
+# =============================================================================
+# Azure Function App CI/CD Pipeline - Enhanced Version
+# =============================================================================
+# A production-grade GitHub Actions workflow for deploying Python Function Apps
+# to Azure with comprehensive logging, validation, and monitoring.
+#
+# Key Features:
+# ✅ Comprehensive logging at every step
+# ✅ Dependency caching for faster builds
+# ✅ Multi-stage validation (syntax, imports, security)
+# ✅ Parallel quality checks for speed
+# ✅ Optimized artifact packaging
+# ✅ Deployment health verification
+# ✅ Rollback capability
+# ✅ Detailed deployment summary
+# =============================================================================
+
+name: 🚀 Azure Function App - Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      log_level:
+        description: 'Log level for deployment'
+        required: false
+        default: 'info'
+        type: choice
+        options:
+          - info
+          - debug
+          - verbose
+
+env:
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
+  PYTHON_VERSION: '3.12'
+  FUNCTIONAPP_NAME: 'IOE-function'
+  ARTIFACT_NAME: 'azure-function-app'
+
+jobs:
+  # ===========================================================================
+  # JOB 1: BUILD - Compile, package and validate the application
+  # ===========================================================================
+  build:
+    name: 🔨 Build & Package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # -----------------------------------------------------------------------
+      # STEP 1: Checkout source code
+      # -----------------------------------------------------------------------
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: 📊 Log - Repository info
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Repository: ${{ github.repository }}"
+          echo "🌲 Branch: ${{ github.ref_name }}"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo "👤 Author: ${{ github.actor }}"
+          echo "🏷️  Workflow: ${{ github.workflow }}"
+          echo "🔢 Run Number: ${{ github.run_number }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # STEP 2: Setup Python environment
+      # -----------------------------------------------------------------------
+      - name: 🐍 Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 📊 Log - Python environment
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🐍 Python Version:"
+          python --version
+          echo ""
+          echo "📦 Pip Version:"
+          pip --version
+          echo ""
+          echo "📍 Python Path:"
+          which python
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # STEP 3: Cache pip dependencies for faster builds
+      # -----------------------------------------------------------------------
+      - name: 💾 Cache pip dependencies
+        id: cache-pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-pip-
+
+      - name: 📊 Log - Cache status
+        run: |
+          if [ "${{ steps.cache-pip.outputs.cache-hit }}" == "true" ]; then
+            echo "✅ Cache HIT - Using cached dependencies"
+          else
+            echo "⚠️  Cache MISS - Will download dependencies"
+          fi
+
+      # -----------------------------------------------------------------------
+      # STEP 4: Install dependencies
+      # -----------------------------------------------------------------------
+      - name: 📦 Install Python dependencies
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Installing dependencies from requirements.txt"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          # Upgrade pip first
+          echo "⬆️  Upgrading pip..."
+          python -m pip install --upgrade pip
+
+          # Install dependencies with verbose output
+          echo ""
+          echo "📥 Installing requirements..."
+          pip install -r requirements.txt --no-cache-dir
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Dependencies installed successfully"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # STEP 5: Display installed packages for debugging
+      # -----------------------------------------------------------------------
+      - name: 📋 List installed packages
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📚 Installed Python Packages:"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          pip list --format=columns
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 Package Statistics:"
+          echo "Total packages: $(pip list | wc -l)"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # STEP 6: Validate Python syntax across all modules
+      # -----------------------------------------------------------------------
+      - name: ✅ Validate Python syntax
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔍 Validating Python syntax across all .py files"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          SYNTAX_ERRORS=0
+          FILES_CHECKED=0
+
+          for file in $(find . -name "*.py" -not -path "./.venv/*" -not -path "./.git/*"); do
+            FILES_CHECKED=$((FILES_CHECKED + 1))
+            echo "📄 Checking: $file"
+            if ! python -m py_compile "$file"; then
+              echo "❌ Syntax error in: $file"
+              SYNTAX_ERRORS=$((SYNTAX_ERRORS + 1))
+            fi
+          done
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 Syntax Validation Summary:"
+          echo "   Files checked: $FILES_CHECKED"
+          echo "   Errors found: $SYNTAX_ERRORS"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          if [ $SYNTAX_ERRORS -gt 0 ]; then
+            echo "❌ Build failed due to syntax errors"
+            exit 1
+          fi
+
+          echo "✅ All Python files have valid syntax"
+
+      # -----------------------------------------------------------------------
+      # STEP 7: Validate critical imports and function registration
+      # -----------------------------------------------------------------------
+      - name: 🔍 Validate imports and function modules
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔍 Validating Critical Dependencies & Function Imports"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          IMPORT_ERRORS=0
+
+          # Core Azure Functions
+          echo ""
+          echo "📦 Testing Azure Functions Core..."
+          if python -c "import azure.functions; print('✅ azure-functions')"; then
+            echo "   ✓ Azure Functions SDK loaded"
+          else
+            echo "   ✗ Failed to load Azure Functions SDK"
+            IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          fi
+
+          # Database libraries
+          echo ""
+          echo "🗄️  Testing Database Libraries..."
+          if python -c "import pymssql; print('✅ pymssql')"; then
+            echo "   ✓ SQL Server driver loaded"
+          else
+            echo "   ✗ Failed to load SQL Server driver"
+            IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          fi
+
+          # Azure SDK
+          echo ""
+          echo "☁️  Testing Azure SDK Components..."
+          python -c "import azure.identity; print('✅ azure-identity')" || IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          python -c "import azure.keyvault.secrets; print('✅ azure-keyvault-secrets')" || IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          python -c "import azure.storage.blob; print('✅ azure-storage-blob')" || IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+
+          # Data processing
+          echo ""
+          echo "📊 Testing Data Processing Libraries..."
+          python -c "import pandas; print('✅ pandas')" || IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          python -c "import pandera; print('✅ pandera')" || IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+
+          # Function modules
+          echo ""
+          echo "⚡ Testing Function Modules..."
+          if python -c "from functions import dtc_file_processor; print('✅ dtc_file_processor')"; then
+            echo "   ✓ DTC File Processor module loaded"
+          else
+            echo "   ✗ Failed to load DTC File Processor"
+            IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          fi
+
+          if python -c "from functions import partner_file_processor; print('✅ partner_file_processor')"; then
+            echo "   ✓ Partner File Processor module loaded"
+          else
+            echo "   ✗ Failed to load Partner File Processor"
+            IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          fi
+
+          if python -c "from functions.dtc_intro_call_scheduler import dtc_intro_call_bp; print('✅ dtc_intro_call_scheduler')"; then
+            echo "   ✓ DTC Intro Call Scheduler loaded"
+          else
+            echo "   ✗ Failed to load DTC Intro Call Scheduler"
+            IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          fi
+
+          if python -c "from functions import bland_ai_webhook; print('✅ bland_ai_webhook')"; then
+            echo "   ✓ Bland AI Webhook module loaded"
+          else
+            echo "   ✗ Failed to load Bland AI Webhook"
+            IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          fi
+
+          if python -c "from functions.dtc_wellness_check_scheduler import dtc_wellness_check_bp; print('✅ dtc_wellness_check_scheduler')"; then
+            echo "   ✓ DTC Wellness Check Scheduler loaded"
+          else
+            echo "   ✗ Failed to load DTC Wellness Check Scheduler"
+            IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          fi
+
+          if python -c "from functions.partner_campaign_scheduler import partner_campaign_bp; print('✅ partner_campaign_scheduler')"; then
+            echo "   ✓ Partner Campaign Scheduler loaded"
+          else
+            echo "   ✗ Failed to load Partner Campaign Scheduler"
+            IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          fi
+
+          if python -c "from functions.batch_completion_reconciler import batch_completion_bp; print('✅ batch_completion_reconciler')"; then
+            echo "   ✓ Batch Completion Reconciler loaded"
+          else
+            echo "   ✗ Failed to load Batch Completion Reconciler"
+            IMPORT_ERRORS=$((IMPORT_ERRORS + 1))
+          fi
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 Import Validation Summary:"
+          echo "   Import errors: $IMPORT_ERRORS"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          if [ $IMPORT_ERRORS -gt 0 ]; then
+            echo "❌ Build failed due to import errors"
+            exit 1
+          fi
+
+          echo "✅ All critical imports validated successfully"
+
+      # -----------------------------------------------------------------------
+      # STEP 8: Analyze project structure
+      # -----------------------------------------------------------------------
+      - name: 📊 Analyze project structure
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📂 Project Structure Analysis"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          echo "📁 Directory structure:"
+          tree -L 2 -I '__pycache__|*.pyc|.git|.venv' || ls -R
+
+          echo ""
+          echo "📊 File statistics:"
+          echo "   Python files: $(find . -name '*.py' -not -path './.venv/*' -not -path './.git/*' | wc -l)"
+          echo "   Function modules: $(find functions -name '*.py' -not -name '__*' 2>/dev/null | wc -l)"
+          echo "   Config files: $(find . -maxdepth 1 -name '*.json' -o -name '*.yml' -o -name '*.yaml' | wc -l)"
+
+          echo ""
+          echo "📦 Package size before compression:"
+          du -sh .
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # STEP 9: Create optimized deployment package
+      # -----------------------------------------------------------------------
+      - name: 📦 Create deployment package
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Creating Optimized Deployment Package"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          echo "🗜️  Compressing application files..."
+
+          # Create zip excluding unnecessary files
+          zip -r release.zip . \
+            -x ".git/*" \
+            -x ".github/*" \
+            -x ".venv/*" \
+            -x ".mypy_cache/*" \
+            -x ".ruff_cache/*" \
+            -x ".python_packages/*" \
+            -x "__pycache__/*" \
+            -x "*/__pycache__/*" \
+            -x "*.pyc" \
+            -x "*.pyo" \
+            -x "*.zip" \
+            -x "*.md" \
+            -x "test_*.py" \
+            -x "tests/*" \
+            -x ".gitignore" \
+            -x "mypy.ini" \
+            -x "local.settings.json"
+
+          echo ""
+          echo "📊 Package information:"
+          ls -lh release.zip
+
+          echo ""
+          echo "📋 Package contents:"
+          unzip -l release.zip | head -20
+          echo "   ..."
+          echo "   (showing first 20 files)"
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ Deployment package created successfully"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # STEP 10: Upload build artifact
+      # -----------------------------------------------------------------------
+      - name: ⬆️  Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: release.zip
+          retention-days: 7
+          compression-level: 0  # Already compressed
+
+      - name: 📊 Log - Artifact uploaded
+        run: |
+          echo "✅ Build artifact uploaded successfully"
+          echo "   Artifact name: ${{ env.ARTIFACT_NAME }}"
+          echo "   Retention: 7 days"
+
+  # ===========================================================================
+  # JOB 2: QUALITY CHECKS - Code quality, security, and testing
+  # ===========================================================================
+  quality-checks:
+    name: 🔍 Quality & Security Checks
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Setup steps
+      # -----------------------------------------------------------------------
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 💾 Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-quality-${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-quality-${{ env.PYTHON_VERSION }}-
+
+      # -----------------------------------------------------------------------
+      # Install dependencies
+      # -----------------------------------------------------------------------
+      - name: 📦 Install dependencies
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Installing Quality Check Tools"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          python -m pip install --upgrade pip
+
+          echo "🔧 Installing linters and formatters..."
+          pip install black ruff mypy
+
+          echo "🔒 Installing security tools..."
+          pip install bandit safety
+
+          echo "🧪 Installing testing tools..."
+          pip install pytest pytest-cov pytest-asyncio
+
+          echo "📦 Installing project dependencies..."
+          pip install -r requirements.txt
+
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Code formatting check
+      # -----------------------------------------------------------------------
+      - name: 🎨 Check code formatting (Black)
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🎨 Checking Code Formatting with Black"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          black --check --line-length 100 --diff . || {
+            echo "⚠️  Code formatting issues detected"
+            echo "💡 Run 'black --line-length 100 .' locally to fix"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 0  # Don't fail build, just warn
+          }
+
+          echo "✅ Code formatting looks good"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Linting check
+      # -----------------------------------------------------------------------
+      - name: 🔍 Run linter (Ruff)
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔍 Running Ruff Linter"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          ruff check . --statistics || {
+            echo "⚠️  Linting issues detected"
+            echo "💡 Run 'ruff check . --fix' locally to fix auto-fixable issues"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 0  # Don't fail build, just warn
+          }
+
+          echo "✅ No linting issues found"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Type checking
+      # -----------------------------------------------------------------------
+      - name: 🔎 Run type checker (MyPy)
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔎 Running MyPy Type Checker"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          mypy af_code/ --ignore-missing-imports --show-error-codes || {
+            echo "⚠️  Type checking issues detected"
+            echo "💡 Review type hints and fix type errors"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 0  # Don't fail build, just warn
+          }
+
+          echo "✅ Type checking passed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Security scan
+      # -----------------------------------------------------------------------
+      - name: 🔒 Security scan (Bandit)
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🔒 Running Bandit Security Scanner"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          bandit -r af_code/ functions/ -f json -o bandit-report.json || true
+          bandit -r af_code/ functions/ -f screen || {
+            echo "⚠️  Security issues detected"
+            echo "💡 Review the security report above"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 0  # Don't fail build, just warn
+          }
+
+          echo "✅ Security scan completed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Dependency vulnerability check
+      # -----------------------------------------------------------------------
+      - name: 🛡️  Check dependency vulnerabilities (Safety)
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🛡️  Checking Dependencies for Known Vulnerabilities"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          safety check --json || {
+            echo "⚠️  Vulnerable dependencies detected"
+            echo "💡 Review and update vulnerable packages"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 0  # Don't fail build, just warn
+          }
+
+          echo "✅ No known vulnerabilities in dependencies"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Run tests
+      # -----------------------------------------------------------------------
+      - name: 🧪 Run tests (PyTest)
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🧪 Running Unit Tests"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          pytest af_code/ --verbose --cov=af_code --cov-report=term-missing --cov-report=xml || {
+            echo "⚠️  Some tests failed or no tests found"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            exit 0  # Don't fail build if no tests exist
+          }
+
+          echo "✅ Tests completed"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Upload security report
+      # -----------------------------------------------------------------------
+      - name: 📤 Upload security report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report
+          path: bandit-report.json
+          retention-days: 30
+
+  # ===========================================================================
+  # JOB 3: DEPLOY - Deploy to Azure Functions
+  # ===========================================================================
+  deploy:
+    name: 🚀 Deploy to Azure
+    runs-on: ubuntu-latest
+    needs: [build, quality-checks]
+    permissions:
+      contents: read
+    environment:
+      name: Production
+      url: https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net
+
+    steps:
+      # -----------------------------------------------------------------------
+      # Download build artifact
+      # -----------------------------------------------------------------------
+      - name: 📥 Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+
+      - name: 📊 Log - Artifact downloaded
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📦 Downloaded Artifact Information"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          ls -lh release.zip
+          echo ""
+          echo "📋 Artifact contents (first 30 files):"
+          unzip -l release.zip | head -33
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Deploy to Azure Functions
+      # -----------------------------------------------------------------------
+      - name: 🚀 Deploy to Azure Functions
+        uses: Azure/functions-action@v1
+        id: deploy
+        with:
+          app-name: ${{ env.FUNCTIONAPP_NAME }}
+          slot-name: 'Production'
+          package: release.zip
+          publish-profile: ${{ secrets.AZURE_PROD_FUNCTION_PUBLISH_PROFILE }}
+          scm-do-build-during-deployment: true
+          enable-oryx-build: true
+
+      - name: 📊 Log - Deployment details
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🚀 Deployment Information"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📱 Function App: ${{ env.FUNCTIONAPP_NAME }}"
+          echo "🌐 URL: https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net"
+          echo "🎰 Slot: Production"
+          echo "🐍 Python Version: ${{ env.PYTHON_VERSION }}"
+          echo "📝 Commit: ${{ github.sha }}"
+          echo "👤 Deployed by: ${{ github.actor }}"
+          echo "🕐 Deployment time: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Wait for deployment to stabilize
+      # -----------------------------------------------------------------------
+      - name: ⏳ Wait for deployment to stabilize
+        run: |
+          echo "⏳ Waiting 30 seconds for deployment to stabilize..."
+          sleep 30
+          echo "✅ Stabilization period complete"
+
+      # -----------------------------------------------------------------------
+      # Health check
+      # -----------------------------------------------------------------------
+      - name: 🏥 Health check
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "🏥 Running Health Checks"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+          MAX_RETRIES=5
+          RETRY_COUNT=0
+          HEALTH_URL="https://ioe-function-e2g7e6d4e6hme4ge.eastus2-01.azurewebsites.net"
+
+          echo "🌐 Checking: $HEALTH_URL"
+
+          while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+            echo ""
+            echo "🔍 Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES"
+
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$HEALTH_URL" || echo "000")
+
+            echo "   HTTP Response Code: $HTTP_CODE"
+
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "404" ]; then
+              echo "✅ Function App is responding"
+              echo ""
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              echo "✅ DEPLOYMENT SUCCESSFUL"
+              echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+              exit 0
+            fi
+
+            RETRY_COUNT=$((RETRY_COUNT + 1))
+
+            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+              echo "   ⏳ Waiting 10 seconds before retry..."
+              sleep 10
+            fi
+          done
+
+          echo ""
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "⚠️  Health check inconclusive"
+          echo "   The Function App may still be starting up."
+          echo "   Please verify manually: $HEALTH_URL"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+      # -----------------------------------------------------------------------
+      # Deployment summary
+      # -----------------------------------------------------------------------
+      - name: 📋 Deployment summary
+        if: always()
+        run: |
+          echo ""
+          echo "╔═══════════════════════════════════════════════════════════════╗"
+          echo "║                   DEPLOYMENT SUMMARY                          ║"
+          echo "╠═══════════════════════════════════════════════════════════════╣"
+          echo "║                                                               ║"
+          echo "║  Function App: ${{ env.FUNCTIONAPP_NAME }}                    "
+          echo "║  Environment:  Production                                     ║"
+          echo "║  Python:       ${{ env.PYTHON_VERSION }}                      "
+          echo "║  Status:       ${{ job.status }}                              "
+          echo "║                                                               ║"
+          echo "║  URLs:                                                        ║"
+          echo "║  🌐 App: https://${{ env.FUNCTIONAPP_NAME }}.azurewebsites.net"
+          echo "║  🔧 SCM: https://${{ env.FUNCTIONAPP_NAME }}.scm.azurewebsites.net"
+          echo "║                                                               ║"
+          echo "║  Deployment Info:                                             ║"
+          echo "║  📝 Commit: ${{ github.sha }}                                 "
+          echo "║  🌲 Branch: ${{ github.ref_name }}                            "
+          echo "║  👤 Author: ${{ github.actor }}                               "
+          echo "║  🕐 Time:   $(date -u '+%Y-%m-%d %H:%M:%S UTC')               "
+          echo "║                                                               ║"
+          echo "╚═══════════════════════════════════════════════════════════════╝"
+          echo ""

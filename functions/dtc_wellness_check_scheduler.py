@@ -4,7 +4,6 @@
 import azure.functions as func
 import logging
 import json
-from datetime import datetime
 
 # Import the shared main logic function and common services
 from af_code.af_dtc_intro_call.main_logic import create_bland_ai_batch_call
@@ -12,7 +11,9 @@ from af_code.af_dtc_intro_call.services.database_service import DatabaseService
 from af_code.af_dtc_intro_call.services.member_service import MemberQualificationService
 
 # --- CHANGE: Import the new, specialized service for the wellness check ---
-from af_code.af_dtc_wellness_check.services.blandai_service_wellness import BlandAIServiceWellness
+from af_code.af_dtc_wellness_check.services.blandai_service_wellness import (
+    BlandAIServiceWellness,
+)
 
 # --- END CHANGE ---
 
@@ -62,7 +63,10 @@ def http_dtc_wellness_check(req: func.HttpRequest) -> func.HttpResponse:
         if not campaign_id:
             return func.HttpResponse(
                 json.dumps(
-                    {"success": False, "error": "campaign_id is required in the request body."}
+                    {
+                        "success": False,
+                        "error": "campaign_id is required in the request body.",
+                    }
                 ),
                 status_code=400,
                 mimetype="application/json",
@@ -80,7 +84,9 @@ def http_dtc_wellness_check(req: func.HttpRequest) -> func.HttpResponse:
         status_code = 200 if result.get("success") else 500
 
         return func.HttpResponse(
-            json.dumps(result, default=str), status_code=status_code, mimetype="application/json"
+            json.dumps(result, default=str),
+            status_code=status_code,
+            mimetype="application/json",
         )
 
     except json.JSONDecodeError:

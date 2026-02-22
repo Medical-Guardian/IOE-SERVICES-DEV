@@ -17,6 +17,7 @@ import uuid
 
 from ...bland_ai_webhook.services.database_service import DatabaseService
 from ...bland_ai_webhook.services.config_manager import ConfigManager
+from af_code.shared.schema_config import IOE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,11 @@ class CampaignClosureService:
 
                 # Update enrollment status
                 success = self._update_enrollment_status(
-                    enrollment_id, member_id, campaign_id, campaign_name, campaign_end_date
+                    enrollment_id,
+                    member_id,
+                    campaign_id,
+                    campaign_name,
+                    campaign_end_date,
                 )
 
                 if success:
@@ -195,7 +200,7 @@ class CampaignClosureService:
         """
         logger.info("🔍 [DA-CLOSURE-SVC] Querying enrollments with expired campaign_end_date...")
 
-        query = """
+        query = f"""
             SELECT
                 e.enrollment_id,
                 e.member_id,
@@ -204,9 +209,9 @@ class CampaignClosureService:
                 e.current_status,
                 c.name as campaign_name,
                 c.campaign_type
-            FROM engage360.member_campaign_enrollments_enhanced e
-            INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
-            INNER JOIN engage360.members m ON e.member_id = m.member_id
+            FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
+            INNER JOIN {IOE_SCHEMA}.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+            INNER JOIN {IOE_SCHEMA}.members m ON e.member_id = m.member_id
             WHERE
                 e.current_status = 'ENROLLED'
                 AND c.campaign_type = 'Operations'
@@ -262,19 +267,19 @@ class CampaignClosureService:
         """
         try:
             # Prepare queries for transaction
-            update_query = """
-                UPDATE engage360.member_campaign_enrollments_enhanced
+            update_query = f"""
+                UPDATE {IOE_SCHEMA}.member_campaign_enrollments_enhanced
                 SET
                     current_status = 'UNENROLLED',
                     unenrollment_reason = 'Campaign 90-day window completed - reached campaign_end_date',
                     last_attempt_ts = SYSDATETIMEOFFSET()
                 WHERE
-                    enrollment_id = %s
+                    enrollment_id = ?
                     AND current_status = 'ENROLLED'
             """
 
-            audit_query = """
-                INSERT INTO engage360.member_enrollment_status_history (
+            audit_query = f"""
+                INSERT INTO {IOE_SCHEMA}.member_enrollment_status_history (
                     history_id,
                     member_id,
                     campaign_id,
@@ -284,7 +289,7 @@ class CampaignClosureService:
                     change_source,
                     change_details
                 )
-                VALUES (%s, %s, %s, 'ENROLLED', 'UNENROLLED', SYSDATETIMEOFFSET(), 'AUTOMATED_CLOSURE', %s)
+                VALUES (?, ?, ?, 'ENROLLED', 'UNENROLLED', SYSDATETIMEOFFSET(), 'AUTOMATED_CLOSURE', ?)
             """
 
             # Generate history_id
@@ -330,29 +335,29 @@ class CampaignClosureService:
         Returns:
             bool: True if lock acquired, False if already held
         """
-        query = """
+        query = f"""
             DECLARE @lock_acquired BIT = 0;
 
             -- Clean up expired locks first
-            DELETE FROM engage360.system_locks
+            DELETE FROM {IOE_SCHEMA}.system_locks
             WHERE lock_expiry <= SYSDATETIMEOFFSET();
 
             -- Try to acquire new lock
             IF NOT EXISTS (
-                SELECT 1 FROM engage360.system_locks
-                WHERE lock_name = %s
+                SELECT 1 FROM {IOE_SCHEMA}.system_locks
+                WHERE lock_name = ?
             )
             BEGIN
-                INSERT INTO engage360.system_locks (
+                INSERT INTO {IOE_SCHEMA}.system_locks (
                     lock_name,
                     lock_expiry,
                     locked_by,
                     created_ts
                 )
                 VALUES (
-                    %s,
-                    DATEADD(minute, %s, SYSDATETIMEOFFSET()),
-                    %s,
+                    ?,
+                    DATEADD(minute, ?, SYSDATETIMEOFFSET()),
+                    ?,
                     SYSDATETIMEOFFSET()
                 );
                 SET @lock_acquired = 1;
@@ -393,7 +398,7 @@ class CampaignClosureService:
         Args:
             operation_name: Lock name to release
         """
-        query = "DELETE FROM engage360.system_locks WHERE lock_name = %s"
+        query = f"DELETE FROM {IOE_SCHEMA}.system_locks WHERE lock_name = ?"
 
         try:
             result = self.db_service.execute_query(query, (operation_name,), fetch_results=False)

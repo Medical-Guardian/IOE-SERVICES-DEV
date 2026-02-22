@@ -39,7 +39,7 @@ class ErrorHandler:
         self.smtp_password = self.config_manager.get_config("SMTP_PASSWORD")
         self.notify_email = self.config_manager.get_config("NOTIFY_EMAIL")
 
-        logger.info("🚨 [ERROR-HANDLER] Initialized. Standardized on DatabaseService (pymssql).")
+        logger.info("🚨 [ERROR-HANDLER] Initialized. Standardized on DatabaseService (pyodbc).")
 
     def log_validation_error(
         self, request_id: str, webhook_data: Optional[Dict[str, Any]], errors: list
@@ -56,7 +56,11 @@ class ErrorHandler:
         )
 
     def log_database_error(
-        self, request_id: str, operation: str, error_message: str, tables_updated: List[str]
+        self,
+        request_id: str,
+        operation: str,
+        error_message: str,
+        tables_updated: List[str],
     ) -> None:
         """Logs errors that occur during database operations."""
         logger.error(
@@ -105,7 +109,7 @@ class ErrorHandler:
             query = f"""
                 INSERT INTO {self.error_log_table} 
                 (request_id, error_message, error_category, error_severity, context, error_timestamp)
-                VALUES (%s, %s, %s, %s, %s, GETUTCDATE())
+                VALUES (?, ?, ?, ?, ?, GETUTCDATE())
             """
             context_json = json.dumps(context, default=str) if context else None
             params = (

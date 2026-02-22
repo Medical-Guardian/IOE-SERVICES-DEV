@@ -92,8 +92,8 @@
 - Validation utilities: `standardize_phone()`, `validate_email()`, `map_timezone_to_iana()`, etc.
 
 **Database Tables:**
-- **Staging:** `stg_device_activation_delta` (engage360_stg schema)
-- **Core:** `members`, `member_devices`, `member_campaign_enrollments_enhanced` (engage360 schema)
+- **Staging:** `stg_device_activation_delta` (ioe_stg schema)
+- **Core:** `members`, `member_devices`, `member_campaign_enrollments_enhanced` (ioe schema)
 
 **Related Documentation:**
 - [Complete Architecture](../ARCHITECTURE/DEVICE_ACTIVATION_COMPLETE_ARCHITECTURE.md#3-file-processing-flow)
@@ -394,9 +394,61 @@ def _update_call_5_enrollments(self, eligible_members: List[Dict]) -> None:
 
 ---
 
-### BC-DA-007: Device Activation - Webhook Processing & Status Updates
+### BC-DA-007: Device Activation - Campaign Closure (90-Day Auto-Unenroll)
 
-**Purpose:** Process Bland AI webhook responses and update database with call results
+**Purpose:** Automatically unenroll Device Activation members when their 90-day campaign window expires
+
+**Scope:**
+- Hourly timer trigger to check for expired campaigns
+- Query enrollments past campaign_end_date
+- Update enrollment status from 'Active' to 'UNENROLLED'
+- Insert status change history for audit trail
+- Distributed locking to prevent concurrent executions
+- HTTP endpoint for manual testing
+
+**Components:**
+- Timer trigger (hourly)
+- HTTP trigger (manual execution)
+- Campaign Closure Service
+- Distributed locking mechanism
+- Database transaction management
+
+**Files:**
+- `functions/device_activation_campaign_closure.py` (~200 lines) - Timer + HTTP triggers
+- `af_code/device_activation_scheduler/services/campaign_closure_service.py` (~300+ lines) - Closure logic
+
+**Key Functions:**
+- `timer_device_activation_campaign_closure()` - Timer trigger (runs every hour)
+- `http_device_activation_campaign_closure()` - HTTP trigger (manual execution)
+- `process_expired_enrollments()` - Main closure logic
+
+**Eligibility Criteria:**
+- enrollment_status = 'Active' (only active members)
+- campaign_id IN (Medicaid, DTC/MA campaigns)
+- campaign_end_date IS NOT NULL (only members with Call 5+)
+- campaign_end_date < CURRENT_DATE (90-day window expired)
+
+**Database Operations:**
+1. SELECT eligible enrollments (past campaign_end_date)
+2. UPDATE `member_campaign_enrollments_enhanced` SET enrollment_status = 'UNENROLLED'
+3. INSERT `member_enrollment_status_history` with reason='90-day window expired'
+4. Distributed locking via `system_locks` table
+
+**Related Documentation:**
+- [Complete Architecture](../ARCHITECTURE/DEVICE_ACTIVATION_COMPLETE_ARCHITECTURE.md#3-1-5-campaign-closure)
+- [Data Flow Diagrams](../FLOWS/DEVICE_ACTIVATION_DATA_FLOW.md#diagram-5-campaign-closure-flow)
+- [Operations Call Flow](../../OPERATIONS_DEVICE_ACTIVATION_CALL_FLOW.md#phase-7-campaign-closure)
+
+**Related Code (Cross-References):**
+- Uses: DatabaseService, ConfigManager
+- Updates data created by: BC-DA-002 (enrollments), BC-DA-004 (call_5_timestamp)
+- Prevents data access by: BC-DA-003 (unenrolled members excluded from eligibility)
+
+---
+
+### BC-102: Webhook Processing (Shared Across All Campaigns)
+
+**Purpose:** Process Bland AI webhook responses and update database with call results (shared by DTC, Partner, and Device Activation campaigns)
 
 **Scope:**
 - Webhook payload parsing and validation
@@ -418,7 +470,7 @@ def _update_call_5_enrollments(self, eligible_members: List[Dict]) -> None:
 - `af_code/bland_ai_webhook/bland_ai_webhook.py` - Webhook HTTP endpoint
 - `af_code/bland_ai_webhook/services/data_validator.py` - Payload validation
 - `af_code/bland_ai_webhook/services/duplicate_detector.py` - Duplicate call detection
-- `af_code/bland_ai_webhook/services/status_mapper.py` - Disposition mapping
+- `af_code/bland_ai_webhook/services/status_mapper.py` - Disposition mapping (BC-102)
 - `af_code/bland_ai_webhook/services/database_orchestrator.py` - Database updates
 
 **Disposition Mapping:**
@@ -439,16 +491,20 @@ def _update_call_5_enrollments(self, eligible_members: List[Dict]) -> None:
 3. INSERT `outreach_callback_queue` (if callback requested)
 4. INSERT `bland_call_logs` (audit trail)
 
+**Campaign-Specific Behavior:**
+- **DTC Campaigns:** Updates enrollment status based on disposition
+- **Partner Campaigns:** Skips enrollment status updates (all members remain 'Active')
+- **Device Activation:** Updates enrollment status, creates Call 5 timestamp for 90-day window
+
 **Related Documentation:**
-- [Complete Architecture](../ARCHITECTURE/DEVICE_ACTIVATION_COMPLETE_ARCHITECTURE.md#8-webhook-processing)
-- [Data Flow Diagrams](../FLOWS/DEVICE_ACTIVATION_DATA_FLOW.md#3-webhook-processing-flow)
-- [Troubleshooting](../GUIDES/DEVICE_ACTIVATION_TROUBLESHOOTING.md)
+- [Webhook Testing Guide](../../WEBHOOK_TESTING_GUIDE.md)
+- [Complete Architecture](../ARCHITECTURE/DEVICE_ACTIVATION_COMPLETE_ARCHITECTURE.md#3-1-3-webhook-processor)
 
 **Related Code (Cross-References):**
 - Uses: DatabaseService, ConfigManager
 - Receives data from: Bland AI API (POST webhook)
-- Updates data created by: BC-DA-004 (attempts, batches)
-- Creates data for: BC-DA-005 (callback queue)
+- Updates data created by: BC-DA-004 (Device Activation attempts/batches), BC-109 (DTC batches), BC-113 (Partner batches)
+- Creates data for: BC-DA-005 (Device Activation callbacks), BC-103 (DTC callbacks), BC-114 (Partner callbacks)
 
 ---
 
@@ -513,18 +569,21 @@ def _update_call_5_enrollments(self, eligible_members: List[Dict]) -> None:
 | `af_code/shared/bland_ai_client.py` | BC-DA-004 | Bland AI API client (3-header pattern) | ~300 | `BlandAIClient`, `submit_batch_calls()` |
 | `af_code/shared/bland_parameters_validator.py` | BC-DA-004 | Bland AI parameter validation | ~150 | `BlandParametersValidator`, `validate()` |
 | `af_code/shared/timezone_utils.py` | BC-DA-003, BC-DA-005 | Timezone conversion utilities | ~100 | `TimezoneConverter`, `to_pytz()`, `get_us_timezones_pytz()` |
-| **Webhook Processing** |||||
-| `af_code/bland_ai_webhook/bland_ai_webhook.py` | BC-DA-007 | Webhook HTTP endpoint | ~200 | `bland_ai_webhook()` |
-| `af_code/bland_ai_webhook/services/data_validator.py` | BC-DA-007 | Webhook payload validation | ~150 | `DataValidator`, `validate_webhook_data()` |
-| `af_code/bland_ai_webhook/services/duplicate_detector.py` | BC-DA-007 | Duplicate call detection | ~100 | `DuplicateDetector`, `is_duplicate_call()` |
-| `af_code/bland_ai_webhook/services/status_mapper.py` | BC-DA-007 | Disposition mapping | ~200 | `StatusMapper`, `map_disposition()` |
-| `af_code/bland_ai_webhook/services/database_orchestrator.py` | BC-DA-007 | Database updates from webhook | ~800 | `DatabaseOrchestrator`, `process_webhook()` |
+| **Campaign Closure (90-Day Auto-Unenroll)** |||||
+| `functions/device_activation_campaign_closure.py` | BC-DA-007 | Timer + HTTP triggers for campaign closure | ~200 | `timer_device_activation_campaign_closure()`, `http_device_activation_campaign_closure()` |
+| `af_code/device_activation_scheduler/services/campaign_closure_service.py` | BC-DA-007 | Campaign closure logic, distributed locking | ~300 | `CampaignClosureService`, `process_expired_enrollments()` |
+| **Webhook Processing (Shared)** |||||
+| `af_code/bland_ai_webhook/bland_ai_webhook.py` | BC-102 | Webhook HTTP endpoint (DTC/Partner/Device Activation) | ~200 | `bland_ai_webhook()` |
+| `af_code/bland_ai_webhook/services/data_validator.py` | BC-102 | Webhook payload validation | ~150 | `DataValidator`, `validate_webhook_data()` |
+| `af_code/bland_ai_webhook/services/duplicate_detector.py` | BC-102 | Duplicate call detection | ~100 | `DuplicateDetector`, `is_duplicate_call()` |
+| `af_code/bland_ai_webhook/services/status_mapper.py` | BC-102 | Disposition mapping | ~200 | `StatusMapper`, `map_disposition()` |
+| `af_code/bland_ai_webhook/services/database_orchestrator.py` | BC-102 | Database updates from webhook | ~800 | `DatabaseOrchestrator`, `process_webhook()` |
 | **Database/Config Services** |||||
 | `af_code/bland_ai_webhook/services/config_manager.py` | All | Azure Key Vault integration | ~150 | `ConfigManager`, `get_config()`, `get_db_connection_string()` |
 | `af_code/bland_ai_webhook/services/database_service.py` | All | Database connection management | ~200 | `DatabaseService`, `execute_query()`, `execute_transaction()` |
 
-**Total Files:** 22
-**Total Lines of Code:** ~6,500+
+**Total Files:** 24
+**Total Lines of Code:** ~7,000+
 
 ---
 
@@ -654,7 +713,7 @@ def create_and_submit_batches(self, eligible_members: List[Dict]) -> Dict[str, A
 # BusinessCaseID: BC-DA-006
 call_attempt_number = ISNULL((
     SELECT COUNT(*)
-    FROM engage360.outreach_attempts oa
+    FROM ioe.outreach_attempts oa
     WHERE oa.enrollment_id = e.enrollment_id
 ), 0) + 1
 

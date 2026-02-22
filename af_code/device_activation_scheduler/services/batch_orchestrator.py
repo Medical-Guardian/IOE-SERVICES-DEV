@@ -105,6 +105,7 @@ from af_code.bland_ai_webhook.services.database_service import DatabaseService
 from af_code.shared.bland_ai_client import BlandAIClient
 from af_code.shared.bland_parameters_validator import BlandParametersValidator
 from af_code.partner_campaign_scheduler.models.batch_request import BatchRequest
+from af_code.shared.schema_config import IOE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -356,7 +357,9 @@ class BatchOrchestrator:
             logger.info("📝 [BATCH-ORCHESTRATOR] ============================================")
             logger.info("📝 [BATCH-ORCHESTRATOR] PHASE 1: CREATE BATCH RECORD (PRE-SUBMISSION)")
             logger.info("📝 [BATCH-ORCHESTRATOR] ============================================")
-            logger.info("📝 [BATCH-ORCHESTRATOR] Creating batch in engage360.outreach_batches...")
+            logger.info(
+                f"📝 [BATCH-ORCHESTRATOR] Creating batch in {IOE_SCHEMA}.outreach_batches..."
+            )
             logger.info("📝 [BATCH-ORCHESTRATOR] Status: 'Pending' (awaiting Bland AI response)")
 
             batch_id = self._create_outreach_batch(campaign_id, len(members))
@@ -372,7 +375,7 @@ class BatchOrchestrator:
             logger.info("📝 [BATCH-ORCHESTRATOR] PHASE 2: CREATE ATTEMPT RECORDS (PRE-SUBMISSION)")
             logger.info("📝 [BATCH-ORCHESTRATOR] ============================================")
             logger.info(
-                "📝 [BATCH-ORCHESTRATOR] Creating attempts in engage360.outreach_attempts..."
+                f"📝 [BATCH-ORCHESTRATOR] Creating attempts in {IOE_SCHEMA}.outreach_attempts..."
             )
             logger.info(f"📝 [BATCH-ORCHESTRATOR] Total attempts to create: {len(members)}")
             logger.info("📝 [BATCH-ORCHESTRATOR] Disposition: 'Pending' (awaiting call completion)")
@@ -729,7 +732,7 @@ class BatchOrchestrator:
                 "primary_phone": member.get("primary_phone"),
                 "transfer_phone_number": member.get("transfer_phone_number") or "",
                 "email": member.get("email"),
-                "dob": member.get("dob").strftime("%m-%d-%Y") if member.get("dob") else "",
+                "dob": (member.get("dob").strftime("%m-%d-%Y") if member.get("dob") else ""),
                 # Address (from members table)
                 "address_street": member.get("address_street") or "",
                 "address_city": member.get("address_city") or "",
@@ -739,7 +742,7 @@ class BatchOrchestrator:
                 "member_brand": member.get("member_brand") or "",
                 # Device information (from member_devices table)
                 "device_name": member.get("device_brand") or "",  # member_devices.brand
-                "fall_detection": "True" if member.get("fall_detection") == 1 else "False",
+                "fall_detection": ("True" if member.get("fall_detection") == 1 else "False"),
                 "powersaver_mode": member.get("powersaver_mode")
                 or "",  # Default/Standard/Battery Saver
                 # Monitoring system ID (from member_identifiers table)
@@ -868,8 +871,8 @@ class BatchOrchestrator:
         return batch_request
 
     def _create_outreach_batch(self, campaign_id: str, total_calls: int) -> str:
-        """
-        Create batch record in engage360.outreach_batches (Phase 1)
+        f"""
+        Create batch record in {IOE_SCHEMA}.outreach_batches (Phase 1)
 
         Args:
             campaign_id: Campaign UUID
@@ -880,11 +883,11 @@ class BatchOrchestrator:
         """
         batch_id = str(uuid.uuid4())
 
-        insert_batch_sql = """
-        INSERT INTO engage360.outreach_batches (
+        insert_batch_sql = f"""
+        INSERT INTO {IOE_SCHEMA}.outreach_batches (
             batch_id, campaign_id, batch_status,
             total_calls_intended, created_ts
-        ) VALUES (%s, %s, %s, %s, SYSDATETIMEOFFSET())
+        ) VALUES (?, ?, ?, ?, SYSDATETIMEOFFSET())
         """
 
         self.db_service.execute_query(
@@ -898,8 +901,8 @@ class BatchOrchestrator:
         return batch_id
 
     def _create_outreach_attempts(self, members: List[Dict], batch_id: str) -> Dict[str, str]:
-        """
-        Create attempt records in engage360.outreach_attempts (Phase 2)
+        f"""
+        Create attempt records in {IOE_SCHEMA}.outreach_attempts (Phase 2)
 
         Args:
             members: List of members
@@ -910,11 +913,11 @@ class BatchOrchestrator:
         """
         attempt_id_map = {}
 
-        insert_attempt_sql = """
-        INSERT INTO engage360.outreach_attempts (
+        insert_attempt_sql = f"""
+        INSERT INTO {IOE_SCHEMA}.outreach_attempts (
             attempt_id, enrollment_id, batch_id, channel,
             disposition, attempt_ts
-        ) VALUES (%s, %s, %s, %s, %s, SYSDATETIMEOFFSET())
+        ) VALUES (?, ?, ?, ?, ?, SYSDATETIMEOFFSET())
         """
 
         for member in members:
@@ -932,10 +935,10 @@ class BatchOrchestrator:
             # Sets 90-day window from actual first call date (not enrollment date)
             # Ensures members get full 90 days from when call actually happens
             if call_attempt_number == 1:
-                update_campaign_end_sql = """
-                UPDATE engage360.member_campaign_enrollments_enhanced
+                update_campaign_end_sql = f"""
+                UPDATE {IOE_SCHEMA}.member_campaign_enrollments_enhanced
                 SET campaign_end_date = DATEADD(day, 90, CAST(SYSDATETIMEOFFSET() AS DATE))
-                WHERE enrollment_id = %s
+                WHERE enrollment_id = ?
                 """
                 self.db_service.execute_query(
                     update_campaign_end_sql,
@@ -988,7 +991,7 @@ class BatchOrchestrator:
                 campaign_end_date = CAST(DATEADD(DAY, 90, SYSDATETIMEOFFSET()) AS DATE)
             WHERE
                 call_5_timestamp IS NULL  -- Not already set
-                AND campaign_id = %s
+                AND campaign_id = ?
                 AND (SELECT COUNT(*) FROM outreach_attempts WHERE enrollment_id = e.enrollment_id) = 5
 
         Args:
@@ -1032,19 +1035,19 @@ class BatchOrchestrator:
         return 0
 
         # The code below is preserved but not executed (for reference/rollback)
-        update_call_5_sql = """
+        update_call_5_sql = f"""
         UPDATE e
         SET
             e.call_5_timestamp = SYSDATETIMEOFFSET(),
             e.campaign_end_date = CAST(DATEADD(DAY, 90, SYSDATETIMEOFFSET()) AS DATE)
-        FROM engage360.member_campaign_enrollments_enhanced e
+        FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
         WHERE
             e.call_5_timestamp IS NULL  -- Haven't set Call 5 timestamp yet
-            AND e.campaign_id = %s      -- Device Activation campaign
+            AND e.campaign_id = ?      -- Device Activation campaign
             AND (
                 -- Count total attempts for this enrollment = 5 (just reached Call 5)
                 SELECT COUNT(*)
-                FROM engage360.outreach_attempts oa
+                FROM {IOE_SCHEMA}.outreach_attempts oa
                 WHERE oa.enrollment_id = e.enrollment_id
             ) = 5
         """
@@ -1056,15 +1059,15 @@ class BatchOrchestrator:
             fetch_results=False,
         )
 
-        # pymssql doesn't return rowcount directly from execute_query
+        # pyodbc doesn't return rowcount directly from execute_query
         # We need to check how many rows were affected
         # For now, we'll query to get the count
-        count_query = """
+        count_query = f"""
         SELECT COUNT(*) as updated_count
-        FROM engage360.member_campaign_enrollments_enhanced e
+        FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
         WHERE
             e.call_5_timestamp IS NOT NULL
-            AND e.campaign_id = %s
+            AND e.campaign_id = ?
             AND DATEDIFF(second, e.call_5_timestamp, SYSDATETIMEOFFSET()) < 10  -- Updated in last 10 seconds
         """
 
@@ -1086,14 +1089,16 @@ class BatchOrchestrator:
             batch_id: Internal batch UUID
             vendor_batch_id: Bland AI batch ID
         """
-        update_batch_sql = """
-        UPDATE engage360.outreach_batches
-        SET vendor_batch_id = %s, batch_status = %s, updated_ts = SYSDATETIMEOFFSET()
-        WHERE batch_id = %s
+        update_batch_sql = f"""
+        UPDATE {IOE_SCHEMA}.outreach_batches
+        SET vendor_batch_id = ?, batch_status = ?, updated_ts = SYSDATETIMEOFFSET()
+        WHERE batch_id = ?
         """
 
         self.db_service.execute_query(
-            update_batch_sql, (vendor_batch_id, "Submitted", batch_id), fetch_results=False
+            update_batch_sql,
+            (vendor_batch_id, "Submitted", batch_id),
+            fetch_results=False,
         )
 
         logger.info(f"✅ [BATCH-ORCHESTRATOR] Updated batch {batch_id} with vendor ID")
@@ -1106,14 +1111,16 @@ class BatchOrchestrator:
             batch_id: Internal batch UUID
             error_message: Error message to store
         """
-        update_batch_sql = """
-        UPDATE engage360.outreach_batches
-        SET batch_status = %s, error_message = %s, updated_ts = SYSDATETIMEOFFSET()
-        WHERE batch_id = %s
+        update_batch_sql = f"""
+        UPDATE {IOE_SCHEMA}.outreach_batches
+        SET batch_status = ?, error_message = ?, updated_ts = SYSDATETIMEOFFSET()
+        WHERE batch_id = ?
         """
 
         self.db_service.execute_query(
-            update_batch_sql, ("Failed", error_message[:500], batch_id), fetch_results=False
+            update_batch_sql,
+            ("Failed", error_message[:500], batch_id),
+            fetch_results=False,
         )
 
         logger.error(f"❌ [BATCH-ORCHESTRATOR] Marked batch {batch_id} as Failed")

@@ -20,12 +20,12 @@ This document details **EVERY database table** that gets updated or has new data
 ### When: BEFORE submitting to Bland AI
 ### File: `af_code/af_dtc_intro_call/services/blandai_service.py` (line 60-76)
 
-### Table: `engage360.outreach_batches`
+### Table: `ioe.outreach_batches`
 
 **Operation:** `INSERT`
 
 ```sql
-INSERT INTO engage360.outreach_batches
+INSERT INTO ioe.outreach_batches
 (batch_id, campaign_id, batch_status, total_calls_intended, created_ts)
 VALUES (%s, %s, 'Pending', %s, SYSDATETIMEOFFSET())
 ```
@@ -56,12 +56,12 @@ error_message: NULL
 ### When: BEFORE submitting to Bland AI (after batch creation)
 ### File: `af_code/af_dtc_intro_call/services/blandai_service.py` (line 82-99)
 
-### Table: `engage360.outreach_attempts`
+### Table: `ioe.outreach_attempts`
 
 **Operation:** `INSERT` (one record per member)
 
 ```sql
-INSERT INTO engage360.outreach_attempts
+INSERT INTO ioe.outreach_attempts
 (attempt_id, enrollment_id, channel, attempt_ts, disposition, retry_seq, batch_id)
 VALUES (%s, %s, 'Voice', SYSDATETIMEOFFSET(), 'Pending', 0, %s)
 ```
@@ -113,12 +113,12 @@ batch_id: f47ac10b-58cc-4372-a567-0e02b2c3d479
 ### When: AFTER successful Bland AI API response
 ### File: `af_code/af_dtc_intro_call/services/blandai_service.py` (line 267-279)
 
-### Table: `engage360.outreach_batches`
+### Table: `ioe.outreach_batches`
 
 **Operation:** `UPDATE`
 
 ```sql
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET vendor_batch_id = %s, batch_status = 'Submitted'
 WHERE batch_id = %s
 ```
@@ -152,14 +152,14 @@ Webhooks trigger **ATOMIC TRANSACTION** with up to 5 table operations (updated 2
 
 ### 4.1. Insert Call Log
 
-**Table:** `engage360.bland_call_logs`
+**Table:** `ioe.bland_call_logs`
 
 **Operation:** `INSERT` (one record per completed call)
 
 **File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 205-263)
 
 ```sql
-INSERT INTO engage360.bland_call_logs (
+INSERT INTO ioe.bland_call_logs (
     from_number, price, end_at, status, call_id, summary, analysis, batch_id,
     first_name, last_name, member_id, attempt_id, language_pref, call_type_code,
     salesforce_account_number, campaign_id, completed, created_at, pathway_id,
@@ -224,7 +224,7 @@ raw_bland_response: NULL  ← CHANGED: Now NULL (moved to bland_raw_response tab
 
 ### 4.2. Insert Raw Webhook Response
 
-**Table:** `engage360.bland_raw_response`
+**Table:** `ioe.bland_raw_response`
 
 **Operation:** `INSERT` (one record per completed call, atomic with 4.1)
 
@@ -233,7 +233,7 @@ raw_bland_response: NULL  ← CHANGED: Now NULL (moved to bland_raw_response tab
 **Purpose:** Stores complete raw Bland AI webhook JSON payload separately from bland_call_logs to optimize main table size and query performance. Implemented 2025-01-03 to address performance issues with large JSON blobs.
 
 ```sql
-INSERT INTO engage360.bland_raw_response (
+INSERT INTO ioe.bland_raw_response (
     call_id, raw_response, created_at
 )
 VALUES (
@@ -270,14 +270,14 @@ created_at: 2025-01-03 03:45:23.7890123 +00:00
 
 ### 4.3. Update Outreach Attempt
 
-**Table:** `engage360.outreach_attempts`
+**Table:** `ioe.outreach_attempts`
 
 **Operation:** `UPDATE` (if attempt_id exists in webhook metadata)
 
 **File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 288-316)
 
 ```sql
-UPDATE engage360.outreach_attempts
+UPDATE ioe.outreach_attempts
    SET vendor_session_id = %s,
        disposition      = %s,
        duration_sec     = %s,
@@ -315,14 +315,14 @@ status_updated_ts: 2025-10-17 03:45:25 +00:00  ← CHANGED from NULL
 
 ### 4.4. Update Enrollment Status
 
-**Table:** `engage360.member_campaign_enrollments_enhanced`
+**Table:** `ioe.member_campaign_enrollments_enhanced`
 
 **Operation:** `UPDATE` (conditional - only if business rules determine status change)
 
 **File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 318-600)
 
 ```sql
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
    SET current_status = %s,
        last_attempt_ts = SYSDATETIMEOFFSET()
  WHERE member_id = %s
@@ -358,14 +358,14 @@ member_care_gap_parameters: {...}  (unchanged)
 
 ### 4.5. Log Status Change (Audit)
 
-**Table:** `engage360.member_enrollment_status_history`
+**Table:** `ioe.member_enrollment_status_history`
 
 **Operation:** `INSERT` (audit trail for status changes)
 
 **File:** `af_code/bland_ai_webhook/services/database_orchestrator.py` (line 739-794)
 
 ```sql
-INSERT INTO engage360.member_enrollment_status_history
+INSERT INTO ioe.member_enrollment_status_history
 (member_id, campaign_id, previous_status, new_status, duration_since_last_change_hours,
  change_source, change_details)
 VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -397,7 +397,7 @@ change_timestamp: 2025-10-17 03:45:25 +00:00
 
 ### 4.6. Queue Status Tracking (Optional)
 
-**Table:** `engage360.analysis_queue_status`
+**Table:** `ioe.analysis_queue_status`
 
 **Operation:** `INSERT` + `UPDATE` (if Service Bus integration enabled)
 
@@ -405,7 +405,7 @@ change_timestamp: 2025-10-17 03:45:25 +00:00
 
 #### INSERT (Log Intent):
 ```sql
-INSERT INTO engage360.analysis_queue_status
+INSERT INTO ioe.analysis_queue_status
     (call_id, webhook_received_dttm, queue_submitted_dttm,
      service_bus_message_id, processing_status, retry_count)
 VALUES (%s, %s, %s, %s, %s, %s)
@@ -422,14 +422,14 @@ VALUES (%s, %s, %s, %s, %s, %s)
 #### UPDATE (Mark Success/Failure):
 ```sql
 -- Success:
-UPDATE engage360.analysis_queue_status
+UPDATE ioe.analysis_queue_status
 SET service_bus_message_id = %s,
     processing_status = 'PENDING',
     queue_submitted_dttm = SYSDATETIMEOFFSET()
 WHERE call_id = %s
 
 -- Failure:
-UPDATE engage360.analysis_queue_status
+UPDATE ioe.analysis_queue_status
 SET processing_status = 'FAILED',
     queue_submitted_dttm = SYSDATETIMEOFFSET()
 WHERE call_id = %s
@@ -473,12 +473,12 @@ When a DTC intro call succeeds (status becomes `ENROLLED`), the system automatic
 
 ### 5.1. Update Intro Campaign to UNENROLLED
 
-**Table:** `engage360.member_campaign_enrollments_enhanced`
+**Table:** `ioe.member_campaign_enrollments_enhanced`
 
 **Operation:** `UPDATE`
 
 ```sql
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
    SET current_status = 'UNENROLLED',
        last_attempt_ts = SYSDATETIMEOFFSET()
  WHERE member_id = %s
@@ -504,12 +504,12 @@ preferred_window: evening
 
 ### 5.2. Create/Update Wellness Campaign to ENROLLED
 
-**Table:** `engage360.member_campaign_enrollments_enhanced`
+**Table:** `ioe.member_campaign_enrollments_enhanced`
 
 **Operation:** `MERGE` (upsert - create if doesn't exist, update if exists)
 
 ```sql
-MERGE engage360.member_campaign_enrollments_enhanced AS tgt
+MERGE ioe.member_campaign_enrollments_enhanced AS tgt
 USING (SELECT %s as member_id, %s as campaign_id, %s as new_status, %s as preferred_window) AS src
 ON tgt.member_id = src.member_id AND tgt.campaign_id = src.campaign_id
 WHEN MATCHED THEN
@@ -540,12 +540,12 @@ preferred_window: evening  ← Copied from intro campaign
 
 ### 5.3. Log Intro Campaign Status Change
 
-**Table:** `engage360.member_enrollment_status_history`
+**Table:** `ioe.member_enrollment_status_history`
 
 **Operation:** `INSERT`
 
 ```sql
-INSERT INTO engage360.member_enrollment_status_history
+INSERT INTO ioe.member_enrollment_status_history
 (member_id, campaign_id, previous_status, new_status, duration_since_last_change_hours,
  change_source, change_details)
 VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -577,12 +577,12 @@ change_timestamp: 2025-10-17 03:45:25 +00:00
 
 ### 5.4. Log Wellness Campaign Status Change
 
-**Table:** `engage360.member_enrollment_status_history`
+**Table:** `ioe.member_enrollment_status_history`
 
 **Operation:** `INSERT`
 
 ```sql
-INSERT INTO engage360.member_enrollment_status_history
+INSERT INTO ioe.member_enrollment_status_history
 (member_id, campaign_id, previous_status, new_status, duration_since_last_change_hours,
  change_source, change_details)
 VALUES (%s, %s, %s, %s, %s, %s, %s)
@@ -618,19 +618,19 @@ change_timestamp: 2025-10-17 03:45:25 +00:00
 
 | Phase | Table Name | Operation | When | Records |
 |-------|-----------|-----------|------|---------|
-| **Phase 1** | `engage360.outreach_batches` | INSERT | Before Bland AI call | 1 record |
-| **Phase 2** | `engage360.outreach_attempts` | INSERT | Before Bland AI call | N records (1 per member) |
-| **Phase 3** | `engage360.outreach_batches` | UPDATE | After Bland API response | 1 record (updated) |
-| **Phase 4.1** | `engage360.bland_call_logs` | INSERT | Webhook (call completion) | 1 record per call |
-| **Phase 4.2** | `engage360.bland_raw_response` | INSERT | Webhook (call completion, atomic) | 1 record per call (NEW: 2025-01-03) |
-| **Phase 4.3** | `engage360.outreach_attempts` | UPDATE | Webhook (call completion) | 1 record per call |
-| **Phase 4.4** | `engage360.member_campaign_enrollments_enhanced` | UPDATE | Webhook (conditional) | 1 record (if status change) |
-| **Phase 4.5** | `engage360.member_enrollment_status_history` | INSERT | Webhook (audit) | 1 record (if status change) |
-| **Phase 4.6** | `engage360.analysis_queue_status` | INSERT + UPDATE | Webhook (optional) | 1 record per call |
-| **Phase 5.1** | `engage360.member_campaign_enrollments_enhanced` | UPDATE | Webhook (intro ENROLLED) | 1 record (intro campaign) |
-| **Phase 5.2** | `engage360.member_campaign_enrollments_enhanced` | MERGE | Webhook (intro ENROLLED) | 1 record (wellness campaign) |
-| **Phase 5.3** | `engage360.member_enrollment_status_history` | INSERT | Webhook (intro audit) | 1 record |
-| **Phase 5.4** | `engage360.member_enrollment_status_history` | INSERT | Webhook (wellness audit) | 1 record |
+| **Phase 1** | `ioe.outreach_batches` | INSERT | Before Bland AI call | 1 record |
+| **Phase 2** | `ioe.outreach_attempts` | INSERT | Before Bland AI call | N records (1 per member) |
+| **Phase 3** | `ioe.outreach_batches` | UPDATE | After Bland API response | 1 record (updated) |
+| **Phase 4.1** | `ioe.bland_call_logs` | INSERT | Webhook (call completion) | 1 record per call |
+| **Phase 4.2** | `ioe.bland_raw_response` | INSERT | Webhook (call completion, atomic) | 1 record per call (NEW: 2025-01-03) |
+| **Phase 4.3** | `ioe.outreach_attempts` | UPDATE | Webhook (call completion) | 1 record per call |
+| **Phase 4.4** | `ioe.member_campaign_enrollments_enhanced` | UPDATE | Webhook (conditional) | 1 record (if status change) |
+| **Phase 4.5** | `ioe.member_enrollment_status_history` | INSERT | Webhook (audit) | 1 record (if status change) |
+| **Phase 4.6** | `ioe.analysis_queue_status` | INSERT + UPDATE | Webhook (optional) | 1 record per call |
+| **Phase 5.1** | `ioe.member_campaign_enrollments_enhanced` | UPDATE | Webhook (intro ENROLLED) | 1 record (intro campaign) |
+| **Phase 5.2** | `ioe.member_campaign_enrollments_enhanced` | MERGE | Webhook (intro ENROLLED) | 1 record (wellness campaign) |
+| **Phase 5.3** | `ioe.member_enrollment_status_history` | INSERT | Webhook (intro audit) | 1 record |
+| **Phase 5.4** | `ioe.member_enrollment_status_history` | INSERT | Webhook (wellness audit) | 1 record |
 
 ---
 
@@ -733,7 +733,7 @@ SELECT
     stg.org_id,
     LTRIM(RTRIM(stg.salesforce_account_number)) AS salesforce_account_number,
     COUNT(*) as duplicate_count
-FROM engage360_stg.stg_dtc_wellness_delta stg
+FROM ioe_stg.stg_dtc_wellness_delta stg
 WHERE stg.file_batch_id = %s
   AND stg.processing_status = 'TRANSFORMING'
   AND stg.org_id IS NOT NULL
@@ -769,8 +769,8 @@ org_id: abc-123, salesforce_account_number: SF-5678, count: 2
 **Query:**
 ```sql
 SELECT m.member_id, COUNT(*) as duplicate_count
-FROM engage360_stg.stg_dtc_wellness_delta stg
-JOIN engage360.members m
+FROM ioe_stg.stg_dtc_wellness_delta stg
+JOIN ioe.members m
     ON m.org_id = stg.org_id
     AND m.salesforce_account_number = stg.salesforce_account_number
 WHERE stg.file_batch_id = %s
@@ -806,8 +806,8 @@ member_id: m12345, count: 2
 **Query:**
 ```sql
 SELECT stg.device_udi, COUNT(*) as duplicate_count
-FROM engage360_stg.stg_dtc_wellness_delta stg
-JOIN engage360.members m
+FROM ioe_stg.stg_dtc_wellness_delta stg
+JOIN ioe.members m
     ON m.org_id = stg.org_id
     AND m.salesforce_account_number = stg.salesforce_account_number
 WHERE stg.file_batch_id = %s
@@ -843,7 +843,7 @@ device_udi: DEVICE-12345, count: 2
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │ Step 2: LOAD_TO_STAGING                                     │
-│ - INSERT all rows to engage360_stg.stg_dtc_wellness_delta  │
+│ - INSERT all rows to ioe_stg.stg_dtc_wellness_delta  │
 │ - File moved to staging/ folder                            │
 └─────────────────────────────────────────────────────────────┘
                             ↓
@@ -862,7 +862,7 @@ device_udi: DEVICE-12345, count: 2
 │ └─────────────────────────────────────────────────────────┘ │
 │                            ↓                                │
 │ ┌─────────────────────────────────────────────────────────┐ │
-│ │ 4.2: Upsert members to engage360.members               │ │
+│ │ 4.2: Upsert members to ioe.members               │ │
 │ └─────────────────────────────────────────────────────────┘ │
 │                            ↓                                │
 │ ┌─────────────────────────────────────────────────────────┐ │
@@ -922,9 +922,9 @@ if duplicates:
 - All database operations in Step 4 are wrapped in a transaction
 - When ValueError is raised, entire transaction is rolled back
 - Zero records written to production tables:
-  - `engage360.members` - no inserts/updates
-  - `engage360.member_campaign_enrollments_enhanced` - no inserts/updates
-  - `engage360.member_devices` - no inserts/updates
+  - `ioe.members` - no inserts/updates
+  - `ioe.member_campaign_enrollments_enhanced` - no inserts/updates
+  - `ioe.member_devices` - no inserts/updates
 
 #### 3. File Moved to Error Folder
 
@@ -933,10 +933,10 @@ if duplicates:
 
 #### 4. Error Logged to Database
 
-**Table:** `engage360_stg.file_processing_log`
+**Table:** `ioe_stg.file_processing_log`
 
 ```sql
-UPDATE engage360_stg.file_processing_log
+UPDATE ioe_stg.file_processing_log
 SET processing_status = 'FAILED',
     final_error_message = 'Duplicate members found in staging data:...',
     processing_end_ts = SYSDATETIMEOFFSET()
@@ -945,7 +945,7 @@ WHERE file_batch_id = %s
 
 #### 5. Staging Records Preserved
 
-- All records remain in `engage360_stg.stg_dtc_wellness_delta` with `processing_status = 'TRANSFORMING'`
+- All records remain in `ioe_stg.stg_dtc_wellness_delta` with `processing_status = 'TRANSFORMING'`
 - Allows investigation of which records were duplicates
 - Can be manually inspected or cleaned up
 
@@ -961,7 +961,7 @@ SELECT
     LTRIM(RTRIM(salesforce_account_number)) AS salesforce_account_number,
     COUNT(*) as count,
     STRING_AGG(CAST(row_number AS VARCHAR), ', ') as row_numbers
-FROM engage360_stg.stg_dtc_wellness_delta
+FROM ioe_stg.stg_dtc_wellness_delta
 WHERE file_batch_id = 'YOUR-FILE-BATCH-ID'
   AND processing_status = 'TRANSFORMING'
   AND org_id IS NOT NULL
@@ -978,8 +978,8 @@ SELECT
     m.member_id,
     stg.salesforce_account_number,
     COUNT(*) as count
-FROM engage360_stg.stg_dtc_wellness_delta stg
-JOIN engage360.members m
+FROM ioe_stg.stg_dtc_wellness_delta stg
+JOIN ioe.members m
     ON m.org_id = stg.org_id
     AND m.salesforce_account_number = stg.salesforce_account_number
 WHERE stg.file_batch_id = 'YOUR-FILE-BATCH-ID'
@@ -996,7 +996,7 @@ SELECT
     stg.device_udi,
     COUNT(*) as count,
     STRING_AGG(stg.salesforce_account_number, ', ') as assigned_to_members
-FROM engage360_stg.stg_dtc_wellness_delta stg
+FROM ioe_stg.stg_dtc_wellness_delta stg
 WHERE stg.file_batch_id = 'YOUR-FILE-BATCH-ID'
   AND stg.processing_status = 'TRANSFORMING'
   AND stg.device_udi IS NOT NULL
@@ -1015,7 +1015,7 @@ SELECT
     final_error_message,
     processing_start_ts,
     processing_end_ts
-FROM engage360_stg.file_processing_log
+FROM ioe_stg.file_processing_log
 WHERE file_name LIKE '%YOUR-FILE-NAME%'
 ORDER BY processing_start_ts DESC
 ```
@@ -1041,7 +1041,7 @@ When a duplicate error occurs:
 
 4. **Clean Up Staging (Optional)**
    ```sql
-   DELETE FROM engage360_stg.stg_dtc_wellness_delta
+   DELETE FROM ioe_stg.stg_dtc_wellness_delta
    WHERE file_batch_id = 'FAILED-FILE-BATCH-ID'
    ```
 
@@ -1070,8 +1070,8 @@ When a duplicate error occurs:
 **Important:** Duplicate prevention is **application-enforced**, not database-enforced.
 
 **No UNIQUE Constraints on:**
-- `engage360_stg.stg_dtc_wellness_delta` - Staging table intentionally allows duplicates for auditing
-- `engage360.members.(org_id, salesforce_account_number)` - No composite unique index
+- `ioe_stg.stg_dtc_wellness_delta` - Staging table intentionally allows duplicates for auditing
+- `ioe.members.(org_id, salesforce_account_number)` - No composite unique index
 
 **Why Application-Level?**
 - Allows investigation of duplicate records in staging
@@ -1133,7 +1133,7 @@ The auto-transition from intro → wellness campaign is a **complex business rul
 If Phase 1-3 fails, the entire batch is marked as failed:
 
 ```sql
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET batch_status = 'Failed', error_message = %s
 WHERE batch_id = %s
 ```
@@ -1142,7 +1142,7 @@ WHERE batch_id = %s
 If webhook transaction fails:
 - Retries up to 3 times with exponential backoff
 - Partial updates are rolled back (atomic transaction)
-- Error logged to `engage360.error_logs` table
+- Error logged to `ioe.error_logs` table
 - Returns HTTP 500 to Bland AI (triggers webhook retry)
 
 ---

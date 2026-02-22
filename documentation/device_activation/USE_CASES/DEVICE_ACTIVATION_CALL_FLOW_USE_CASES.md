@@ -1,9 +1,14 @@
 # Device Activation Call Flow - Complete Use Cases
 
-**Document Version:** 1.0
-**Last Updated:** 2025-12-24
-**BusinessCaseID:** BC-DA-001, BC-DA-003, BC-DA-006
+**Document Version:** 1.1
+**Last Updated:** 2026-01-17 (Updated for new campaign_end_date logic)
+**BusinessCaseID:** BC-DA-001, BC-DA-003, BC-DA-006, BC-DA-007 (Campaign Closure)
 **Author:** AI-POD Team - Data Science
+
+**Version 1.1 Changes (2026-01-17):**
+- Updated 90-day window to start from activation_start_date (not call_5_timestamp)
+- Added BC-DA-007 (Campaign Closure) references
+- Updated all use cases to reflect hourly campaign closure scheduler
 
 ---
 
@@ -33,12 +38,13 @@ This document provides comprehensive use cases for Device Activation campaign ca
 - **What** business hours apply to each timezone
 - **Why** certain calls are made or skipped
 
-### Key Principles
+### Key Principles (UPDATED 2026-01-17)
 
 1. **Call Frequency** = CALENDAR DAYS (includes weekends)
 2. **Call Timing** = BUSINESS DAYS ONLY (Mon-Fri, no holidays)
 3. **Business Hours** = Dual-timezone validation (MG EST + Member timezone)
-4. **90-Day Window** = Starts from Call 5 timestamp (NOT activation_start_date)
+4. **90-Day Window** = Starts from activation_start_date (when Call 1 is eligible) - UPDATED 2026-01-17
+5. **Campaign Closure** = Hourly scheduler (BC-DA-007) auto-unenrolls expired members
 
 ---
 
@@ -59,15 +65,16 @@ This document provides comprehensive use cases for Device Activation campaign ca
 📅 Day 12 (Friday, Jan 12): Eligible for Call 4 (skipped - weekend)
 📅 Day 15 (Monday, Jan 15): CALL 4 MADE
    ↓ (7 calendar days)
-📅 Day 22 (Monday, Jan 22): CALL 5 MADE 🚨
-   ↓ [90-DAY WINDOW STARTS: Jan 22 → April 22]
+📅 Day 22 (Monday, Jan 22): CALL 5 MADE
+   ↓ (7 calendar days, weekly)
 📅 Day 29 (Monday, Jan 29): CALL 6 MADE
    ↓ (7 calendar days, weekly)
 📅 Day 36 (Monday, Feb 5): CALL 7 MADE
-   ↓ (Continue weekly...)
-📅 Day 105 (April 15): CALL 15 MADE (last call within 90 days)
+   ↓ (Continue weekly until 90-day window expires...)
+📅 Day 90 (April 1): Last calls within 90-day window
    ↓
-📅 Day 112 (April 22): ❌ Campaign ends (90 days from Call 5)
+📅 Day 93 (April 4): ❌ Campaign ends (90 days from activation_start_date = Jan 3)
+   ⏰ Hourly campaign closure scheduler unenrolls member
 ```
 
 ### Call Frequency Rules
@@ -80,9 +87,10 @@ This document provides comprehensive use cases for Device Activation campaign ca
 | Call 4 | Call 3 + 5 days | 5 calendar days | Final early attempt |
 | Call 5+ | Previous + 7 days | 7 calendar days (weekly) | Extended attempts |
 
-**Important:**
-- Calls 1-4: **NO 90-day limit** (only frequency rules apply)
-- Call 5+: **90-day window** from call_5_timestamp (hard deadline)
+**Important (UPDATED 2026-01-17):**
+- **All calls (1-5+)** are subject to 90-day window from activation_start_date
+- campaign_end_date = activation_start_date + 90 days (set at enrollment)
+- Hourly campaign closure (BC-DA-007) auto-unenrolls members when campaign_end_date expires
 
 ---
 
@@ -1425,7 +1433,7 @@ SELECT
     m.timezone,
     SYSDATETIMEOFFSET() AS current_utc_time,
     SYSDATETIMEOFFSET() AT TIME ZONE m.timezone AS member_local_time
-FROM engage360.members m
+FROM ioe.members m
 WHERE m.member_id = 'abc-123'
 ```
 
@@ -1497,8 +1505,8 @@ SELECT
     e.call_5_timestamp,
     e.campaign_end_date,
     COUNT(oa.attempt_id) AS total_attempts
-FROM engage360.member_campaign_enrollments_enhanced e
-LEFT JOIN engage360.outreach_attempts oa
+FROM ioe.member_campaign_enrollments_enhanced e
+LEFT JOIN ioe.outreach_attempts oa
     ON e.enrollment_id = oa.enrollment_id
 WHERE e.member_id = 'abc-123'
 GROUP BY e.enrollment_id, e.member_id, e.call_5_timestamp, e.campaign_end_date
@@ -1507,13 +1515,13 @@ GROUP BY e.enrollment_id, e.member_id, e.call_5_timestamp, e.campaign_end_date
 3. **Manual Fix (if needed)**
 ```sql
 -- Only run if batch orchestrator failed to update
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET
     call_5_timestamp = SYSDATETIMEOFFSET(),
     campaign_end_date = CAST(DATEADD(DAY, 90, SYSDATETIMEOFFSET()) AS DATE)
 WHERE enrollment_id = 'abc-123'
 AND call_5_timestamp IS NULL
-AND (SELECT COUNT(*) FROM engage360.outreach_attempts
+AND (SELECT COUNT(*) FROM ioe.outreach_attempts
      WHERE enrollment_id = 'abc-123') >= 5
 ```
 
@@ -1586,7 +1594,7 @@ SELECT
         WHEN SYSDATETIMEOFFSET() <= e.campaign_end_date THEN 'Within window'
         ELSE 'Expired'
     END AS window_status
-FROM engage360.member_campaign_enrollments_enhanced e
+FROM ioe.member_campaign_enrollments_enhanced e
 WHERE e.member_id = 'abc-123'
 ```
 
@@ -1610,7 +1618,7 @@ This document provides comprehensive use cases covering:
 1. **Frequency = Calendar Days** (includes weekends)
 2. **Timing = Business Days** (Mon-Fri, no holidays)
 3. **Calls 1-4 = No 90-day limit** (can happen anytime)
-4. **Call 5+ = 90-day window** from call_5_timestamp
+4. **Call 5+ = 90-day window** from activation_start_date
 5. **PST members = 5-hour window** (narrowest)
 6. **Noon EST = Optimal time** for multi-timezone batches
 

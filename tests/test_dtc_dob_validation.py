@@ -76,7 +76,8 @@ class TestDTCDOBValidation:
 
         # Check for no age-related errors in validation_errors list
         age_errors = [
-            err for err in validation_errors
+            err
+            for err in validation_errors
             if any("unrealistic age" in e for e in err.get("errors", []))
         ]
         assert len(age_errors) == 0, "Should not have age-related errors"
@@ -135,7 +136,8 @@ class TestDTCDOBValidation:
 
         # Check for no age-related errors in validation_errors list
         age_errors = [
-            err for err in validation_errors
+            err
+            for err in validation_errors
             if any("unrealistic age" in e for e in err.get("errors", []))
         ]
         assert len(age_errors) == 0, "Should not have age-related errors"
@@ -368,7 +370,8 @@ class TestDTCDOBValidation:
 
         # No age-related errors
         age_errors = [
-            err for err in validation_errors
+            err
+            for err in validation_errors
             if any("unrealistic age" in e for e in err.get("errors", []))
         ]
         assert len(age_errors) == 0, "Should have no age-related errors"

@@ -2,7 +2,7 @@
 
 **Date:** 2025-12-24
 **Version:** 1.0
-**BusinessCaseID:** BC-DA-002 (File Processing), BC-DA-003 (Eligibility), BC-DA-004 (Batch Creation), BC-DA-007 (Webhook Processing)
+**BusinessCaseID:** BC-DA-002 (File Processing), BC-DA-003 (Eligibility), BC-DA-004 (Batch Creation), BC-DA-007 (Campaign Closure), BC-102 (Webhook Processing - Shared)
 **Purpose:** Comprehensive reference for all database operations, SQL patterns, and data lifecycle in Device Activation
 
 ---
@@ -14,11 +14,12 @@
 3. [Scheduler Operations](#3-scheduler-operations)
 4. [Batch Creation & Tracking](#4-batch-creation--tracking)
 5. [Webhook Processing Operations](#5-webhook-processing-operations)
-6. [Callback Queue Management](#6-callback-queue-management)
-7. [Status Transitions & Audit Trail](#7-status-transitions--audit-trail)
-8. [Transaction Management](#8-transaction-management)
-9. [Index Requirements & Performance](#9-index-requirements--performance)
-10. [Data Retention & Cleanup](#10-data-retention--cleanup)
+6. [Campaign Closure Operations (90-Day Auto-Unenroll)](#6-campaign-closure-operations-90-day-auto-unenroll)
+7. [Callback Queue Management](#7-callback-queue-management)
+8. [Status Transitions & Audit Trail](#8-status-transitions--audit-trail)
+9. [Transaction Management](#9-transaction-management)
+10. [Index Requirements & Performance](#10-index-requirements--performance)
+11. [Data Retention & Cleanup](#11-data-retention--cleanup)
 
 ---
 
@@ -28,16 +29,16 @@
 
 | Table | Schema | Type | Rows (Est.) | Retention | Primary Use |
 |-------|--------|------|-------------|-----------|-------------|
-| members | engage360 | Core | 100K+ | Permanent | Master member data |
-| member_devices | engage360 | Core | 100K+ | Permanent | Device information |
-| campaigns_enhanced | engage360 | Core | 10 | Permanent | Campaign configuration |
-| campaign_call_configs_enhanced | engage360 | Core | 10 | Permanent | Bland AI config |
-| member_campaign_enrollments_enhanced | engage360 | Core | 50K+ | Permanent | Enrollment tracking |
-| outreach_batches | engage360 | Core | 5K+/month | 90 days | Batch-level tracking |
-| outreach_attempts | engage360 | Core | 500K+/month | 90 days | Call attempt tracking |
-| outreach_callback_queue | engage360 | Core | 100-1K | 7 days | Callback requests |
-| bland_call_logs | engage360 | Audit | 500K+/month | 1 year | Complete webhook audit |
-| stg_device_activation_delta | engage360_stg | Staging | 0-10K | 1 day | Temporary CSV staging |
+| members | ioe | Core | 100K+ | Permanent | Master member data |
+| member_devices | ioe | Core | 100K+ | Permanent | Device information |
+| campaigns_enhanced | ioe | Core | 10 | Permanent | Campaign configuration |
+| campaign_call_configs_enhanced | ioe | Core | 10 | Permanent | Bland AI config |
+| member_campaign_enrollments_enhanced | ioe | Core | 50K+ | Permanent | Enrollment tracking |
+| outreach_batches | ioe | Core | 5K+/month | 90 days | Batch-level tracking |
+| outreach_attempts | ioe | Core | 500K+/month | 90 days | Call attempt tracking |
+| outreach_callback_queue | ioe | Core | 100-1K | 7 days | Callback requests |
+| bland_call_logs | ioe | Audit | 500K+/month | 1 year | Complete webhook audit |
+| stg_device_activation_delta | ioe_stg | Staging | 0-10K | 1 day | Temporary CSV staging |
 
 ### 1.2 Table Relationships
 
@@ -83,7 +84,7 @@ Pandas DataFrame operations only - no database writes in this phase.
 
 **Purpose:** Insert raw CSV data into staging table for validation
 
-**Table:** `engage360_stg.stg_device_activation_delta`
+**Table:** `ioe_stg.stg_device_activation_delta`
 
 **Operation Type:** Row-by-row INSERT
 
@@ -93,7 +94,7 @@ Pandas DataFrame operations only - no database writes in this phase.
 
 ```sql
 -- INSERT single row into staging
-INSERT INTO engage360_stg.stg_device_activation_delta (
+INSERT INTO ioe_stg.stg_device_activation_delta (
     -- Member fields
     member_id,
     first_name,
@@ -204,7 +205,7 @@ def load_to_staging(df: pd.DataFrame, file_id: str, db_service: DatabaseService)
 
 **Purpose:** Cleanse and validate staged data using SQL UPDATE statements
 
-**Table:** `engage360_stg.stg_device_activation_delta`
+**Table:** `ioe_stg.stg_device_activation_delta`
 
 **Operation Type:** Batch UPDATE (all rows for file_id)
 
@@ -216,7 +217,7 @@ def load_to_staging(df: pd.DataFrame, file_id: str, db_service: DatabaseService)
 
 ```sql
 -- Clean first_name and last_name to proper case
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET first_name_clean = UPPER(LEFT(first_name, 1)) + LOWER(SUBSTRING(first_name, 2, LEN(first_name))),
     last_name_clean = UPPER(LEFT(last_name, 1)) + LOWER(SUBSTRING(last_name, 2, LEN(last_name)))
 WHERE file_id = %s;
@@ -228,7 +229,7 @@ WHERE file_id = %s;
 
 ```sql
 -- Convert phone numbers to E.164 format (+1XXXXXXXXXX)
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET primary_phone_clean = '+1' + REPLACE(REPLACE(REPLACE(REPLACE(primary_phone, '-', ''), '(', ''), ')', ''), ' ', '')
 WHERE file_id = %s
   AND LEN(REPLACE(REPLACE(REPLACE(REPLACE(primary_phone, '-', ''), '(', ''), ')', ''), ' ', '')) = 10;
@@ -237,7 +238,7 @@ WHERE file_id = %s
 -- Example: '(555) 123-4567' → '+15551234567'
 
 -- Validate E.164 format (must start with +1 and be 12 characters)
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET validation_status = 'Invalid',
     validation_error = CONCAT(ISNULL(validation_error, ''), '; Invalid phone format')
 WHERE file_id = %s
@@ -248,13 +249,13 @@ WHERE file_id = %s
 
 ```sql
 -- Simple email validation (contains @ and . after @)
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET email_clean = LOWER(LTRIM(RTRIM(email)))
 WHERE file_id = %s
   AND email LIKE '%@%.%';
 
 -- Mark invalid emails
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET validation_status = 'Invalid',
     validation_error = CONCAT(ISNULL(validation_error, ''), '; Invalid email format')
 WHERE file_id = %s
@@ -266,7 +267,7 @@ WHERE file_id = %s
 
 ```sql
 -- Map common timezone abbreviations to IANA format
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET timezone_clean = CASE
     WHEN timezone IN ('Eastern', 'EST', 'ET', 'E') THEN 'America/New_York'
     WHEN timezone IN ('Central', 'CST', 'CT', 'C') THEN 'America/Chicago'
@@ -278,7 +279,7 @@ END
 WHERE file_id = %s;
 
 -- Mark invalid timezones
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET validation_status = 'Invalid',
     validation_error = CONCAT(ISNULL(validation_error, ''), '; Invalid timezone')
 WHERE file_id = %s
@@ -289,7 +290,7 @@ WHERE file_id = %s
 
 ```sql
 -- Convert fall_detection and powersaver_mode to BIT
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET fall_detection_clean = CASE
         WHEN fall_detection IN ('Yes', 'Y', '1', 'True', 'T') THEN 1
         WHEN fall_detection IN ('No', 'N', '0', 'False', 'F') THEN 0
@@ -308,7 +309,7 @@ WHERE file_id = %s;
 ```sql
 -- Count invalid rows
 SELECT COUNT(*) AS invalid_count
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE file_id = %s
   AND validation_status = 'Invalid';
 
@@ -319,7 +320,7 @@ WHERE file_id = %s
 
 ```sql
 -- Mark rows that passed all validation
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET validation_status = 'Valid',
     processing_status = 'Validated'
 WHERE file_id = %s
@@ -338,7 +339,7 @@ WHERE file_id = %s
 
 ```sql
 -- MERGE validated staging data into core members table
-MERGE engage360.members AS target
+MERGE ioe.members AS target
 USING (
     -- Source: Validated rows from staging (DISTINCT to handle duplicates within file)
     SELECT DISTINCT
@@ -356,7 +357,7 @@ USING (
         address_zip,
         member_brand,
         salesforce_account_number
-    FROM engage360_stg.stg_device_activation_delta
+    FROM ioe_stg.stg_device_activation_delta
     WHERE file_id = %s
       AND processing_status = 'Validated'
       AND validation_status = 'Valid'
@@ -406,7 +407,7 @@ WHEN NOT MATCHED THEN
 
 ```sql
 -- MERGE validated staging data into core member_devices table
-MERGE engage360.member_devices AS target
+MERGE ioe.member_devices AS target
 USING (
     SELECT DISTINCT
         device_id,
@@ -417,7 +418,7 @@ USING (
         is_device_callable,
         fall_detection_clean AS fall_detection,
         powersaver_mode_clean AS powersaver_mode
-    FROM engage360_stg.stg_device_activation_delta
+    FROM ioe_stg.stg_device_activation_delta
     WHERE file_id = %s
       AND processing_status = 'Validated'
       AND validation_status = 'Valid'
@@ -455,7 +456,7 @@ WHEN NOT MATCHED THEN
 ```sql
 -- INSERT new enrollments (always INSERT, never UPDATE)
 -- Calculate activation_start_date using business day function
-INSERT INTO engage360.member_campaign_enrollments_enhanced (
+INSERT INTO ioe.member_campaign_enrollments_enhanced (
     enrollment_id,
     member_id,
     campaign_id,
@@ -487,7 +488,7 @@ FROM (
         member_id,
         campaign_id,
         delivery_date
-    FROM engage360_stg.stg_device_activation_delta
+    FROM ioe_stg.stg_device_activation_delta
     WHERE file_id = %s
       AND processing_status = 'Validated'
       AND validation_status = 'Valid'
@@ -496,7 +497,7 @@ FROM (
 -- Prevent duplicate enrollments (member can only be enrolled once per campaign)
 WHERE NOT EXISTS (
     SELECT 1
-    FROM engage360.member_campaign_enrollments_enhanced e
+    FROM ioe.member_campaign_enrollments_enhanced e
     WHERE e.member_id = source.member_id
       AND e.campaign_id = source.campaign_id
       AND e.current_status IN ('ENROLLED', 'PENDING')  -- Active enrollments only
@@ -527,7 +528,7 @@ BEGIN
             -- Check if not a company holiday
             IF NOT EXISTS (
                 SELECT 1
-                FROM engage360.company_holidays
+                FROM ioe.company_holidays
                 WHERE holiday_date = @EndDate
             )
             BEGIN
@@ -554,7 +555,7 @@ END;
 
 ```sql
 -- Mark all rows as completed
-UPDATE engage360_stg.stg_device_activation_delta
+UPDATE ioe_stg.stg_device_activation_delta
 SET processing_status = 'Completed',
     processed_at = SYSDATETIMEOFFSET()
 WHERE file_id = %s
@@ -564,7 +565,7 @@ WHERE file_id = %s
 **5.5.2 Insert File Processing Log:**
 
 ```sql
-INSERT INTO engage360.file_processing_log (
+INSERT INTO ioe.file_processing_log (
     log_id,
     file_name,
     file_id,
@@ -628,8 +629,8 @@ SELECT
     cc.voice_id,
     cc.bland_parameters_global,
     cc.config_status
-FROM engage360.campaigns_enhanced c
-LEFT JOIN engage360.campaign_call_configs_enhanced cc
+FROM ioe.campaigns_enhanced c
+LEFT JOIN ioe.campaign_call_configs_enhanced cc
     ON c.campaign_id = cc.campaign_id
     AND cc.config_status = 'active'
 WHERE c.campaign_id = %s
@@ -740,14 +741,14 @@ END;
 
 -- Calls 2-3: 2 BUSINESS days since last attempt (OLD SQL APPROACH - NOT USED)
 AND dbo.GetBusinessDaysBetween(
-    (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts
+    (SELECT MAX(attempt_ts) FROM ioe.outreach_attempts
      WHERE enrollment_id = e.enrollment_id),
     SYSDATETIMEOFFSET()
 ) >= 2
 
 -- Call 4: 5 BUSINESS days since Call 3 (OLD SQL APPROACH - NOT USED)
 AND dbo.GetBusinessDaysBetween(
-    (SELECT MAX(attempt_ts) FROM engage360.outreach_attempts
+    (SELECT MAX(attempt_ts) FROM ioe.outreach_attempts
      WHERE enrollment_id = e.enrollment_id),
     SYSDATETIMEOFFSET()
 ) >= 5
@@ -784,7 +785,7 @@ Device Activation uses **3-phase tracking** to ensure database consistency even 
 **BusinessCaseID:** BC-DA-004
 
 ```sql
-INSERT INTO engage360.outreach_batches (
+INSERT INTO ioe.outreach_batches (
     batch_id,
     campaign_id,
     batch_status,
@@ -817,7 +818,7 @@ def _create_outreach_batch(self, campaign_id: str, batch_size: int) -> str:
     batch_name = f"Device Activation Batch {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
     query = """
-        INSERT INTO engage360.outreach_batches (
+        INSERT INTO ioe.outreach_batches (
             batch_id, campaign_id, batch_status, batch_size, batch_name,
             created_at, updated_at
         )
@@ -839,7 +840,7 @@ def _create_outreach_batch(self, campaign_id: str, batch_size: int) -> str:
 
 ```sql
 -- Create one attempt per member in batch
-INSERT INTO engage360.outreach_attempts (
+INSERT INTO ioe.outreach_attempts (
     attempt_id,
     enrollment_id,
     batch_id,
@@ -876,7 +877,7 @@ def _create_outreach_attempts(self, batch_id: str, members: List[Dict]) -> List[
         attempt_ids.append(attempt_id)
 
         query = """
-            INSERT INTO engage360.outreach_attempts (
+            INSERT INTO ioe.outreach_attempts (
                 attempt_id, enrollment_id, batch_id, disposition,
                 attempt_ts, created_at, updated_at
             )
@@ -899,7 +900,7 @@ def _create_outreach_attempts(self, batch_id: str, members: List[Dict]) -> List[
 **BusinessCaseID:** BC-DA-004
 
 ```sql
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET vendor_batch_id = %s,  -- From Bland AI response
     batch_status = 'Submitted',
     submitted_at = SYSDATETIMEOFFSET(),
@@ -918,7 +919,7 @@ def _update_batch_with_vendor_id(self, batch_id: str, vendor_batch_id: str):
     BusinessCaseID: BC-DA-004
     """
     query = """
-        UPDATE engage360.outreach_batches
+        UPDATE ioe.outreach_batches
         SET vendor_batch_id = %s,
             batch_status = 'Submitted',
             submitted_at = SYSDATETIMEOFFSET(),
@@ -942,18 +943,18 @@ def _update_batch_with_vendor_id(self, batch_id: str, vendor_batch_id: str):
 
 ```sql
 -- Update enrollment with Call 5 timestamp and 90-day campaign end date
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET call_5_timestamp = SYSDATETIMEOFFSET(),
     campaign_end_date = CAST(DATEADD(DAY, 90, SYSDATETIMEOFFSET()) AS DATE),
     updated_at = SYSDATETIMEOFFSET()
 WHERE enrollment_id IN (
     -- Get enrollments for members in this batch where this is their 5th attempt
     SELECT DISTINCT oa.enrollment_id
-    FROM engage360.outreach_attempts oa
+    FROM ioe.outreach_attempts oa
     WHERE oa.batch_id = %s
       AND (
           SELECT COUNT(*)
-          FROM engage360.outreach_attempts oa2
+          FROM ioe.outreach_attempts oa2
           WHERE oa2.enrollment_id = oa.enrollment_id
       ) = 5  -- Including the attempt just created in Phase 2
 )
@@ -979,12 +980,12 @@ WHERE enrollment_id IN (
 
 **Purpose:** Prevent processing same call_id multiple times (Bland AI may retry webhooks)
 
-**BusinessCaseID:** BC-DA-007
+**BusinessCaseID:** BC-102
 
 ```sql
 -- Check if call_id already processed
 SELECT COUNT(*)
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 WHERE call_id = %s;
 ```
 
@@ -996,10 +997,10 @@ WHERE call_id = %s;
 
 **Purpose:** Update attempt record with call result from webhook
 
-**BusinessCaseID:** BC-DA-007
+**BusinessCaseID:** BC-102
 
 ```sql
-UPDATE engage360.outreach_attempts
+UPDATE ioe.outreach_attempts
 SET disposition = %s,          -- Internal disposition (Completed, NoAnswer, etc.)
     completed_at = %s,         -- Bland AI completed_at timestamp
     call_length = %s,          -- Duration in seconds
@@ -1020,12 +1021,12 @@ WHERE attempt_id = %s          -- From webhook metadata.attempt_id
 
 **Purpose:** Update enrollment status if member opted out
 
-**BusinessCaseID:** BC-DA-007
+**BusinessCaseID:** BC-102
 
 **Trigger:** Webhook disposition = 'DO_NOT_CONTACT'
 
 ```sql
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET current_status = 'OPTED_OUT',
     updated_at = SYSDATETIMEOFFSET()
 WHERE enrollment_id = %s       -- From webhook metadata.enrollment_id
@@ -1038,12 +1039,12 @@ WHERE enrollment_id = %s       -- From webhook metadata.enrollment_id
 
 **Purpose:** Create callback request if member requested callback
 
-**BusinessCaseID:** BC-DA-007, BC-DA-005
+**BusinessCaseID:** BC-102, BC-DA-005
 
 **Trigger:** Webhook disposition = 'CALL_BACK_SCHEDULED'
 
 ```sql
-INSERT INTO engage360.outreach_callback_queue (
+INSERT INTO ioe.outreach_callback_queue (
     callback_id,
     enrollment_id,
     scheduled_callback_time,
@@ -1077,10 +1078,10 @@ VALUES (
 
 **Purpose:** Store complete webhook payload for audit trail
 
-**BusinessCaseID:** BC-DA-007
+**BusinessCaseID:** BC-102
 
 ```sql
-INSERT INTO engage360.bland_call_logs (
+INSERT INTO ioe.bland_call_logs (
     log_id,
     call_id,
     batch_id,
@@ -1127,12 +1128,12 @@ VALUES (
 
 **Purpose:** Log enrollment status changes for audit trail
 
-**BusinessCaseID:** BC-DA-007
+**BusinessCaseID:** BC-102
 
 **Trigger:** Enrollment status changes (e.g., ENROLLED → OPTED_OUT)
 
 ```sql
-INSERT INTO engage360.member_enrollment_status_history (
+INSERT INTO ioe.member_enrollment_status_history (
     history_id,
     enrollment_id,
     previous_status,
@@ -1165,7 +1166,7 @@ def process_webhook(self, webhook_data: Dict):
     """
     Process Bland AI webhook with atomic database updates
 
-    BusinessCaseID: BC-DA-007
+    BusinessCaseID: BC-102
     """
     queries = []
 
@@ -1198,7 +1199,216 @@ def process_webhook(self, webhook_data: Dict):
 
 ---
 
-## 6. Callback Queue Management
+## 6. Campaign Closure Operations (90-Day Auto-Unenroll)
+
+### 6.1 Query Eligible Enrollments for Closure
+
+**Purpose:** Find active enrollments that have reached their 90-day campaign window expiration
+
+**BusinessCaseID:** BC-DA-007
+
+**Trigger:** Hourly timer (`0 0 * * * *`) via `device_activation_campaign_closure`
+
+**SQL Query:**
+
+```sql
+-- Get all Device Activation enrollments past their campaign_end_date
+SELECT
+    enrollment_id,
+    member_id,
+    campaign_id,
+    enrollment_status,
+    campaign_end_date,
+    call_5_timestamp,
+    created_at,
+    updated_at
+FROM ioe.member_campaign_enrollments_enhanced mce
+JOIN ioe.campaigns_enhanced c ON mce.campaign_id = c.campaign_id
+WHERE c.name LIKE '%Device Activation%'  -- Applies to both Medicaid and DTC/MA
+  AND mce.enrollment_status = 'Active'    -- Only active members
+  AND mce.campaign_end_date IS NOT NULL   -- Only members with Call 5+
+  AND CAST(mce.campaign_end_date AS DATE) < CAST(SYSDATETIMEOFFSET() AS DATE)  -- Past end date
+ORDER BY mce.campaign_end_date ASC;  -- Oldest first
+```
+
+**Parameters:**
+- None (query uses current date/time via `SYSDATETIMEOFFSET()`)
+
+**Returns:**
+- List of enrollments eligible for unenrollment
+- Typically 5-20 enrollments per hourly run
+- Peak closures: ~90 days after major file uploads
+
+**Key Points:**
+- Only processes enrollments with `campaign_end_date` set (Call 5+ only)
+- Calls 1-4 have NULL `campaign_end_date` (no 90-day limit)
+- Uses date-only comparison (ignores time component)
+- Ordered by oldest campaign_end_date first
+
+### 6.2 Update Enrollment Status to UNENROLLED
+
+**Purpose:** Change enrollment status from Active to UNENROLLED for expired campaigns
+
+**BusinessCaseID:** BC-DA-007
+
+**SQL Update:**
+
+```sql
+-- Update enrollment status for all eligible members
+UPDATE ioe.member_campaign_enrollments_enhanced
+SET enrollment_status = 'UNENROLLED',
+    updated_at = SYSDATETIMEOFFSET(),
+    updated_by = 'device_activation_campaign_closure'
+WHERE enrollment_id IN (
+    -- Use enrollment_ids from previous query
+    %s, %s, %s, ...
+);
+```
+
+**Parameters:**
+- `enrollment_ids`: List of enrollment IDs from eligibility query
+
+**Impact:**
+- Members no longer appear in eligibility queries
+- No more calls will be scheduled for these members
+- Status preserved for audit trail
+
+### 6.3 Insert Status Change History
+
+**Purpose:** Record status transition for audit trail and compliance
+
+**BusinessCaseID:** BC-DA-007
+
+**SQL Insert:**
+
+```sql
+-- Log status change to history table
+INSERT INTO ioe.member_enrollment_status_history (
+    history_id,
+    enrollment_id,
+    member_id,
+    campaign_id,
+    old_status,
+    new_status,
+    change_reason,
+    changed_by,
+    changed_at
+)
+VALUES (
+    NEWID(),
+    %s,  -- enrollment_id
+    %s,  -- member_id
+    %s,  -- campaign_id
+    'Active',  -- old_status
+    'UNENROLLED',  -- new_status
+    '90-day campaign window expired',  -- change_reason
+    'device_activation_campaign_closure',  -- changed_by
+    SYSDATETIMEOFFSET()  -- changed_at
+);
+```
+
+**Parameters:**
+- `enrollment_id`: UUID of enrollment
+- `member_id`: UUID of member
+- `campaign_id`: UUID of campaign
+
+**Audit Trail:**
+- Complete record of every status change
+- Change reason clearly documented
+- Timestamp preserves timezone information
+- Changed_by tracks automation vs manual changes
+
+### 6.4 Distributed Locking
+
+**Purpose:** Prevent concurrent executions of campaign closure scheduler
+
+**BusinessCaseID:** BC-DA-007
+
+**Lock Acquisition (INSERT):**
+
+```sql
+-- Try to acquire lock (will fail if lock exists)
+INSERT INTO ioe.system_locks (
+    lock_name,
+    locked_at,
+    locked_by,
+    expires_at
+)
+VALUES (
+    'device_activation_campaign_closure',
+    SYSDATETIMEOFFSET(),
+    'device_activation_campaign_closure_timer',
+    DATEADD(MINUTE, 30, SYSDATETIMEOFFSET())  -- 30-minute expiry
+);
+```
+
+**Lock Release (DELETE):**
+
+```sql
+-- Release lock after completion
+DELETE FROM ioe.system_locks
+WHERE lock_name = 'device_activation_campaign_closure'
+  AND locked_by = 'device_activation_campaign_closure_timer';
+```
+
+**Lock Check Pattern:**
+```python
+try:
+    # Try to acquire lock
+    db_service.execute_query(insert_lock_query, fetch_results=False)
+
+    # Lock acquired - proceed with closure
+    closure_service.process_expired_enrollments()
+
+finally:
+    # Always release lock (even if error occurs)
+    db_service.execute_query(delete_lock_query, fetch_results=False)
+```
+
+**Key Points:**
+- Prevents multiple timer instances from processing same enrollments
+- Lock automatically expires after 30 minutes (safety mechanism)
+- Lock released in finally block (guaranteed cleanup)
+- If lock exists: Exit gracefully without error
+
+### 6.5 Complete Campaign Closure Transaction
+
+**Purpose:** Execute all closure operations atomically
+
+**BusinessCaseID:** BC-DA-007
+
+**Transaction Pattern:**
+
+```python
+# All operations in single transaction
+queries = [
+    # 1. Update enrollment status
+    (update_enrollment_query, enrollment_ids),
+
+    # 2. Insert status history records
+    (insert_history_query_1, (enrollment_id_1, member_id_1, campaign_id_1)),
+    (insert_history_query_2, (enrollment_id_2, member_id_2, campaign_id_2)),
+    # ... one INSERT per enrollment
+]
+
+# Execute atomically (all or nothing)
+db_service.execute_transaction(queries)
+```
+
+**Transaction Guarantees:**
+- All enrollments updated AND all history records inserted → COMMIT
+- Any failure → ROLLBACK all changes
+- Database remains consistent
+
+**Typical Execution:**
+- Query eligible: 0.5-1 second
+- Update enrollments: 0.5-1 second
+- Insert history: 0.5-1 second
+- **Total: 2-5 seconds per execution**
+
+---
+
+## 7. Callback Queue Management
 
 ### 6.1 Get Pending Callbacks
 
@@ -1231,12 +1441,12 @@ SELECT
     c.operating_end_time,
     c.timezone_flag
 
-FROM engage360.outreach_callback_queue ocq
-INNER JOIN engage360.member_campaign_enrollments_enhanced e
+FROM ioe.outreach_callback_queue ocq
+INNER JOIN ioe.member_campaign_enrollments_enhanced e
     ON ocq.enrollment_id = e.enrollment_id
-INNER JOIN engage360.members m
+INNER JOIN ioe.members m
     ON e.member_id = m.member_id
-INNER JOIN engage360.campaigns_enhanced c
+INNER JOIN ioe.campaigns_enhanced c
     ON e.campaign_id = c.campaign_id
 
 WHERE ocq.status = 'Pending'
@@ -1258,7 +1468,7 @@ ORDER BY ocq.scheduled_callback_time ASC;  -- Process oldest first
 **BusinessCaseID:** BC-DA-005
 
 ```sql
-UPDATE engage360.outreach_callback_queue
+UPDATE ioe.outreach_callback_queue
 SET scheduled_callback_time = %s,  -- Next business day at operating_start_time (e.g., 9:00 AM)
     attempt_count = attempt_count + 1,
     last_rescheduled_at = SYSDATETIMEOFFSET(),
@@ -1305,7 +1515,7 @@ def _calculate_next_business_day_time(self, operating_tz: str, operating_start_t
 **BusinessCaseID:** BC-DA-005
 
 ```sql
-UPDATE engage360.outreach_callback_queue
+UPDATE ioe.outreach_callback_queue
 SET status = 'Timeout',
     timeout_reason = CASE
         WHEN DATEDIFF(HOUR, created_at, SYSDATETIMEOFFSET()) >= 24 THEN '24-hour timeout'
@@ -1332,7 +1542,7 @@ WHERE status = 'Pending'
 **BusinessCaseID:** BC-DA-005
 
 ```sql
-UPDATE engage360.outreach_callback_queue
+UPDATE ioe.outreach_callback_queue
 SET status = 'Completed',
     completed_at = SYSDATETIMEOFFSET(),
     updated_at = SYSDATETIMEOFFSET()
@@ -1357,7 +1567,7 @@ WHERE callback_id = %s
 **Update Query:**
 
 ```sql
-UPDATE engage360.member_campaign_enrollments_enhanced
+UPDATE ioe.member_campaign_enrollments_enhanced
 SET current_status = %s,  -- New status
     updated_at = SYSDATETIMEOFFSET()
 WHERE enrollment_id = %s
@@ -1379,18 +1589,18 @@ WHERE enrollment_id = %s
 
 ```sql
 -- Mark batch as Completed when all attempts have final dispositions
-UPDATE engage360.outreach_batches
+UPDATE ioe.outreach_batches
 SET batch_status = 'Completed',
     completed_at = SYSDATETIMEOFFSET(),
     updated_at = SYSDATETIMEOFFSET()
 WHERE batch_id IN (
     -- Find batches where all attempts are no longer Pending
     SELECT b.batch_id
-    FROM engage360.outreach_batches b
+    FROM ioe.outreach_batches b
     WHERE b.batch_status = 'Submitted'
       AND NOT EXISTS (
           SELECT 1
-          FROM engage360.outreach_attempts oa
+          FROM ioe.outreach_attempts oa
           WHERE oa.batch_id = b.batch_id
             AND oa.disposition = 'Pending'
       )
@@ -1408,7 +1618,7 @@ WHERE batch_id IN (
 **Update Query (Webhook):**
 
 ```sql
-UPDATE engage360.outreach_attempts
+UPDATE ioe.outreach_attempts
 SET disposition = %s,
     completed_at = SYSDATETIMEOFFSET(),
     updated_at = SYSDATETIMEOFFSET()
@@ -1517,48 +1727,48 @@ def execute_transaction(queries: List[Tuple[str, Tuple]]) -> bool:
 
 **members table:**
 ```sql
-CREATE NONCLUSTERED INDEX IX_members_member_id ON engage360.members(member_id);
-CREATE NONCLUSTERED INDEX IX_members_primary_phone ON engage360.members(primary_phone);
+CREATE NONCLUSTERED INDEX IX_members_member_id ON ioe.members(member_id);
+CREATE NONCLUSTERED INDEX IX_members_primary_phone ON ioe.members(primary_phone);
 ```
 
 **member_campaign_enrollments_enhanced table:**
 ```sql
 CREATE NONCLUSTERED INDEX IX_enrollments_status_activation
-ON engage360.member_campaign_enrollments_enhanced(current_status, activation_start_date)
+ON ioe.member_campaign_enrollments_enhanced(current_status, activation_start_date)
 INCLUDE (member_id, campaign_id, call_5_timestamp, campaign_end_date);
 
 CREATE NONCLUSTERED INDEX IX_enrollments_member_campaign
-ON engage360.member_campaign_enrollments_enhanced(member_id, campaign_id);
+ON ioe.member_campaign_enrollments_enhanced(member_id, campaign_id);
 ```
 
 **outreach_attempts table:**
 ```sql
 CREATE NONCLUSTERED INDEX IX_attempts_enrollment_ts
-ON engage360.outreach_attempts(enrollment_id, attempt_ts DESC)
+ON ioe.outreach_attempts(enrollment_id, attempt_ts DESC)
 INCLUDE (disposition);
 
 CREATE NONCLUSTERED INDEX IX_attempts_batch_disposition
-ON engage360.outreach_attempts(batch_id, disposition);
+ON ioe.outreach_attempts(batch_id, disposition);
 ```
 
 **outreach_batches table:**
 ```sql
 CREATE NONCLUSTERED INDEX IX_batches_status
-ON engage360.outreach_batches(batch_status)
+ON ioe.outreach_batches(batch_status)
 INCLUDE (batch_id, vendor_batch_id, created_at);
 ```
 
 **outreach_callback_queue table:**
 ```sql
 CREATE NONCLUSTERED INDEX IX_callbacks_status_time
-ON engage360.outreach_callback_queue(status, scheduled_callback_time)
+ON ioe.outreach_callback_queue(status, scheduled_callback_time)
 INCLUDE (enrollment_id, attempt_count, created_at);
 ```
 
 **bland_call_logs table:**
 ```sql
 CREATE UNIQUE NONCLUSTERED INDEX IX_call_logs_call_id
-ON engage360.bland_call_logs(call_id);
+ON ioe.bland_call_logs(call_id);
 ```
 
 ### 9.2 Query Performance Metrics
@@ -1575,7 +1785,7 @@ ON engage360.bland_call_logs(call_id);
 **1. Use NOLOCK for Read-Only Queries:**
 ```sql
 -- Eligibility query (read-only, no locks needed)
-SELECT * FROM engage360.member_campaign_enrollments_enhanced WITH (NOLOCK)
+SELECT * FROM ioe.member_campaign_enrollments_enhanced WITH (NOLOCK)
 WHERE ...
 ```
 
@@ -1633,7 +1843,7 @@ SELECT TOP 1000 * FROM ...
 
 ```sql
 -- Delete staging rows older than 1 day
-DELETE FROM engage360_stg.stg_device_activation_delta
+DELETE FROM ioe_stg.stg_device_activation_delta
 WHERE created_at < DATEADD(DAY, -1, SYSDATETIMEOFFSET());
 ```
 
@@ -1641,7 +1851,7 @@ WHERE created_at < DATEADD(DAY, -1, SYSDATETIMEOFFSET());
 
 ```sql
 -- Delete completed/timeout callbacks older than 7 days
-DELETE FROM engage360.outreach_callback_queue
+DELETE FROM ioe.outreach_callback_queue
 WHERE status IN ('Completed', 'Timeout')
   AND (completed_at < DATEADD(DAY, -7, SYSDATETIMEOFFSET())
        OR updated_at < DATEADD(DAY, -7, SYSDATETIMEOFFSET()));
@@ -1651,7 +1861,7 @@ WHERE status IN ('Completed', 'Timeout')
 
 ```sql
 -- Delete batches older than 90 days
-DELETE FROM engage360.outreach_batches
+DELETE FROM ioe.outreach_batches
 WHERE created_at < DATEADD(DAY, -90, SYSDATETIMEOFFSET());
 
 -- Orphaned attempts cleaned up via CASCADE DELETE foreign key
@@ -1661,7 +1871,7 @@ WHERE created_at < DATEADD(DAY, -90, SYSDATETIMEOFFSET());
 
 ```sql
 -- Delete call logs older than 1 year
-DELETE FROM engage360.bland_call_logs
+DELETE FROM ioe.bland_call_logs
 WHERE created_at < DATEADD(YEAR, -1, SYSDATETIMEOFFSET());
 ```
 

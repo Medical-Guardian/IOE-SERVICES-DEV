@@ -118,9 +118,9 @@ class TestSameDayRetryBlocking:
         eligible_members = eligibility_service.get_eligible_members()
 
         # Assertions
-        assert len(eligible_members) == 0, (
-            "Member with 'Completed' call today should be blocked by TodayActiveAttempts CTE"
-        )
+        assert (
+            len(eligible_members) == 0
+        ), "Member with 'Completed' call today should be blocked by TodayActiveAttempts CTE"
 
     @patch("af_code.device_activation_scheduler.services.eligibility_service.datetime")
     def test_scenario_2_failed_call_blocks_same_day_retry(
@@ -146,9 +146,9 @@ class TestSameDayRetryBlocking:
         eligible_members = eligibility_service.get_eligible_members()
 
         # Assertions
-        assert len(eligible_members) == 0, (
-            "Member with 'Failed' call today should be blocked (same-day protection applies to all dispositions)"
-        )
+        assert (
+            len(eligible_members) == 0
+        ), "Member with 'Failed' call today should be blocked (same-day protection applies to all dispositions)"
 
     @patch("af_code.device_activation_scheduler.services.eligibility_service.datetime")
     def test_scenario_3_no_answer_blocks_same_day_retry(
@@ -174,9 +174,9 @@ class TestSameDayRetryBlocking:
         eligible_members = eligibility_service.get_eligible_members()
 
         # Assertions
-        assert len(eligible_members) == 0, (
-            "Member with 'NoAnswer' today should be blocked (no same-day retries for any disposition)"
-        )
+        assert (
+            len(eligible_members) == 0
+        ), "Member with 'NoAnswer' today should be blocked (no same-day retries for any disposition)"
 
     @patch("af_code.device_activation_scheduler.services.eligibility_service.datetime")
     def test_scenario_4_pending_call_blocks_same_day_retry(
@@ -202,9 +202,9 @@ class TestSameDayRetryBlocking:
         eligible_members = eligibility_service.get_eligible_members()
 
         # Assertions
-        assert len(eligible_members) == 0, (
-            "Member with 'Pending' call today should be blocked (prevents duplicate submissions)"
-        )
+        assert (
+            len(eligible_members) == 0
+        ), "Member with 'Pending' call today should be blocked (prevents duplicate submissions)"
 
     @patch("af_code.device_activation_scheduler.services.eligibility_service.datetime")
     def test_scenario_5_canceled_call_blocks_same_day_retry(
@@ -230,9 +230,7 @@ class TestSameDayRetryBlocking:
         eligible_members = eligibility_service.get_eligible_members()
 
         # Assertions
-        assert len(eligible_members) == 0, (
-            "Member with 'Canceled' call today should be blocked"
-        )
+        assert len(eligible_members) == 0, "Member with 'Canceled' call today should be blocked"
 
     @patch("af_code.device_activation_scheduler.services.eligibility_service.datetime")
     def test_scenario_6_next_day_eligibility(
@@ -270,14 +268,17 @@ class TestSameDayRetryBlocking:
             "af_code.device_activation_scheduler.services.eligibility_service.can_make_call"
         ) as mock_can_call:
             mock_bday_calc.return_value = 2  # Sufficient business days for Call 2
-            mock_can_call.return_value = (True, "Within business hours")  # Pass business hours check
+            mock_can_call.return_value = (
+                True,
+                "Within business hours",
+            )  # Pass business hours check
 
             eligible_members = eligibility_service.get_eligible_members()
 
         # Assertions
-        assert len(eligible_members) == 1, (
-            "Member should be eligible next day (new UTC day, not blocked by CTE)"
-        )
+        assert (
+            len(eligible_members) == 1
+        ), "Member should be eligible next day (new UTC day, not blocked by CTE)"
         assert eligible_members[0]["member_id"] == "jane-002"
         assert eligible_members[0]["call_attempt_number"] == 2
 
@@ -324,14 +325,17 @@ class TestSameDayRetryBlocking:
             "af_code.device_activation_scheduler.services.eligibility_service.can_make_call"
         ) as mock_can_call:
             mock_bday_calc.return_value = 2  # Sufficient for Call 2
-            mock_can_call.return_value = (True, "Within business hours")  # Pass business hours check
+            mock_can_call.return_value = (
+                True,
+                "Within business hours",
+            )  # Pass business hours check
 
             eligible_members = eligibility_service.get_eligible_members()
 
         # Assertions
-        assert len(eligible_members) == 2, (
-            "Should return 2 members (Member A blocked, Members B and C eligible)"
-        )
+        assert (
+            len(eligible_members) == 2
+        ), "Should return 2 members (Member A blocked, Members B and C eligible)"
         member_ids = [m["member_id"] for m in eligible_members]
         assert "member-b" in member_ids, "Member B should be eligible (called yesterday)"
         assert "member-c" in member_ids, "Member C should be eligible (never called)"
@@ -460,7 +464,10 @@ class TestSameDayRetryBlocking:
             "af_code.device_activation_scheduler.services.eligibility_service.can_make_call"
         ) as mock_can_call:
             mock_bday.return_value = 2  # Sufficient business days
-            mock_can_call.return_value = (True, "Within business hours")  # Pass business hours check
+            mock_can_call.return_value = (
+                True,
+                "Within business hours",
+            )  # Pass business hours check
 
             result = eligibility_service.get_eligible_members()
 
@@ -497,19 +504,19 @@ class TestSameDayRetryBlocking:
             "member-b",
             call_attempt_number=2,
             last_attempt_date=two_days_ago,
-            last_disposition="NoAnswer"
+            last_disposition="NoAnswer",
         )
         member_c = self.create_test_member(
             "member-c",
             call_attempt_number=4,
             last_attempt_date=five_days_ago,
-            last_disposition="NoAnswer"
+            last_disposition="NoAnswer",
         )
         member_d = self.create_test_member(
             "member-d",
             call_attempt_number=5,
             last_attempt_date=ten_days_ago,
-            last_disposition="NoAnswer"
+            last_disposition="NoAnswer",
         )
         mock_db_service.execute_query.return_value = [member_b, member_c, member_d]
 
@@ -524,7 +531,10 @@ class TestSameDayRetryBlocking:
 
             mock_bday.return_value = 5  # Sufficient for Call 2 and Call 4
             mock_is_bday.return_value = True  # Today is a business day
-            mock_can_call.return_value = (True, "Within business hours")  # Pass business hours check
+            mock_can_call.return_value = (
+                True,
+                "Within business hours",
+            )  # Pass business hours check
 
             result = eligibility_service.get_eligible_members()
 
@@ -540,9 +550,7 @@ class TestSameDayRetryBlocking:
     # ========================================================================
 
     @patch("af_code.device_activation_scheduler.services.eligibility_service.datetime")
-    def test_midnight_utc_transition(
-        self, mock_datetime, eligibility_service, mock_db_service
-    ):
+    def test_midnight_utc_transition(self, mock_datetime, eligibility_service, mock_db_service):
         """
         Edge Case: Midnight UTC Transition
 
@@ -579,7 +587,10 @@ class TestSameDayRetryBlocking:
             "af_code.device_activation_scheduler.services.eligibility_service.is_business_day"
         ) as mock_is_bday:
             mock_bday.return_value = 2  # 2 business days (sufficient for Call 2)
-            mock_can_call.return_value = (True, "Within business hours")  # Pass business hours check
+            mock_can_call.return_value = (
+                True,
+                "Within business hours",
+            )  # Pass business hours check
             mock_is_bday.return_value = True  # Day 2 is a business day
 
             result = eligibility_service.get_eligible_members()
@@ -624,9 +635,7 @@ class TestSameDayRetryBlocking:
         )
 
     @patch("af_code.device_activation_scheduler.services.eligibility_service.datetime")
-    def test_no_attempts_member_eligible(
-        self, mock_datetime, eligibility_service, mock_db_service
-    ):
+    def test_no_attempts_member_eligible(self, mock_datetime, eligibility_service, mock_db_service):
         """
         Edge Case: No Previous Attempts - Member Eligible (Call 1)
 
@@ -651,7 +660,10 @@ class TestSameDayRetryBlocking:
         with patch(
             "af_code.device_activation_scheduler.services.eligibility_service.can_make_call"
         ) as mock_can_call:
-            mock_can_call.return_value = (True, "Within business hours")  # Pass business hours check
+            mock_can_call.return_value = (
+                True,
+                "Within business hours",
+            )  # Pass business hours check
 
             result = eligibility_service.get_eligible_members()
 
@@ -705,7 +717,9 @@ class TestSameDayBlockingDocumentation:
         # Verify CTE logic
         assert cte_start <= attempt_early_morning < cte_end, "2:30 AM today should be included"
         assert cte_start <= attempt_late_night < cte_end, "11:55 PM today should be included"
-        assert not (cte_start <= attempt_yesterday < cte_end), "11 PM yesterday should NOT be included"
+        assert not (
+            cte_start <= attempt_yesterday < cte_end
+        ), "11 PM yesterday should NOT be included"
         assert not (cte_start <= attempt_tomorrow < cte_end), "1 AM tomorrow should NOT be included"
 
     def test_disposition_filtering_explained(self):
@@ -729,15 +743,15 @@ class TestSameDayBlockingDocumentation:
         - Prevents duplicate submissions (blocks Pending)
         - Consistent retry logic (wait until next day for any outcome)
         """
-        blocked_dispositions = ['Completed', 'Pending', 'Failed', 'NoAnswer', 'Canceled']
+        blocked_dispositions = ["Completed", "Pending", "Failed", "NoAnswer", "Canceled"]
 
         # All 5 dispositions trigger same-day blocking
         assert len(blocked_dispositions) == 5, "CTE blocks exactly 5 disposition types"
-        assert 'Completed' in blocked_dispositions, "Success blocks same-day retry"
-        assert 'Failed' in blocked_dispositions, "Failure blocks same-day retry"
-        assert 'NoAnswer' in blocked_dispositions, "No answer blocks same-day retry"
-        assert 'Pending' in blocked_dispositions, "Pending blocks duplicate submission"
-        assert 'Canceled' in blocked_dispositions, "Canceled blocks same-day retry"
+        assert "Completed" in blocked_dispositions, "Success blocks same-day retry"
+        assert "Failed" in blocked_dispositions, "Failure blocks same-day retry"
+        assert "NoAnswer" in blocked_dispositions, "No answer blocks same-day retry"
+        assert "Pending" in blocked_dispositions, "Pending blocks duplicate submission"
+        assert "Canceled" in blocked_dispositions, "Canceled blocks same-day retry"
 
     def test_left_join_filter_pattern_explained(self):
         """
@@ -772,14 +786,14 @@ class TestSameDayBlockingDocumentation:
         # Simulate LEFT JOIN + IS NULL filtering
 
         # Members with attempts today (in CTE)
-        members_in_cte = {'member-a', 'member-d'}
+        members_in_cte = {"member-a", "member-d"}
 
         # All members
         all_members = [
-            {'member_id': 'member-a', 'name': 'Alice'},
-            {'member_id': 'member-b', 'name': 'Bob'},
-            {'member_id': 'member-c', 'name': 'Charlie'},
-            {'member_id': 'member-d', 'name': 'Diana'},
+            {"member_id": "member-a", "name": "Alice"},
+            {"member_id": "member-b", "name": "Bob"},
+            {"member_id": "member-c", "name": "Charlie"},
+            {"member_id": "member-d", "name": "Diana"},
         ]
 
         # LEFT JOIN simulation: Add taa.member_id field
@@ -787,13 +801,15 @@ class TestSameDayBlockingDocumentation:
         for member in all_members:
             member_copy = member.copy()
             # If in CTE, taa.member_id = member_id; else taa.member_id = None
-            member_copy['taa_member_id'] = member['member_id'] if member['member_id'] in members_in_cte else None
+            member_copy["taa_member_id"] = (
+                member["member_id"] if member["member_id"] in members_in_cte else None
+            )
             joined_members.append(member_copy)
 
         # Filter: WHERE taa.member_id IS NULL (exclude members in CTE)
-        eligible_members = [m for m in joined_members if m['taa_member_id'] is None]
+        eligible_members = [m for m in joined_members if m["taa_member_id"] is None]
 
         # Verify
         assert len(eligible_members) == 2, "Should return 2 members (B and C)"
-        assert eligible_members[0]['member_id'] == 'member-b', "Bob should be eligible"
-        assert eligible_members[1]['member_id'] == 'member-c', "Charlie should be eligible"
+        assert eligible_members[0]["member_id"] == "member-b", "Bob should be eligible"
+        assert eligible_members[1]["member_id"] == "member-c", "Charlie should be eligible"

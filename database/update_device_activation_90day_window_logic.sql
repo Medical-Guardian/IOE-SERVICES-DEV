@@ -37,12 +37,12 @@ DEPLOYMENT SEQUENCE:
 ROLLBACK PLAN:
 --------------
 If issues detected, restore from database backup:
-    RESTORE DATABASE engage360 FROM BACKUP
+    RESTORE DATABASE ioe FROM BACKUP
 
 Or manually reset campaign_end_date to NULL for recent changes:
     UPDATE e
     SET e.campaign_end_date = NULL
-    FROM engage360.member_campaign_enrollments_enhanced e
+    FROM ioe.member_campaign_enrollments_enhanced e
     WHERE e.campaign_end_date IS NOT NULL
       AND e.call_5_timestamp IS NULL
       AND e.enrollment_ts > '2026-01-17 00:00:00';
@@ -62,8 +62,8 @@ PRINT '';
 -- Check how many Device Activation enrollments exist
 DECLARE @total_device_activation_enrollments INT;
 SELECT @total_device_activation_enrollments = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced e
-INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
   AND e.current_status = 'ENROLLED'
   AND e.device_activated = 0;
@@ -74,8 +74,8 @@ PRINT '';
 -- Check how many have NULL campaign_end_date
 DECLARE @null_campaign_end_date_count INT;
 SELECT @null_campaign_end_date_count = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced e
-INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
   AND e.current_status = 'ENROLLED'
   AND e.device_activated = 0
@@ -98,8 +98,8 @@ PRINT '';
 
 DECLARE @beyond_90_days_count INT;
 SELECT @beyond_90_days_count = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced e
-INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
   AND e.current_status = 'ENROLLED'
   AND e.device_activated = 0
@@ -126,9 +126,9 @@ BEGIN
     PRINT '    e.call_5_timestamp,';
     PRINT '    DATEDIFF(day, e.activation_start_date, SYSDATETIMEOFFSET()) AS days_since_activation,';
     PRINT '    DATEDIFF(day, SYSDATETIMEOFFSET(), DATEADD(DAY, 90, e.activation_start_date)) AS days_until_new_cutoff';
-    PRINT 'FROM engage360.member_campaign_enrollments_enhanced e';
-    PRINT 'INNER JOIN engage360.members m ON e.member_id = m.member_id';
-    PRINT 'INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id';
+    PRINT 'FROM ioe.member_campaign_enrollments_enhanced e';
+    PRINT 'INNER JOIN ioe.members m ON e.member_id = m.member_id';
+    PRINT 'INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id';
     PRINT 'WHERE (c.campaign_type = ''Device Activation'' OR c.campaign_type = ''Operations'')';
     PRINT '  AND e.current_status = ''ENROLLED''';
     PRINT '  AND e.device_activated = 0';
@@ -151,21 +151,21 @@ PRINT '========================================';
 PRINT '';
 
 -- Create backup table (if not exists)
-IF OBJECT_ID('engage360.member_campaign_enrollments_enhanced_backup_20260117', 'U') IS NULL
+IF OBJECT_ID('ioe.member_campaign_enrollments_enhanced_backup_20260117', 'U') IS NULL
 BEGIN
     SELECT *
-    INTO engage360.member_campaign_enrollments_enhanced_backup_20260117
-    FROM engage360.member_campaign_enrollments_enhanced e
-    INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+    INTO ioe.member_campaign_enrollments_enhanced_backup_20260117
+    FROM ioe.member_campaign_enrollments_enhanced e
+    INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
     WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
       AND e.current_status = 'ENROLLED'
       AND e.device_activated = 0;
 
-    PRINT '✅ Backup table created: engage360.member_campaign_enrollments_enhanced_backup_20260117';
+    PRINT '✅ Backup table created: ioe.member_campaign_enrollments_enhanced_backup_20260117';
 END
 ELSE
 BEGIN
-    PRINT '⚠️  Backup table already exists: engage360.member_campaign_enrollments_enhanced_backup_20260117';
+    PRINT '⚠️  Backup table already exists: ioe.member_campaign_enrollments_enhanced_backup_20260117';
     PRINT '   Skipping backup creation to avoid overwriting existing backup';
 END
 PRINT '';
@@ -187,8 +187,8 @@ BEGIN TRANSACTION;
 BEGIN TRY
     UPDATE e
     SET e.campaign_end_date = CAST(DATEADD(DAY, 90, e.activation_start_date) AS DATE)
-    FROM engage360.member_campaign_enrollments_enhanced e
-    INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+    FROM ioe.member_campaign_enrollments_enhanced e
+    INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
     WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
       AND e.current_status = 'ENROLLED'
       AND e.device_activated = 0
@@ -234,8 +234,8 @@ PRINT '';
 -- BEGIN TRY
 --     UPDATE e
 --     SET e.campaign_end_date = CAST(DATEADD(DAY, 7, SYSDATETIMEOFFSET()) AS DATE)
---     FROM engage360.member_campaign_enrollments_enhanced e
---     INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+--     FROM ioe.member_campaign_enrollments_enhanced e
+--     INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 --     WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
 --       AND e.current_status = 'ENROLLED'
 --       AND e.device_activated = 0
@@ -269,8 +269,8 @@ PRINT '';
 -- BEGIN TRY
 --     UPDATE e
 --     SET e.campaign_end_date = CAST(DATEADD(DAY, 90, e.activation_start_date) AS DATE)
---     FROM engage360.member_campaign_enrollments_enhanced e
---     INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+--     FROM ioe.member_campaign_enrollments_enhanced e
+--     INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 --     WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
 --       AND e.current_status = 'ENROLLED'
 --       AND e.device_activated = 0
@@ -305,8 +305,8 @@ PRINT '';
 --     UPDATE e
 --     SET e.current_status = 'UNENROLLED',
 --         e.campaign_end_date = CAST(SYSDATETIMEOFFSET() AS DATE)
---     FROM engage360.member_campaign_enrollments_enhanced e
---     INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+--     FROM ioe.member_campaign_enrollments_enhanced e
+--     INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 --     WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
 --       AND e.current_status = 'ENROLLED'
 --       AND e.device_activated = 0
@@ -346,8 +346,8 @@ PRINT '';
 -- Check how many enrollments still have NULL campaign_end_date
 DECLARE @remaining_null_count INT;
 SELECT @remaining_null_count = COUNT(*)
-FROM engage360.member_campaign_enrollments_enhanced e
-INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
   AND e.current_status = 'ENROLLED'
   AND e.device_activated = 0
@@ -378,8 +378,8 @@ SELECT TOP 5
     DATEDIFF(day, e.activation_start_date, e.campaign_end_date) AS days_diff,
     e.call_5_timestamp,
     e.current_status
-FROM engage360.member_campaign_enrollments_enhanced e
-INNER JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+INNER JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
   AND e.current_status = 'ENROLLED'
   AND e.device_activated = 0
@@ -407,8 +407,8 @@ PRINT '3. Verify new enrollments have campaign_end_date = activation_start_date 
 PRINT '4. Monitor for 7 days to ensure no issues';
 PRINT '';
 PRINT 'ROLLBACK (if needed):';
-PRINT '  RESTORE DATABASE engage360 FROM BACKUP';
-PRINT '  OR use the backup table: engage360.member_campaign_enrollments_enhanced_backup_20260117';
+PRINT '  RESTORE DATABASE ioe FROM BACKUP';
+PRINT '  OR use the backup table: ioe.member_campaign_enrollments_enhanced_backup_20260117';
 PRINT '';
 PRINT '========================================';
 PRINT 'Migration completed: ' + CONVERT(VARCHAR, SYSDATETIMEOFFSET(), 120);

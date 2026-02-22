@@ -24,7 +24,7 @@ This document describes the CSV file format for Device Activation campaign membe
 
 ## Blob Storage Location
 
-**Container:** `fs-device-activation`
+**Container:** `fs-ops`
 
 **Folder Structure:**
 - `landing/` - Incoming files (trigger location)
@@ -32,7 +32,7 @@ This document describes the CSV file format for Device Activation campaign membe
 - `processed/` - Successfully processed files
 - `error/` - Failed files
 
-**Upload Location:** `fs-device-activation/landing/`
+**Upload Location:** `fs-ops/landing/`
 
 ---
 
@@ -297,7 +297,7 @@ partner_name,campaign_name_source,salesforce_account_id,salesforce_account_numbe
 - **Valid Values:** `Medical Guardian` (ONLY)
 - **Example:** `Medical Guardian`
 - **Validation:** Must be exactly "Medical Guardian" (case-insensitive)
-- **Notes:** Used to lookup org_id from engage360.orgs table
+- **Notes:** Used to lookup org_id from ioe.orgs table
 
 #### 23. **customer_type** (REQUIRED)
 - **Type:** String
@@ -366,7 +366,7 @@ The sample file contains 10 test records demonstrating:
 ## Processing Flow
 
 ### 1. **File Upload**
-- Upload CSV to `fs-device-activation/landing/`
+- Upload CSV to `fs-ops/landing/`
 - Azure Function blob trigger activates
 
 ### 2. **Validation**
@@ -395,8 +395,8 @@ The sample file contains 10 test records demonstrating:
 - **Failure:** Move to `error/`
 
 ### 6. **Audit Trail**
-- Record in `engage360_stg.file_processing_log`
-- Record in `engage360_stg.stg_device_activation_delta`
+- Record in `ioe_stg.file_processing_log`
+- Record in `ioe_stg.stg_device_activation_delta`
 
 ---
 
@@ -579,7 +579,7 @@ Before uploading a CSV file to production:
 - [ ] powersaver_mode uses valid values: default/standard/battery saver (if provided)
 - [ ] enrollment_status uses ENROLL/UPDATE/UNENROLL (any case, present/past tense)
 - [ ] unenrollment_reason provided if enrollment_status is UNENROLL
-- [ ] Test upload to `fs-device-activation/landing/`
+- [ ] Test upload to `fs-ops/landing/`
 - [ ] Verify successful processing (file moves to `processed/`)
 - [ ] Check database for new records in members, member_devices, member_campaign_enrollments_enhanced
 
@@ -588,8 +588,8 @@ Before uploading a CSV file to production:
 ## Support
 
 **For Issues:**
-- Check `engage360_stg.file_processing_log` for error details
-- Check `engage360_stg.stg_device_activation_delta` for row-level errors
+- Check `ioe_stg.file_processing_log` for error details
+- Check `ioe_stg.stg_device_activation_delta` for row-level errors
 - Review Azure Function logs in Application Insights
 
 **Contact:**

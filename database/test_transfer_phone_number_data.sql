@@ -20,7 +20,7 @@ SELECT TOP 10
     transfer_phone_number,
     enrollment_status,
     uploaded_ts
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 WHERE uploaded_ts > DATEADD(hour, -24, GETDATE())  -- Last 24 hours
 ORDER BY uploaded_ts DESC;
 
@@ -37,8 +37,8 @@ SELECT TOP 10
     e.transfer_phone_number,
     e.current_status,
     e.enrollment_ts
-FROM engage360.member_campaign_enrollments_enhanced e
-JOIN engage360.members m ON e.member_id = m.member_id
+FROM ioe.member_campaign_enrollments_enhanced e
+JOIN ioe.members m ON e.member_id = m.member_id
 WHERE e.enrollment_ts > DATEADD(hour, -24, GETDATE())  -- Last 24 hours
 ORDER BY e.enrollment_ts DESC;
 
@@ -58,8 +58,8 @@ SELECT TOP 10
         WHEN e.transfer_phone_number IS NULL THEN 'NULL'
         ELSE 'DIFFERENT'
     END AS phone_comparison
-FROM engage360.member_campaign_enrollments_enhanced e
-JOIN engage360.members m ON e.member_id = m.member_id
+FROM ioe.member_campaign_enrollments_enhanced e
+JOIN ioe.members m ON e.member_id = m.member_id
 WHERE e.enrollment_ts > DATEADD(hour, -24, GETDATE())  -- Last 24 hours
 ORDER BY e.enrollment_ts DESC;
 
@@ -77,7 +77,7 @@ SELECT
         THEN 1
         ELSE 0
     END) AS invalid_format_count
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_ts > DATEADD(day, -7, GETDATE());  -- Last 7 days
 
 -- ============================================================================
@@ -91,7 +91,7 @@ SELECT TOP 10
     transfer_phone_number,
     LEN(transfer_phone_number) AS phone_length,
     enrollment_ts
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_ts > DATEADD(day, -7, GETDATE())
   AND transfer_phone_number IS NOT NULL
   AND transfer_phone_number NOT LIKE '+1__________'
@@ -108,7 +108,7 @@ SELECT
     END AS transfer_phone_status,
     COUNT(*) AS enrollment_count,
     CAST(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS DECIMAL(5,2)) AS percentage
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE enrollment_ts > DATEADD(day, -7, GETDATE())  -- Last 7 days
 GROUP BY
     CASE
@@ -134,8 +134,8 @@ SELECT
     e.enrollment_ts,
     e.activation_start_date,
     e.campaign_end_date
-FROM engage360.member_campaign_enrollments_enhanced e
-JOIN engage360.members m ON e.member_id = m.member_id
+FROM ioe.member_campaign_enrollments_enhanced e
+JOIN ioe.members m ON e.member_id = m.member_id
 WHERE e.enrollment_id = '<enrollment_id>';
 */
 
@@ -150,8 +150,8 @@ SELECT
     SUM(CASE WHEN e.transfer_phone_number IS NOT NULL THEN 1 ELSE 0 END) AS with_transfer_phone,
     SUM(CASE WHEN e.transfer_phone_number IS NULL THEN 1 ELSE 0 END) AS without_transfer_phone,
     CAST(SUM(CASE WHEN e.transfer_phone_number IS NOT NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(e.enrollment_id) AS DECIMAL(5,2)) AS transfer_phone_percentage
-FROM engage360.member_campaign_enrollments_enhanced e
-JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE e.enrollment_ts > DATEADD(day, -7, GETDATE())
   AND c.campaign_type IN ('Device Activation', 'Operations')
 GROUP BY c.campaign_id, c.name

@@ -13,6 +13,7 @@ from ...bland_ai_webhook.services.database_service import DatabaseService
 from ...shared.timezone_utils import TimezoneConverter
 from ...shared.phone_utils import standardize_phone
 from .care_gap_mapper import CareGapMapper
+from af_code.shared.schema_config import IOE_SCHEMA
 
 logger = logging.getLogger(__name__)
 
@@ -270,7 +271,7 @@ class BatchOrchestrator:
                     "member_id": str(member.member_id),  # Both have this
                     "enrollment_id": enrollment_id,  # Partner-specific
                     "org_id": str(campaign.org_id),  # Partner-specific
-                    "call_type_id": str(campaign.call_type_id) if campaign.call_type_id else None,
+                    "call_type_id": (str(campaign.call_type_id) if campaign.call_type_id else None),
                     # Bland AI Configuration
                     "pathway_id": campaign.pathway_id
                     or (
@@ -508,10 +509,10 @@ class BatchOrchestrator:
         batch_id = str(uuid.uuid4())
         logger.info(f"📦 [BATCH-ORCHESTRATOR] Phase 1: Creating batch record with ID: {batch_id}")
 
-        query = """
-            INSERT INTO engage360.outreach_batches
+        query = f"""
+            INSERT INTO {IOE_SCHEMA}.outreach_batches
             (batch_id, campaign_id, batch_status, total_calls_intended, submitted_ts)
-            VALUES (%s, %s, 'Pending', %s, SYSDATETIMEOFFSET())
+            VALUES (?, ?, 'Pending', ?, SYSDATETIMEOFFSET())
         """
 
         params = (batch_id, campaign_id, member_count)
@@ -555,7 +556,7 @@ class BatchOrchestrator:
             # Store mapping for metadata inclusion
             attempt_id_map[enrollment_id] = attempt_id
 
-            values_list.append("(%s, %s, 'Voice', SYSUTCDATETIME(), 'Pending', 0, %s)")
+            values_list.append("(?, ?, 'Voice', SYSUTCDATETIME(), 'Pending', 0, ?)")
             params.extend(
                 [
                     attempt_id,
@@ -565,7 +566,7 @@ class BatchOrchestrator:
             )
 
         query = f"""
-            INSERT INTO engage360.outreach_attempts
+            INSERT INTO {IOE_SCHEMA}.outreach_attempts
             (attempt_id, enrollment_id, channel, attempt_ts, disposition, retry_seq, batch_id)
             VALUES {', '.join(values_list)}
         """
@@ -599,12 +600,12 @@ class BatchOrchestrator:
             f"🔄 [BATCH-ORCHESTRATOR] Phase 3: Updating batch {batch_id} with vendor ID: {vendor_batch_id}"
         )
 
-        query = """
-            UPDATE engage360.outreach_batches
-            SET vendor_batch_id = %s,
+        query = f"""
+            UPDATE {IOE_SCHEMA}.outreach_batches
+            SET vendor_batch_id = ?,
                 batch_status = 'Submitted',
                 updated_ts = SYSDATETIMEOFFSET()
-            WHERE batch_id = %s
+            WHERE batch_id = ?
         """
 
         params = (vendor_batch_id, batch_id)
@@ -626,12 +627,12 @@ class BatchOrchestrator:
         """
         logger.warning(f"⚠️ [BATCH-ORCHESTRATOR] Marking batch {batch_id} as Failed")
 
-        query = """
-            UPDATE engage360.outreach_batches
+        query = f"""
+            UPDATE {IOE_SCHEMA}.outreach_batches
             SET batch_status = 'Failed',
-                status_reason = %s,
+                status_reason = ?,
                 updated_ts = SYSDATETIMEOFFSET()
-            WHERE batch_id = %s
+            WHERE batch_id = ?
         """
 
         params = (error_message[:500], batch_id)  # Limit error message length

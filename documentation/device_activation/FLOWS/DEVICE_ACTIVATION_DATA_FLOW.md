@@ -1,6 +1,6 @@
 # Device Activation - Data Flow Diagrams
 
-**BusinessCaseID:** BC-DA-002 (File Processing), BC-DA-003 (Eligibility), BC-DA-004 (Batch Orchestration)
+**BusinessCaseID:** BC-DA-002 (File Processing), BC-DA-003 (Eligibility), BC-DA-004 (Batch Orchestration), BC-DA-007 (Campaign Closure)
 **Created:** 2025-12-24
 **Purpose:** Visual documentation of data flows through Device Activation system
 
@@ -12,6 +12,7 @@
 2. [Diagram 2: Scheduler to Bland AI Flow](#diagram-2-scheduler-to-bland-ai-flow)
 3. [Diagram 3: Webhook Processing Flow](#diagram-3-webhook-processing-flow)
 4. [Diagram 4: Callback Processing Flow](#diagram-4-callback-processing-flow)
+5. [Diagram 5: Campaign Closure Flow (90-Day Auto-Unenroll)](#diagram-5-campaign-closure-flow-90-day-auto-unenroll)
 
 ---
 
@@ -115,13 +116,15 @@ CSV Upload → Blob Storage (landing/)
 ### Key Points
 
 **Phase 1 - Extract:**
-- Trigger: Blob upload to `fs-device-activation/landing/`
-- Filename pattern: `MedicalGuardian_DeviceActivation_*_Delta.csv`
+- Trigger: Blob upload to `fs-ops/landing/` (PRIMARY) or `fs-device-activation/landing/` (LEGACY)
+- Filename patterns:
+  - PRIMARY: `MedicalGuardian_DeviceActivationMedicaid_YYYYMMDD_DELTA.csv`, `MedicalGuardian_DeviceActivationDTCMA_YYYYMMDD_DELTA.csv`
+  - LEGACY: `MedicalGuardian_DeviceActivation_*_Delta.csv`
 - Validation: Pandera schema (23 required columns)
 - Error handling: Move to `error/` folder if validation fails
 
 **Phase 2 - Load to Staging:**
-- Target: `engage360_stg.stg_device_activation_delta`
+- Target: `ioe_stg.stg_device_activation_delta`
 - Process: Row-by-row INSERT with try/except
 - Threshold: Max 10% error rate (if exceeded, abort entire file)
 - Purpose: Temporary staging for validation
@@ -182,7 +185,7 @@ sequenceDiagram
 
     Main->>Batch: create_and_submit_batches()
 
-    loop For each batch of 100 members
+    loop For each batch of 20 members per run
         Batch->>DB: Phase 1 - INSERT outreach_batches (status='Pending')
         DB-->>Batch: batch_id
 
@@ -235,7 +238,7 @@ Timer (Every 15 min) → main_logic.py::create_device_activation_batch()
                               ↓
            BatchOrchestrator.create_and_submit_batches()
                               ↓
-        ┌──── For each batch of 100 members ────┐
+        ┌──── For each batch of 20 members per run ────┐
         │                                         │
         │  Phase 1: INSERT outreach_batches      │
         │           (status='Pending')            │
@@ -544,6 +547,198 @@ Timer → CallbackScheduler.get_pending_callbacks()
 - After timeout, member returns to normal call flow
 - Next eligible for Call 2, 3, 4, or 5+ based on attempt history
 - Callback history preserved in outreach_callback_queue for audit
+
+---
+
+## Diagram 5: Campaign Closure Flow (90-Day Auto-Unenroll)
+
+**Purpose:** Shows hourly automatic unenrollment when members reach 90-day campaign window expiration
+
+**BusinessCaseID:** BC-DA-007 (Campaign Closure)
+
+**Related Code:**
+- `functions/device_activation_campaign_closure.py` (200 lines)
+- `af_code/device_activation_scheduler/services/campaign_closure_service.py` (300+ lines)
+
+### Mermaid Diagram
+
+```mermaid
+flowchart TD
+    A[Timer Trigger: Every Hour] --> B[device_activation_campaign_closure]
+    B --> C{Try Acquire Distributed Lock}
+    C -->|Lock Exists| D[Exit: Another Instance Running]
+    C -->|Lock Acquired| E[INSERT system_locks record]
+
+    E --> F[Query Eligible Enrollments]
+    F --> G{Any enrollments<br/>past campaign_end_date?}
+    G -->|No| H[Log: No enrollments to close]
+    G -->|Yes| I[For each enrollment]
+
+    I --> J[UPDATE enrollment_status<br/>'Active' → 'UNENROLLED']
+    J --> K[INSERT status history<br/>reason: '90-day window expired']
+    K --> L{More enrollments?}
+    L -->|Yes| I
+    L -->|No| M[Log summary results]
+
+    M --> N[DELETE distributed lock]
+    N --> O[Complete]
+    H --> N
+    D --> O
+
+    style B fill:#FCE4EC
+    style E fill:#FFF9C4
+    style J fill:#FFE0B2
+    style K fill:#E8F5E9
+    style N fill:#F3E5F5
+```
+
+### ASCII Diagram
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│ Timer Trigger: 0 0 * * * * (Every hour at :00 minutes)               │
+└───────────────────┬───────────────────────────────────────────────────┘
+                    ↓
+    ┌───────────────────────────────────────────────────────────────┐
+    │ device_activation_campaign_closure                            │
+    │ • HTTP: GET/POST /api/device_activation_campaign_closure      │
+    │ • Function: Auto-unenroll after 90-day window expires         │
+    └───────────────────────┬───────────────────────────────────────┘
+                            ↓
+            ┌───────────────────────────────┐
+            │ 1. Distributed Lock Check     │
+            │    Try INSERT system_locks    │
+            │    lock_name = 'campaign_    │
+            │                 _closure'     │
+            └────────┬──────────────────────┘
+                     │
+        ┌────────────┴────────────┐
+        │                         │
+  Lock Exists?              Lock Acquired
+  (concurrent run)         (INSERT success)
+        │                         │
+        ↓                         ↓
+    ┌───────┐         ┌─────────────────────────────┐
+    │ EXIT  │         │ 2. Query Eligible          │
+    │       │         │    Enrollments             │
+    └───────┘         │                            │
+                      │ SELECT * FROM              │
+                      │   member_campaign_         │
+                      │   enrollments_enhanced     │
+                      │ WHERE                      │
+                      │   campaign_id IN           │
+                      │     (Medicaid, DTCMA)      │
+                      │   AND enrollment_status    │
+                      │     = 'Active'             │
+                      │   AND campaign_end_date    │
+                      │     IS NOT NULL            │
+                      │   AND campaign_end_date    │
+                      │     < CURRENT_DATE         │
+                      └────────┬────────────────────┘
+                               │
+                      ┌────────┴────────┐
+                      │                 │
+            No enrollments       Enrollments found
+              to close           (past end_date)
+                      │                 │
+                      ↓                 ↓
+                ┌──────────┐   ┌────────────────────┐
+                │ Log: 0   │   │ FOR EACH          │
+                │ closures │   │ enrollment:       │
+                └────┬─────┘   └────┬───────────────┘
+                     │              │
+                     │              ↓
+                     │      ┌───────────────────────┐
+                     │      │ 3. UPDATE enrollment  │
+                     │      │    enrollment_status  │
+                     │      │    = 'UNENROLLED'     │
+                     │      └────┬──────────────────┘
+                     │           │
+                     │           ↓
+                     │      ┌───────────────────────┐
+                     │      │ 4. INSERT status      │
+                     │      │    history           │
+                     │      │    • enrollment_id    │
+                     │      │    • old_status:      │
+                     │      │      'Active'         │
+                     │      │    • new_status:      │
+                     │      │      'UNENROLLED'     │
+                     │      │    • reason: '90-day  │
+                     │      │      window expired'  │
+                     │      └────┬──────────────────┘
+                     │           │
+                     └───────────┴───────────────────┐
+                                 │                   │
+                                 ↓                   ↓
+                        ┌────────────────────────────┐
+                        │ 5. Log Summary Results    │
+                        │    • enrollments_closed   │
+                        │    • campaigns_affected   │
+                        │    • members_unenrolled   │
+                        │    • execution_duration   │
+                        └────────┬───────────────────┘
+                                 ↓
+                        ┌────────────────────────────┐
+                        │ 6. Release Lock           │
+                        │    DELETE FROM            │
+                        │      system_locks         │
+                        │    WHERE lock_name =      │
+                        │      'campaign_closure'   │
+                        └────────┬───────────────────┘
+                                 ↓
+                            Complete ✓
+```
+
+### Key Points
+
+**Timer Trigger:**
+- Schedule: Every hour (`0 0 * * * *`)
+- Run on startup: False
+- Also available via HTTP GET/POST for manual execution
+
+**Eligibility Criteria:**
+- enrollment_status = 'Active' (only active members)
+- campaign_id IN (Medicaid, DTCMA) (Device Activation campaigns)
+- campaign_end_date IS NOT NULL (only members with Call 5+)
+- campaign_end_date < CURRENT_DATE (90-day window expired)
+
+**Distributed Locking:**
+- Prevents concurrent executions (multiple timer instances)
+- Lock record: `system_locks` table with `lock_name = 'device_activation_campaign_closure'`
+- Lock lifetime: Duration of closure execution (typically 2-5 seconds)
+- If lock exists: Exit gracefully (another instance running)
+
+**Database Operations:**
+1. **Query**: SELECT eligible enrollments (Active + past end_date)
+2. **Update**: SET enrollment_status = 'UNENROLLED' for all eligible
+3. **Audit**: INSERT status change history with reason
+4. **Lock**: DELETE lock to allow next execution
+
+**Campaign End Date Calculation:**
+- Set when Call 5 is created: `campaign_end_date = call_5_timestamp + 90 days`
+- Calls 1-4: No end date (can continue indefinitely until Call 5)
+- Call 5+: 90-day limit enforced via campaign_end_date
+
+**Monitoring:**
+- Execution frequency: 24 times per day (hourly)
+- Typical enrollments closed per run: 5-20
+- Peak closure days: ~90 days after major file uploads
+- Log pattern: `[DA-CLOSURE] Successfully unenrolled X members`
+
+**Return Value (HTTP endpoint):**
+```json
+{
+  "success": true,
+  "request_id": "da-closure-http-20260122-143000",
+  "timestamp": "2026-01-22T14:30:00Z",
+  "result": {
+    "enrollments_closed": 15,
+    "campaigns_affected": ["Device Activation - Medicaid", "Device Activation - DTC/MA"],
+    "members_unenrolled": 15,
+    "execution_duration_seconds": 2.45
+  }
+}
+```
 
 ---
 

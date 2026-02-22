@@ -73,7 +73,7 @@ File: `af_code/af_dtc_intro_call/services/blandai_service.py` (Lines 171-185)
 - **Function**: `create_outreach_batch()` (Line 68)
 - **Code**: `batch_id = str(uuid.uuid4())`
 
-**Database Table**: `engage360.outreach_batches.batch_id`
+**Database Table**: `ioe.outreach_batches.batch_id`
 
 **Example Value**: `"550e8400-e29b-41d4-a716-446655440000"`
 
@@ -86,7 +86,7 @@ File: `af_code/af_dtc_intro_call/services/blandai_service.py` (Lines 171-185)
 **SQL Query to Find All Calls in Batch**:
 ```sql
 SELECT *
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE batch_id = '550e8400-e29b-41d4-a716-446655440000'
 ```
 
@@ -99,7 +99,7 @@ WHERE batch_id = '550e8400-e29b-41d4-a716-446655440000'
 - **Database Query**: `GET_MEMBERS_WITH_ATTEMPTS_QUERY` (Line 61 in config.py)
 - **Column**: `mce.campaign_id`
 
-**Database Table**: `engage360.campaigns_enhanced.campaign_id`
+**Database Table**: `ioe.campaigns_enhanced.campaign_id`
 
 **Example Values**:
 - DTC Intro Campaign: `"34CC9155-D6DD-42E8-B1EA-DCF73F1E6FAC"`
@@ -120,7 +120,7 @@ WHERE batch_id = '550e8400-e29b-41d4-a716-446655440000'
 - **Database Query**: `GET_CAMPAIGN_CONFIG_QUERY` (Line 24-28 in config.py)
 - **Column**: `bland_parameters_global` JSON → `pathway_id` field
 
-**Database Table**: `engage360.campaign_call_configs_enhanced.bland_parameters_global`
+**Database Table**: `ioe.campaign_call_configs_enhanced.bland_parameters_global`
 
 **Example Values**:
 - DTC Intro: `"pathway-dtc-intro-v1"`
@@ -142,7 +142,7 @@ WHERE batch_id = '550e8400-e29b-41d4-a716-446655440000'
 - **Function**: `create_outreach_attempts()` (Line 88)
 - **Code**: `attempt_id = str(uuid.uuid4())`
 
-**Database Table**: `engage360.outreach_attempts.attempt_id` (Primary Key)
+**Database Table**: `ioe.outreach_attempts.attempt_id` (Primary Key)
 
 **Example Value**: `"660e8400-e29b-41d4-a716-446655440001"`
 
@@ -158,7 +158,7 @@ WHERE batch_id = '550e8400-e29b-41d4-a716-446655440000'
 attempt_id = webhook_payload['metadata']['attempt_id']
 
 # Update database
-UPDATE engage360.outreach_attempts
+UPDATE ioe.outreach_attempts
 SET disposition = 'Completed',
     vendor_session_id = webhook_payload['call_id'],
     call_duration = webhook_payload['duration']
@@ -174,7 +174,7 @@ WHERE attempt_id = attempt_id
 - **Database Query**: `GET_MEMBERS_WITH_ATTEMPTS_QUERY` (Line 47 in config.py)
 - **Column**: `m.member_id`
 
-**Database Table**: `engage360.members.member_id` (Primary Key)
+**Database Table**: `ioe.members.member_id` (Primary Key)
 
 **Example Value**: `"770e8400-e29b-41d4-a716-446655440002"`
 
@@ -191,9 +191,9 @@ SELECT
     oa.disposition,
     oa.call_duration,
     c.name as campaign_name
-FROM engage360.outreach_attempts oa
-JOIN engage360.member_campaign_enrollments_enhanced mce ON oa.enrollment_id = mce.enrollment_id
-JOIN engage360.campaigns_enhanced c ON mce.campaign_id = c.campaign_id
+FROM ioe.outreach_attempts oa
+JOIN ioe.member_campaign_enrollments_enhanced mce ON oa.enrollment_id = mce.enrollment_id
+JOIN ioe.campaigns_enhanced c ON mce.campaign_id = c.campaign_id
 WHERE mce.member_id = '770e8400-e29b-41d4-a716-446655440002'
 ORDER BY oa.attempt_ts DESC
 ```
@@ -207,7 +207,7 @@ ORDER BY oa.attempt_ts DESC
 - **Database Query**: `GET_MEMBERS_WITH_ATTEMPTS_QUERY` (Line 48 in config.py)
 - **Column**: `m.salesforce_account_number`
 
-**Database Table**: `engage360.members.salesforce_account_number`
+**Database Table**: `ioe.members.salesforce_account_number`
 
 **Example Values**:
 - `"SF-12345678"`
@@ -229,7 +229,7 @@ ORDER BY oa.attempt_ts DESC
 - **Database Query**: `GET_MEMBERS_WITH_ATTEMPTS_QUERY` (Line 49 in config.py)
 - **Column**: `m.first_name`
 
-**Database Table**: `engage360.members.first_name`
+**Database Table**: `ioe.members.first_name`
 
 **Example Value**: `"John"`
 
@@ -250,7 +250,7 @@ ORDER BY oa.attempt_ts DESC
 - **Database Query**: `GET_MEMBERS_WITH_ATTEMPTS_QUERY` (Line 50 in config.py)
 - **Column**: `m.last_name`
 
-**Database Table**: `engage360.members.last_name`
+**Database Table**: `ioe.members.last_name`
 
 **Example Value**: `"Doe"`
 
@@ -269,7 +269,7 @@ ORDER BY oa.attempt_ts DESC
 - **Database Query**: `GET_MEMBERS_WITH_ATTEMPTS_QUERY` (Line 51 in config.py)
 - **Column**: `m.primary_phone`
 
-**Database Table**: `engage360.members.primary_phone`
+**Database Table**: `ioe.members.primary_phone`
 
 **Example Value**: `"+12125551234"`
 
@@ -294,7 +294,7 @@ ORDER BY oa.attempt_ts DESC
 - **Database Query**: `GET_MEMBERS_WITH_ATTEMPTS_QUERY` (Line 52 in config.py)
 - **Column**: `m.language_pref`
 
-**Database Table**: `engage360.members.language_pref`
+**Database Table**: `ioe.members.language_pref`
 
 **Example Values**:
 - `"English"`
@@ -317,7 +317,7 @@ ORDER BY oa.attempt_ts DESC
 - **Database Query**: `GET_MEMBERS_WITH_ATTEMPTS_QUERY` (Line 63 in config.py)
 - **Column**: `cfg.call_type`
 
-**Database Table**: `engage360.campaign_call_configs_enhanced.call_type`
+**Database Table**: `ioe.campaign_call_configs_enhanced.call_type`
 
 **Example Values**:
 - `"intro_call"` - DTC intro call (first contact)
@@ -368,14 +368,14 @@ SELECT
     -- Campaign Config --
     cfg.call_type                       -- → metadata.call_type_code
 
-FROM engage360.outreach_attempts oa
-JOIN engage360.member_campaign_enrollments_enhanced mce
+FROM ioe.outreach_attempts oa
+JOIN ioe.member_campaign_enrollments_enhanced mce
     ON oa.enrollment_id = mce.enrollment_id
-JOIN engage360.members m
+JOIN ioe.members m
     ON mce.member_id = m.member_id
-LEFT JOIN engage360.member_devices md
+LEFT JOIN ioe.member_devices md
     ON m.member_id = md.member_id
-LEFT JOIN engage360.campaign_call_configs_enhanced cfg
+LEFT JOIN ioe.campaign_call_configs_enhanced cfg
     ON mce.campaign_id = cfg.campaign_id
     AND cfg.config_status = 'active'
 WHERE oa.batch_id = %s
@@ -541,7 +541,7 @@ def process_bland_webhook(webhook_payload):
     disposition = map_disposition(bland_status, webhook_payload)
 
     # Update database
-    UPDATE engage360.outreach_attempts
+    UPDATE ioe.outreach_attempts
     SET
         disposition = disposition,
         vendor_session_id = webhook_payload['call_id'],

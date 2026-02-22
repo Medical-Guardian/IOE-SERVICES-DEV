@@ -30,13 +30,14 @@
 
 The Device Activation system consists of:
 
-- **3 Azure Functions** (part of IOE-functions app):
-  - `device_activation_file_processor` (Blob trigger)
-  - `operations_device_activation_file_processor` (Blob trigger)
+- **4 Azure Functions** (part of IOE-functions app):
+  - `device_activation_file_processor` (Blob trigger - LEGACY)
+  - `operations_device_activation_file_processor` (Blob trigger - PRIMARY)
   - `device_activation_scheduler` (Timer trigger: 15 min)
-- **Azure SQL Database** (engage360 schema):
+  - `device_activation_campaign_closure` (Timer trigger: hourly)
+- **Azure SQL Database** (ioe schema):
   - 8 core tables
-  - 1 staging table (engage360_stg.stg_device_activation_delta)
+  - 1 staging table (ioe_stg.stg_device_activation_delta)
 - **Azure Blob Storage**:
   - fs-device-activation container (landing, processed, error folders)
   - fs-ops container (landing, processed, error folders)
@@ -53,9 +54,9 @@ The Device Activation system consists of:
 | Environment | Function App | Database | Key Vault | Purpose |
 |-------------|--------------|----------|-----------|---------|
 | **Local** | localhost:7071 | Dev DB | Dev KV | Development testing |
-| **Development** | ioe-functions-dev | engage360-dev | kv-ioe-dev | Integration testing |
-| **Test** | ioe-functions-test | engage360-test | kv-ioe-test | UAT and regression |
-| **Production** | ioe-function | engage360-prod | kv-ioe-prod | Live member calls |
+| **Development** | ioe-functions-dev | ioe-dev | kv-ioe-dev | Integration testing |
+| **Test** | ioe-functions-test | ioe-test | kv-ioe-test | UAT and regression |
+| **Production** | ioe-function | ioe-prod | kv-ioe-prod | Live member calls |
 
 ### 1.3 Deployment Flow
 
@@ -113,8 +114,8 @@ az --version
   - `Contributor` role on Resource Group
   - `Website Contributor` role on Function App
 - **Database Deployment:**
-  - `db_owner` role on engage360 database
-  - `db_owner` role on engage360_stg schema
+  - `db_owner` role on ioe database
+  - `db_owner` role on ioe_stg schema
 - **Key Vault Access:**
   - `Key Vault Secrets Officer` role (create/update secrets)
   - `Key Vault Secrets User` role (read secrets)
@@ -293,13 +294,13 @@ az functionapp config appsettings set \
 
 ```bash
 # Database connection string format (stored as secret):
-# Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=engage360;User ID=ioe_user;Password=<strong-password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
+# Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=ioe;User ID=ioe_user;Password=<strong-password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
 
 # Set/Update in Key Vault
 az keyvault secret set \
   --vault-name kv-ioe-prod \
   --name SqlConnectionStringIOE \
-  --value "Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=engage360;User ID=ioe_user;Password=<password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+  --value "Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=ioe;User ID=ioe_user;Password=<password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
 ```
 
 ---
@@ -325,31 +326,31 @@ az keyvault secret set \
 az sql db create \
   --resource-group rg-ioe-prod \
   --server sql-ioe-prod \
-  --name engage360 \
+  --name ioe \
   --backup-storage-redundancy Local
 
 # Verify backup exists
 az sql db list-backups \
   --resource-group rg-ioe-prod \
   --server sql-ioe-prod \
-  --database engage360
+  --database ioe
 ```
 
 **Alternative: SQL Server Management Studio (SSMS):**
 
 ```sql
 -- Manual backup script
-BACKUP DATABASE [engage360]
-TO DISK = N'/var/opt/mssql/backup/engage360_pre_deployment_2025-12-24.bak'
+BACKUP DATABASE [ioe]
+TO DISK = N'/var/opt/mssql/backup/ioe_pre_deployment_2025-12-24.bak'
 WITH FORMAT, INIT, COMPRESSION,
-  NAME = N'engage360-Pre-Deployment-Full',
+  NAME = N'ioe-Pre-Deployment-Full',
   STATS = 10;
 GO
 ```
 
 ### 4.3 Deploy Staging Table
 
-**Staging Table: `engage360_stg.stg_device_activation_delta`**
+**Staging Table: `ioe_stg.stg_device_activation_delta`**
 
 **Script:** `database/create_stg_device_activation_delta_table.sql`
 
@@ -357,12 +358,12 @@ GO
 
 ```bash
 # Connect to Azure SQL Database
-sqlcmd -S sql-ioe-prod.database.windows.net -d engage360 -U ioe_user -P <password> -i database/create_stg_device_activation_delta_table.sql
+sqlcmd -S sql-ioe-prod.database.windows.net -d ioe -U ioe_user -P <password> -i database/create_stg_device_activation_delta_table.sql
 
 # Or use Azure CLI with AAD authentication
 az sql query \
   --server sql-ioe-prod \
-  --database engage360 \
+  --database ioe \
   --auth-type ADPassword \
   --file database/create_stg_device_activation_delta_table.sql
 ```
@@ -373,27 +374,27 @@ az sql query \
 -- Verify staging table exists
 SELECT TABLE_SCHEMA, TABLE_NAME, CREATE_DATE
 FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_SCHEMA = 'engage360_stg'
+WHERE TABLE_SCHEMA = 'ioe_stg'
   AND TABLE_NAME = 'stg_device_activation_delta';
 
 -- Expected result:
 -- TABLE_SCHEMA      | TABLE_NAME                       | CREATE_DATE
--- engage360_stg     | stg_device_activation_delta      | 2025-12-24 10:30:00
+-- ioe_stg     | stg_device_activation_delta      | 2025-12-24 10:30:00
 ```
 
 ### 4.4 Deploy Core Tables (If Not Exist)
 
 **Core tables required for Device Activation:**
 
-1. `engage360.members` (Master member table)
-2. `engage360.member_devices` (Device information)
-3. `engage360.campaigns_enhanced` (Campaign configuration)
-4. `engage360.campaign_call_configs_enhanced` (Bland AI config)
-5. `engage360.member_campaign_enrollments_enhanced` (Enrollment tracking)
-6. `engage360.outreach_batches` (Batch tracking)
-7. `engage360.outreach_attempts` (Call attempt tracking)
-8. `engage360.outreach_callback_queue` (Callback queue)
-9. `engage360.bland_call_logs` (Webhook audit trail)
+1. `ioe.members` (Master member table)
+2. `ioe.member_devices` (Device information)
+3. `ioe.campaigns_enhanced` (Campaign configuration)
+4. `ioe.campaign_call_configs_enhanced` (Bland AI config)
+5. `ioe.member_campaign_enrollments_enhanced` (Enrollment tracking)
+6. `ioe.outreach_batches` (Batch tracking)
+7. `ioe.outreach_attempts` (Call attempt tracking)
+8. `ioe.outreach_callback_queue` (Callback queue)
+9. `ioe.bland_call_logs` (Webhook audit trail)
 
 **Check if tables exist:**
 
@@ -401,7 +402,7 @@ WHERE TABLE_SCHEMA = 'engage360_stg'
 -- Check core tables
 SELECT TABLE_NAME
 FROM INFORMATION_SCHEMA.TABLES
-WHERE TABLE_SCHEMA = 'engage360'
+WHERE TABLE_SCHEMA = 'ioe'
   AND TABLE_NAME IN (
     'members',
     'member_devices',
@@ -428,7 +429,7 @@ ORDER BY TABLE_NAME;
 
 ```bash
 # Deploy migration
-sqlcmd -S sql-ioe-prod.database.windows.net -d engage360 -U ioe_user -P <password> -i database/fix_device_activation_staging_table_schema.sql
+sqlcmd -S sql-ioe-prod.database.windows.net -d ioe -U ioe_user -P <password> -i database/fix_device_activation_staging_table_schema.sql
 ```
 
 **Migration #2: Rename Battery Status Column (2025-12-23)**
@@ -439,7 +440,7 @@ sqlcmd -S sql-ioe-prod.database.windows.net -d engage360 -U ioe_user -P <passwor
 
 ```bash
 # Deploy migration
-sqlcmd -S sql-ioe-prod.database.windows.net -d engage360 -U ioe_user -P <password> -i database/rename_battery_status_to_powersaver_mode.sql
+sqlcmd -S sql-ioe-prod.database.windows.net -d ioe -U ioe_user -P <password> -i database/rename_battery_status_to_powersaver_mode.sql
 ```
 
 **Verify Migrations Applied:**
@@ -448,7 +449,7 @@ sqlcmd -S sql-ioe-prod.database.windows.net -d engage360 -U ioe_user -P <passwor
 -- Check staging table columns
 SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, IS_NULLABLE
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360_stg'
+WHERE TABLE_SCHEMA = 'ioe_stg'
   AND TABLE_NAME = 'stg_device_activation_delta'
   AND COLUMN_NAME LIKE '%powersaver%';
 
@@ -465,7 +466,7 @@ WHERE TABLE_SCHEMA = 'engage360_stg'
 ```sql
 -- Index 1: Enrollment eligibility (used in eligibility_service.py)
 CREATE NONCLUSTERED INDEX IX_enrollments_eligibility
-ON engage360.member_campaign_enrollments_enhanced (
+ON ioe.member_campaign_enrollments_enhanced (
     current_status,
     activation_start_date,
     call_5_timestamp
@@ -474,7 +475,7 @@ INCLUDE (enrollment_id, member_id, campaign_id, campaign_end_date);
 
 -- Index 2: Outreach attempts (frequency protection)
 CREATE NONCLUSTERED INDEX IX_attempts_enrollment_ts
-ON engage360.outreach_attempts (
+ON ioe.outreach_attempts (
     enrollment_id,
     attempt_ts DESC
 )
@@ -482,7 +483,7 @@ INCLUDE (disposition);
 
 -- Index 3: Callback queue (scheduler query)
 CREATE NONCLUSTERED INDEX IX_callbacks_pending
-ON engage360.outreach_callback_queue (
+ON ioe.outreach_callback_queue (
     status,
     scheduled_callback_time
 )
@@ -490,7 +491,7 @@ INCLUDE (enrollment_id, attempt_count, created_at);
 
 -- Index 4: Batch status (reconciler query)
 CREATE NONCLUSTERED INDEX IX_batches_status
-ON engage360.outreach_batches (
+ON ioe.outreach_batches (
     batch_status,
     created_at DESC
 )
@@ -649,6 +650,7 @@ OUTPUT (Azure Functions)
 12:32:31 PM: Functions:
   - device_activation_file_processor
   - device_activation_scheduler
+  - device_activation_campaign_closure
   - operations_device_activation_file_processor
 ```
 
@@ -704,6 +706,7 @@ az functionapp function list \
 # --------------------------------------------  -------------
 # device_activation_file_processor              blobTrigger
 # device_activation_scheduler                   timerTrigger
+# device_activation_campaign_closure            timerTrigger
 # operations_device_activation_file_processor   blobTrigger
 ```
 
@@ -728,12 +731,31 @@ az functionapp log tail \
 
 ### 6.1 Create Containers
 
+**⚠️ WARNING: Dual Blob Processors Active**
+
+Both processors are registered:
+1. **operations_device_activation_file_processor** (PRIMARY) - `fs-ops/landing/`
+2. **device_activation_file_processor** (LEGACY) - `fs-device-activation/landing/` (backup only)
+
+**Risk:** Duplicate processing if files uploaded to wrong container. Always use PRIMARY processor (`fs-ops`).
+
+---
+
 **Required containers for Device Activation:**
 
-1. **fs-device-activation** (Main Device Activation files)
+1. **fs-ops** (PRIMARY - Operations campaigns: Medicaid, DTC/MA)
    - Folders: `landing/`, `processed/`, `error/`
-2. **fs-ops** (Operations campaigns: Medicaid, DTC/MA)
+   - **Hardcoded Campaign IDs:**
+     - **Medicaid:** `0F69659B-491B-40E2-88C3-ABC7D87385B2`
+     - **DTC/MA:** `BA865458-60F9-4EBB-9FB5-D195B532CF5A`
+   - **Filename Patterns:**
+     - `MedicalGuardian_DeviceActivationMedicaid_YYYYMMDD_DELTA.csv`
+     - `MedicalGuardian_DeviceActivationDTCMA_YYYYMMDD_DELTA.csv`
+
+2. **fs-device-activation** (LEGACY - Generic Device Activation files)
    - Folders: `landing/`, `processed/`, `error/`
+   - **Status:** LEGACY - Use `fs-ops` instead
+   - **Filename Pattern:** `MedicalGuardian_DeviceActivation_*.csv`
 
 **Azure CLI Commands:**
 
@@ -887,7 +909,7 @@ az storage account management-policy create \
 
 | Secret Name | Purpose | Format |
 |-------------|---------|--------|
-| `SqlConnectionStringIOE` | Azure SQL connection string | Server=tcp:...;Database=engage360;... |
+| `SqlConnectionStringIOE` | Azure SQL connection string | Server=tcp:...;Database=ioe;... |
 | `BlandAIkey` | Bland AI API key (authorization header) | sk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx |
 | `Blandaitwilio` | Bland AI encrypted_key header | your-twilio-encryption-key |
 
@@ -897,13 +919,13 @@ az storage account management-policy create \
 
 ```bash
 # Format:
-# Server=tcp:<server>.database.windows.net,1433;Database=engage360;User ID=<user>;Password=<password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
+# Server=tcp:<server>.database.windows.net,1433;Database=ioe;User ID=<user>;Password=<password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;
 
 # Set secret
 az keyvault secret set \
   --vault-name kv-ioe-prod \
   --name SqlConnectionStringIOE \
-  --value "Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=engage360;User ID=ioe_user;Password=<strong-password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
+  --value "Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=ioe;User ID=ioe_user;Password=<strong-password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;"
 ```
 
 **Bland AI API Key:**
@@ -959,7 +981,7 @@ az keyvault secret show \
   --query "value" -o tsv | sed 's/Password=[^;]*/Password=***MASKED***/'
 
 # Expected output (with password masked):
-# Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=engage360;User ID=ioe_user;Password=***MASKED***;Encrypt=True;...
+# Server=tcp:sql-ioe-prod.database.windows.net,1433;Database=ioe;User ID=ioe_user;Password=***MASKED***;Encrypt=True;...
 ```
 
 ### 7.4 Grant Function App Access (Managed Identity)
@@ -1052,7 +1074,7 @@ az keyvault set-policy \
 
 ```sql
 -- Update campaign_call_configs_enhanced with Bland AI settings
-UPDATE engage360.campaign_call_configs_enhanced
+UPDATE ioe.campaign_call_configs_enhanced
 SET
     pathway_id = 'pathway_abc123',  -- From Pathway setup
     voice_id = 'voice_xyz789',      -- From Voice setup
@@ -1073,7 +1095,7 @@ SET
     updated_at = SYSDATETIMEOFFSET()
 WHERE campaign_id = (
     SELECT campaign_id
-    FROM engage360.campaigns_enhanced
+    FROM ioe.campaigns_enhanced
     WHERE name = 'Device Activation - 2025'
 );
 ```
@@ -1088,8 +1110,8 @@ SELECT
     cc.voice_id,
     cc.bland_parameters_global,
     cc.config_status
-FROM engage360.campaign_call_configs_enhanced cc
-INNER JOIN engage360.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
+FROM ioe.campaign_call_configs_enhanced cc
+INNER JOIN ioe.campaigns_enhanced c ON cc.campaign_id = c.campaign_id
 WHERE c.name LIKE '%Device Activation%';
 ```
 
@@ -1178,6 +1200,7 @@ az functionapp function list \
 # --------------------------------------------  --------
 # device_activation_file_processor              False
 # device_activation_scheduler                   False
+# device_activation_campaign_closure            False
 # operations_device_activation_file_processor   False
 ```
 
@@ -1322,7 +1345,7 @@ SELECT TOP 5
     validation_status,
     COUNT(*) as row_count,
     MAX(created_at) as latest_timestamp
-FROM engage360_stg.stg_device_activation_delta
+FROM ioe_stg.stg_device_activation_delta
 GROUP BY file_id, processing_status, validation_status
 ORDER BY MAX(created_at) DESC;
 
@@ -1343,10 +1366,10 @@ SELECT TOP 5
     current_status,
     activation_start_date,
     created_at
-FROM engage360.member_campaign_enrollments_enhanced
+FROM ioe.member_campaign_enrollments_enhanced
 WHERE campaign_id IN (
     SELECT campaign_id
-    FROM engage360.campaigns_enhanced
+    FROM ioe.campaigns_enhanced
     WHERE name LIKE '%Device Activation%'
 )
 ORDER BY created_at DESC;
@@ -1365,10 +1388,92 @@ SELECT TOP 5
     vendor_batch_id,
     batch_size,
     created_at
-FROM engage360.outreach_batches
+FROM ioe.outreach_batches
 ORDER BY created_at DESC;
 
 -- Expected result: Batches with status 'Submitted' and vendor_batch_id populated
+```
+
+### 9.7 Validate Campaign Closure (90-Day Auto-Unenroll)
+
+**Test HTTP trigger (device_activation_campaign_closure):**
+
+```bash
+# Invoke campaign closure manually
+curl -X GET https://ioe-function.azurewebsites.net/api/device_activation_campaign_closure?code=<function-key>
+
+# Expected response:
+# {
+#   "success": true,
+#   "request_id": "da-closure-http-20260122-143000",
+#   "timestamp": "2026-01-22T14:30:00Z",
+#   "result": {
+#     "enrollments_closed": 15,
+#     "campaigns_affected": ["Device Activation - Medicaid", "Device Activation - DTC/MA"],
+#     "members_unenrolled": 15,
+#     "execution_duration_seconds": 2.45
+#   }
+# }
+```
+
+**Verify timer trigger (hourly schedule):**
+
+```bash
+# Check last 3 campaign closure invocations
+az monitor app-insights query \
+  --app ioe-function-appinsights \
+  --analytics-query "requests | where name contains 'device_activation_campaign_closure' | top 3 by timestamp desc | project timestamp, duration, resultCode" \
+  --offset 3h
+
+# Expected output (every hour at :00 minutes):
+# timestamp                  | duration | resultCode
+# ---------------------------|----------|------------
+# 2026-01-22T14:00:00.000Z   | 2450     | 200
+# 2026-01-22T13:00:00.000Z   | 2100     | 200
+# 2026-01-22T12:00:00.000Z   | 2800     | 200
+```
+
+**Check campaign closure logs:**
+
+```bash
+# Query campaign closure events
+az monitor app-insights query \
+  --app ioe-function-appinsights \
+  --analytics-query "traces | where message contains 'DA-CLOSURE' | top 5 by timestamp desc" \
+  --offset 3h
+```
+
+**Expected log output:**
+
+```
+✅ [DA-CLOSURE] Device Activation Campaign Closure Scheduler TRIGGERED
+✅ [DA-CLOSURE] Distributed lock acquired successfully
+✅ [DA-CLOSURE] Found 15 enrollments to close
+✅ [DA-CLOSURE] Successfully unenrolled 15 members
+✅ [DA-CLOSURE] Campaigns affected: ['Device Activation - Medicaid', 'Device Activation - DTC/MA']
+```
+
+**Verify database updates (members unenrolled):**
+
+```sql
+-- Check recently unenrolled members (campaign closure)
+SELECT TOP 10
+    mce.enrollment_id,
+    mce.member_id,
+    c.name as campaign_name,
+    mce.enrollment_status,
+    mce.campaign_end_date,
+    mce.updated_at,
+    meh.reason
+FROM ioe.member_campaign_enrollments_enhanced mce
+JOIN ioe.campaigns_enhanced c ON mce.campaign_id = c.campaign_id
+LEFT JOIN ioe.member_enrollment_status_history meh ON mce.enrollment_id = meh.enrollment_id
+WHERE mce.enrollment_status = 'UNENROLLED'
+  AND c.name LIKE '%Device Activation%'
+  AND meh.reason = '90-day campaign window expired'
+ORDER BY mce.updated_at DESC;
+
+-- Expected result: Members with status 'UNENROLLED' and reason '90-day campaign window expired'
 ```
 
 ---
@@ -1417,21 +1522,21 @@ az functionapp log tail \
 
 ```sql
 -- Step 1: Restore from backup (if major schema change)
-RESTORE DATABASE [engage360]
-FROM DISK = N'/var/opt/mssql/backup/engage360_pre_deployment_2025-12-24.bak'
+RESTORE DATABASE [ioe]
+FROM DISK = N'/var/opt/mssql/backup/ioe_pre_deployment_2025-12-24.bak'
 WITH REPLACE, RECOVERY;
 
 -- Step 2: OR manually revert specific changes
 -- Example: Revert column rename
 EXEC sp_rename
-    'engage360_stg.stg_device_activation_delta.powersaver_mode',
+    'ioe_stg.stg_device_activation_delta.powersaver_mode',
     'battery_status',
     'COLUMN';
 
 -- Step 3: Verify rollback
 SELECT COLUMN_NAME
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360_stg'
+WHERE TABLE_SCHEMA = 'ioe_stg'
   AND TABLE_NAME = 'stg_device_activation_delta'
   AND COLUMN_NAME IN ('battery_status', 'powersaver_mode');
 ```

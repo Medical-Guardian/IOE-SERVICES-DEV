@@ -160,10 +160,7 @@ def test_enrollment_channel_device_with_active_device(test_member_with_active_de
 
     # SQL query would include this enrollment
     # Eligibility logic: channel='device' + active_device_count > 0 → ELIGIBLE
-    is_eligible = (
-        member_data["Channel"] == "device"
-        and member_data["active_device_count"] > 0
-    )
+    is_eligible = member_data["Channel"] == "device" and member_data["active_device_count"] > 0
 
     assert is_eligible is True
 
@@ -224,9 +221,8 @@ def test_enrollment_channel_device_no_active_device(test_member_device_out_of_se
 
     # SQL query would EXCLUDE this enrollment
     # Eligibility logic: channel='device' + active_device_count == 0 → INELIGIBLE
-    is_eligible = (
-        member_data["Channel"] != "device"
-        or (member_data["Channel"] == "device" and member_data["active_device_count"] > 0)
+    is_eligible = member_data["Channel"] != "device" or (
+        member_data["Channel"] == "device" and member_data["active_device_count"] > 0
     )
 
     assert is_eligible is False
@@ -260,10 +256,7 @@ def test_enrollment_channel_phone_ignores_device_status(test_member_phone_channe
 
     # SQL query would INCLUDE this enrollment (phone channel eligible regardless of device status)
     # Eligibility logic: channel='phone' → ELIGIBLE
-    is_eligible = (
-        member_data["Channel"] == "phone"
-        or member_data["Channel"] != "device"
-    )
+    is_eligible = member_data["Channel"] == "phone" or member_data["Channel"] != "device"
 
     assert is_eligible is True
 
@@ -325,12 +318,9 @@ def test_enrollment_channel_null_default_behavior():
     }
 
     # SQL query logic: channel=NULL → Eligible if phone OR device available
-    is_eligible = (
-        member_data["Channel"] is None
-        and (
-            member_data["primary_phone"] is not None
-            or (member_data["device_phone_number"] is not None and member_data["is_device_callable"])
-        )
+    is_eligible = member_data["Channel"] is None and (
+        member_data["primary_phone"] is not None
+        or (member_data["device_phone_number"] is not None and member_data["is_device_callable"])
     )
 
     assert is_eligible is True
@@ -377,16 +367,10 @@ def test_member_multiple_enrollments_different_channels():
     }
 
     # Enrollment A eligibility
-    is_eligible_a = (
-        enrollment_a["Channel"] == "device"
-        and enrollment_a["active_device_count"] > 0
-    )
+    is_eligible_a = enrollment_a["Channel"] == "device" and enrollment_a["active_device_count"] > 0
 
     # Enrollment B eligibility
-    is_eligible_b = (
-        enrollment_b["Channel"] == "phone"
-        and enrollment_b["primary_phone"] is not None
-    )
+    is_eligible_b = enrollment_b["Channel"] == "phone" and enrollment_b["primary_phone"] is not None
 
     # Both enrollments should be eligible
     assert is_eligible_a is True
@@ -424,10 +408,7 @@ def test_enrollment_channel_device_mixed_device_statuses():
     }
 
     # Eligibility: channel='device' + at least 1 active device → ELIGIBLE
-    is_eligible = (
-        member_data["Channel"] == "device"
-        and member_data["active_device_count"] > 0
-    )
+    is_eligible = member_data["Channel"] == "device" and member_data["active_device_count"] > 0
 
     assert is_eligible is True
     assert member_data["total_device_count"] == 2
@@ -461,10 +442,7 @@ def test_sql_channel_device_status_filter():
 
     for channel, active_count, expected in test_cases:
         # Simulate SQL WHERE clause
-        is_eligible = (
-            channel != "device"
-            or (channel == "device" and active_count > 0)
-        )
+        is_eligible = channel != "device" or (channel == "device" and active_count > 0)
 
         assert is_eligible == expected, (
             f"Failed for channel={channel}, active_count={active_count}: "

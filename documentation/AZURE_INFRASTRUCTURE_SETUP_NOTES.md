@@ -77,7 +77,7 @@ az storage blob list \
 ### SQL Script: `database/create_device_activation_campaign.sql`
 
 **Execute this script on Azure SQL Database:**
-1. Connect to Azure SQL Database (engage360 database)
+1. Connect to Azure SQL Database (ioe database)
 2. Run: `database/create_device_activation_campaign.sql`
 3. Save the `campaign_id` output for reference
 
@@ -101,7 +101,7 @@ operating_end_time: 17:00:00
 **Verification:**
 ```sql
 SELECT campaign_id, campaign_name, campaign_type, status
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE campaign_name = 'Device Activation';
 ```
 
@@ -115,7 +115,7 @@ WHERE campaign_name = 'Device Activation';
 
 Schema preview:
 ```sql
-CREATE TABLE engage360.outreach_callback_queue (
+CREATE TABLE ioe.outreach_callback_queue (
     callback_id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
     enrollment_id UNIQUEIDENTIFIER NOT NULL,
     member_id UNIQUEIDENTIFIER NOT NULL,
@@ -206,8 +206,8 @@ az functionapp logs tail \
 
 **For Issues:**
 - Check Application Insights for error logs
-- Review `engage360_stg.file_processing_log` table
-- Review `engage360_stg.stg_device_activation_delta` table
+- Review `ioe_stg.file_processing_log` table
+- Review `ioe_stg.stg_device_activation_delta` table
 
 **Contact:**
 - AI-POD Team - Data Science at Medical Guardian

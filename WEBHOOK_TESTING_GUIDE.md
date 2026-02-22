@@ -103,8 +103,8 @@ curl -X POST "$FUNCTION_URL?code=$FUNCTION_KEY" \
 ```
 
 **Expected Database Changes**:
-- New record in `engage360.bland_call_logs`
-- Updated `engage360.member_campaign_enrollments_enhanced` (if member found)
+- New record in `ioe.bland_call_logs`
+- Updated `ioe.member_campaign_enrollments_enhanced` (if member found)
 - Service bus message queued for follow-up
 
 ---
@@ -145,7 +145,7 @@ curl -X POST "$FUNCTION_URL?code=$FUNCTION_KEY" \
 ```
 
 **Expected Database Changes**:
-- New record in `engage360.bland_call_logs` with `opt_out_requested = 1`
+- New record in `ioe.bland_call_logs` with `opt_out_requested = 1`
 - Member status updated to opt-out in relevant tables
 - Compliance audit trail created
 
@@ -418,7 +418,7 @@ SELECT TOP 20
     contact_made,
     opt_out_requested,
     created_ts
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 ORDER BY created_ts DESC;
 ```
 
@@ -429,7 +429,7 @@ SELECT
     next_action,
     COUNT(*) as count,
     COUNT(*) * 100.0 / SUM(COUNT(*)) OVER() as percentage
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 WHERE created_ts >= DATEADD(day, -1, GETUTCDATE())
 GROUP BY disposition, next_action
 ORDER BY count DESC;
@@ -442,7 +442,7 @@ SELECT
     call_id,
     disposition,
     created_ts
-FROM engage360.bland_call_logs
+FROM ioe.bland_call_logs
 WHERE opt_out_requested = 1
     AND created_ts >= DATEADD(day, -7, GETUTCDATE())
 ORDER BY created_ts DESC;

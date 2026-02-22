@@ -374,11 +374,11 @@ WITH CampaignEnrollmentStats AS (
             WHEN oa.attempt_id IS NOT NULL THEN mce.member_id
         END) as attempted_members
 
-    FROM engage360.campaigns_enhanced c
-    INNER JOIN engage360.member_campaign_enrollments_enhanced mce
+    FROM ioe.campaigns_enhanced c
+    INNER JOIN ioe.member_campaign_enrollments_enhanced mce
         ON c.campaign_id = mce.campaign_id
         AND mce.current_status = 'Active'
-    LEFT JOIN engage360.outreach_attempts oa
+    LEFT JOIN ioe.outreach_attempts oa
         ON mce.enrollment_id = oa.enrollment_id
     WHERE c.status = 'Active'
       AND c.campaign_type = 'Partner'
@@ -424,11 +424,11 @@ WHERE
 **Option 2: Add `is_recurring` flag** (if Question 1 = Option B)
 ```sql
 -- Add new column to campaigns_enhanced
-ALTER TABLE engage360.campaigns_enhanced
+ALTER TABLE ioe.campaigns_enhanced
 ADD is_recurring BIT DEFAULT 0;
 
 -- Update existing campaigns
-UPDATE engage360.campaigns_enhanced
+UPDATE ioe.campaigns_enhanced
 SET is_recurring = CASE
     WHEN end_ts IS NULL THEN 1  -- Ongoing campaigns
     ELSE 0                       -- Time-bound campaigns
@@ -436,13 +436,13 @@ END;
 
 -- Add index for performance
 CREATE INDEX IX_campaigns_recurring_status
-ON engage360.campaigns_enhanced(is_recurring, status, campaign_type)
+ON ioe.campaigns_enhanced(is_recurring, status, campaign_type)
 WHERE status = 'Active' AND campaign_type = 'Partner';
 ```
 
 **Option 3: Add completion metadata fields** (optional, for reporting)
 ```sql
-ALTER TABLE engage360.campaigns_enhanced
+ALTER TABLE ioe.campaigns_enhanced
 ADD completed_ts DATETIMEOFFSET NULL,           -- When campaign was marked completed
     completion_reason NVARCHAR(255) NULL,        -- 'end_date_reached' or 'all_members_contacted'
     final_success_rate DECIMAL(5,2) NULL,        -- e.g., 87.50 (%)
@@ -560,7 +560,7 @@ class CampaignCompletionChecker:
                 0 as completed_members,
                 0 as optout_members,
                 0 as exhausted_retry_members
-            FROM engage360.campaigns_enhanced c
+            FROM ioe.campaigns_enhanced c
             WHERE c.status = 'Active'
               AND c.campaign_type = 'Partner'
               AND 1=0  -- Disabled until finalized
@@ -595,7 +595,7 @@ class CampaignCompletionChecker:
         success_rate = (completed / total * 100) if total > 0 else 0
 
         query = """
-            UPDATE engage360.campaigns_enhanced
+            UPDATE ioe.campaigns_enhanced
             SET
                 status = 'Completed',
                 completed_ts = SYSDATETIMEOFFSET(),
@@ -879,7 +879,7 @@ SELECT
     final_success_rate,
     final_members_completed,
     final_members_total
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE status = 'Completed'
   AND completed_ts >= DATEADD(day, -7, SYSDATETIMEOFFSET())
 ORDER BY completed_ts DESC;
@@ -892,9 +892,9 @@ SELECT
     COUNT(DISTINCT CASE WHEN oa.disposition = 'Completed' THEN mce.member_id END) as completed_count,
     CAST(COUNT(DISTINCT CASE WHEN oa.disposition = 'Completed' THEN mce.member_id END) AS FLOAT)
         / NULLIF(COUNT(DISTINCT mce.member_id), 0) * 100 as completion_pct
-FROM engage360.campaigns_enhanced c
-INNER JOIN engage360.member_campaign_enrollments_enhanced mce ON c.campaign_id = mce.campaign_id
-LEFT JOIN engage360.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
+FROM ioe.campaigns_enhanced c
+INNER JOIN ioe.member_campaign_enrollments_enhanced mce ON c.campaign_id = mce.campaign_id
+LEFT JOIN ioe.outreach_attempts oa ON mce.enrollment_id = oa.enrollment_id
 WHERE c.status = 'Active'
   AND c.campaign_type = 'Partner'
 GROUP BY c.campaign_id, c.name, c.end_ts
@@ -953,7 +953,7 @@ ORDER BY completion_pct DESC;
 - `PARTNER_CAMPAIGN_COMPLETE_DOCUMENTATION.md` - Complete technical reference
 - `PARTNER_CAMPAIGN_IMPLEMENTATION.md` - Implementation summary
 - `CAMPAIGN_QUALIFICATION_LOGIC.md` - Timezone and qualification logic
-- `ENGAGE360_TABLE_USAGE_REFERENCE.md` - Database schema reference
+- `IOE_TABLE_USAGE_REFERENCE.md` - Database schema reference
 
 **Related BusinessCaseIDs:**
 - BC-109: Partner Campaign Scheduler

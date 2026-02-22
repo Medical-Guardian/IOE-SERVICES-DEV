@@ -104,14 +104,14 @@ Bland AI → Webhook → Azure Function
 │          blandai_service.py                                 │
 │                                                             │
 │    a. Create outreach_batch record                          │
-│       INSERT INTO engage360.outreach_batches                │
+│       INSERT INTO ioe.outreach_batches                │
 │       - batch_id (UUID)                                     │
 │       - campaign_id                                         │
 │       - batch_status = 'Pending'                            │
 │       - total_calls_intended = 1000                         │
 │                                                             │
 │    b. Create outreach_attempts records                      │
-│       INSERT INTO engage360.outreach_attempts               │
+│       INSERT INTO ioe.outreach_attempts               │
 │       - attempt_id (UUID)                                   │
 │       - enrollment_id                                       │
 │       - batch_id                                            │
@@ -171,7 +171,7 @@ Bland AI → Webhook → Azure Function
 │    File: af_code/af_dtc_intro_call/services/               │
 │          blandai_service.py                                 │
 │                                                             │
-│    UPDATE engage360.outreach_batches                        │
+│    UPDATE ioe.outreach_batches                        │
 │    SET vendor_batch_id = 'bland_batch_xyz789',              │
 │        batch_status = 'Submitted',                          │
 │        submitted_ts = SYSDATETIMEOFFSET()                   │
@@ -257,7 +257,7 @@ Total time: ~5-10 seconds
 │ File: af_code/bland_ai_webhook/services/                    │
 │       database_service.py                                   │
 │                                                             │
-│ UPDATE engage360.outreach_attempts                          │
+│ UPDATE ioe.outreach_attempts                          │
 │ SET disposition = 'Completed',                              │
 │     vendor_session_id = 'call_abc123',                      │
 │     call_duration = 180,                                    │
@@ -288,7 +288,7 @@ Typically completes within 2 hours for full batch
 │ File: af_code/shared/batch_sync_coordinator.py              │
 │                                                             │
 │ SELECT batch_id, vendor_batch_id                            │
-│ FROM engage360.outreach_batches                             │
+│ FROM ioe.outreach_batches                             │
 │ WHERE batch_status IN ('Submitted', 'Pending')              │
 │   AND (last_status_check_ts IS NULL                         │
 │        OR last_status_check_ts < NOW() - 2 hours)           │
@@ -321,7 +321,7 @@ Typically completes within 2 hours for full batch
 ┌─────────────────────────────────────────────────────────────┐
 │ Update Batch Completion Status                              │
 │                                                             │
-│ UPDATE engage360.outreach_batches                           │
+│ UPDATE ioe.outreach_batches                           │
 │ SET batch_status = 'Completed',                             │
 │     total_calls_completed = 850,                            │
 │     total_calls_failed = 150,                               │

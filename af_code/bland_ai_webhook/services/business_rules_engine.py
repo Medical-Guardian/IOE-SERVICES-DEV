@@ -136,12 +136,68 @@ class _DtcIntroCall_34CC9155_Handler(_CampaignRuleHandler):
         )
 
 
+class _DeviceActivation_Handler(_CampaignRuleHandler):
+    """
+    Campaign module for Device Activation calls.
+
+    call_type_code: DEVICE_ACTIVATION
+    campaign_ids: 0F69659B-491B-40E2-88C3-ABC7D87385B2, BA865458-60F9-4EBB-9FB5-D195B532CF5A
+
+    Business Rules:
+    - ALL dispositions (including OPTED_OUT) → NO enrollment status change
+    - Opt-outs treated as NoAnswer (member remains ENROLLED)
+    - Frequency protection via outreach_attempts table only
+    - Members remain ENROLLED throughout campaign lifecycle
+
+    Updated: 2025-12-24
+    BusinessCaseID: BC-104
+    """
+
+    RULE = "DEVICE_ACTIVATION"
+    CAMPAIGN_IDS = [
+        "0F69659B-491B-40E2-88C3-ABC7D87385B2",
+        "BA865458-60F9-4EBB-9FB5-D195B532CF5A",
+    ]
+
+    def applicable(self, rule_name: Optional[str], campaign_id: Optional[str]) -> bool:
+        """Check if this is a Device Activation campaign."""
+        # Match by call_type_code OR campaign_id
+        return rule_name == self.RULE or (
+            campaign_id and campaign_id.upper() in [c.upper() for c in self.CAMPAIGN_IDS]
+        )
+
+    def decide(self, webhook_data: Dict[str, Any], mapped: MappedCallData) -> EnrollmentUpdate:
+        """
+        Apply Device Activation business rules.
+
+        ALL dispositions (including opt-outs) → NO status change.
+        Opt-outs are treated as NoAnswer and logged in outreach_attempts only.
+        """
+        # Log disposition for transparency
+        disposition = mapped.disposition
+        logger.info(f"🔧 [BUSINESS-RULES] Device Activation - Disposition: {disposition}")
+
+        # Special handling for opt-outs (treat as NoAnswer)
+        if mapped.opt_out_requested:
+            logger.info("🔧 [BUSINESS-RULES] Device Activation - Opt-out treated as NoAnswer")
+            logger.info("🔧 [BUSINESS-RULES] ℹ️ Member remains ENROLLED (frequency-based calling)")
+
+        # ALL dispositions: No status change
+        return EnrollmentUpdate(
+            should_update=False,
+            new_status=None,
+            reason=f"DEVICE_ACTIVATION: Frequency-based calling (no status change for {disposition})",
+            confidence_level="high",
+        )
+
+
 def _get_campaign_handler(
     rule_name: Optional[str], campaign_id: Optional[str]
 ) -> Optional[_CampaignRuleHandler]:
     """Return the first handler that applies to (rule_name, campaign_id)."""
     handlers: List[_CampaignRuleHandler] = [
         _DtcIntroCall_34CC9155_Handler(),
+        _DeviceActivation_Handler(),  # Added 2025-12-23 for Device Activation standardization
         # Add more campaign modules here in the future.
     ]
     for h in handlers:
@@ -237,7 +293,11 @@ class BusinessRulesEngine:
         # (3) Default fallback - handle common disposition mappings
         # If we have a 'Completed' disposition but no specific rule matched,
         # check if it should be enrolled based on contact status
-        if mapped_data.disposition == "Completed" and mapped_data.contact_made and not mapped_data.opt_out_requested:
+        if (
+            mapped_data.disposition == "Completed"
+            and mapped_data.contact_made
+            and not mapped_data.opt_out_requested
+        ):
             logger.info("📋 [BUSINESS-RULES] Default fallback: Completed with contact -> ENROLLED")
             return EnrollmentUpdate(
                 should_update=True,
@@ -253,7 +313,7 @@ class BusinessRulesEngine:
                 reason="Default fallback: Opt-out requested",
                 confidence_level="high",
             )
-        
+
         # No update for other cases
         logger.info("📋 [BUSINESS-RULES] No update (no matching rule or condition).")
         return EnrollmentUpdate(

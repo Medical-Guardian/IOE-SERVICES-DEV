@@ -19,13 +19,13 @@
 IF NOT EXISTS (
     SELECT 1
     FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = 'engage360_stg'
+    WHERE TABLE_SCHEMA = 'ioe_stg'
     AND TABLE_NAME = 'stg_device_activation_delta'
     AND COLUMN_NAME = 'member_brand'
 )
 BEGIN
     -- Add member_brand column to staging table
-    ALTER TABLE engage360_stg.stg_device_activation_delta
+    ALTER TABLE ioe_stg.stg_device_activation_delta
     ADD member_brand NVARCHAR(100) NULL;
 
     PRINT '✅ Successfully added member_brand column to stg_device_activation_delta';
@@ -50,7 +50,7 @@ SELECT
     IS_NULLABLE,
     COLUMN_DEFAULT
 FROM INFORMATION_SCHEMA.COLUMNS
-WHERE TABLE_SCHEMA = 'engage360_stg'
+WHERE TABLE_SCHEMA = 'ioe_stg'
 AND TABLE_NAME = 'stg_device_activation_delta'
 AND COLUMN_NAME = 'member_brand';
 

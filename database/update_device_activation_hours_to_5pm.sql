@@ -4,7 +4,7 @@
 -- Author: AI-POD Team
 -- ============================================================
 
-USE engage360;
+USE ioe;
 GO
 
 -- Step 1: Verify current configuration before update
@@ -16,7 +16,7 @@ SELECT
     operating_end_time,
     timezone_flag,
     status
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE campaign_name IN ('Device Activation', 'Operations_Device_Activation')
 ORDER BY campaign_name;
 
@@ -27,7 +27,7 @@ ORDER BY campaign_name;
 GO
 
 -- Step 2: Update Device Activation campaign
-UPDATE engage360.campaigns_enhanced
+UPDATE ioe.campaigns_enhanced
 SET
     operating_end_time = '17:00:00',  -- Change from 16:00:00 (4 PM) to 17:00:00 (5 PM)
     modified_dt = SYSDATETIMEOFFSET(),
@@ -41,7 +41,7 @@ SELECT @@ROWCOUNT AS 'Device_Activation_Rows_Updated';
 GO
 
 -- Step 3: Update Operations Device Activation campaign
-UPDATE engage360.campaigns_enhanced
+UPDATE ioe.campaigns_enhanced
 SET
     operating_end_time = '17:00:00',  -- Change from 16:00:00 (4 PM) to 17:00:00 (5 PM)
     modified_dt = SYSDATETIMEOFFSET(),
@@ -65,7 +65,7 @@ SELECT
     modified_dt,
     modified_by,
     status
-FROM engage360.campaigns_enhanced
+FROM ioe.campaigns_enhanced
 WHERE campaign_name IN ('Device Activation', 'Operations_Device_Activation')
 ORDER BY campaign_name;
 

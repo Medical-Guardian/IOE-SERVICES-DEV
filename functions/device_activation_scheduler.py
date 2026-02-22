@@ -1,5 +1,5 @@
 # Device Activation Scheduler - Azure Function Triggers
-# BusinessCaseID: BC-TBD (Device Activation System)
+# BusinessCaseID: BC-DA-001 (Core Orchestration System)
 # Created: 2025-12-07
 #
 # This file contains the triggers for the Device Activation campaign scheduler.
@@ -25,7 +25,9 @@ import json
 from datetime import datetime
 
 # Import the main logic function and services from the af_code directory
-from af_code.device_activation_scheduler.main_logic import create_device_activation_batch
+from af_code.device_activation_scheduler.main_logic import (
+    create_device_activation_batch,
+)
 from af_code.device_activation_scheduler.services.eligibility_service import (
     EligibilityService,
 )
@@ -52,7 +54,7 @@ def timer_device_activation(timer: func.TimerRequest) -> None:
     Runs every 15 minutes to find eligible members and create call batches.
     Supports both Device Activation and Operations campaign types.
 
-    BusinessCaseID: BC-TBD (Device Activation System)
+    BusinessCaseID: BC-DA-001 (Core Orchestration System)
     """
     logging.info("⏰ [TIMER] Device Activation Scheduler TRIGGERED")
     logging.info(f"🕐 [TIMER] Current time (UTC): {datetime.utcnow().isoformat()}")
@@ -98,7 +100,7 @@ def http_device_activation(req: func.HttpRequest) -> func.HttpResponse:
     POST /api/create_device_activation_batch
     Body (optional): {"force": true}  # Force batch creation even if no eligible members
 
-    BusinessCaseID: BC-TBD (Device Activation System)
+    BusinessCaseID: BC-DA-001 (Core Orchestration System)
     """
     logging.info("🌐 [HTTP] Create Device Activation Batch TRIGGERED")
 

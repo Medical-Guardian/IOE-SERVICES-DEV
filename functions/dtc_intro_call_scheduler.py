@@ -2,14 +2,12 @@
 import azure.functions as func
 import logging
 import json
-from datetime import datetime
 
 # Import the main logic function and services from the af_code directory
 from af_code.af_dtc_intro_call.main_logic import create_bland_ai_batch_call
 from af_code.af_dtc_intro_call.services.database_service import DatabaseService
 from af_code.af_dtc_intro_call.services.member_service import MemberQualificationService
 from af_code.af_dtc_intro_call.services.blandai_service import BlandAIService
-from af_code.af_dtc_intro_call.utils.config import KEY_VAULT_URL
 
 # Create a Blueprint to group these functions
 dtc_intro_call_bp = func.Blueprint()
@@ -32,7 +30,8 @@ def timer_dtc_intro_call(timer: func.TimerRequest) -> None:
 
     except Exception as e:
         logging.error(
-            f"💥 [TIMER] A critical error occurred in the trigger: {str(e)}", exc_info=True
+            f"💥 [TIMER] A critical error occurred in the trigger: {str(e)}",
+            exc_info=True,
         )
 
     logging.info("⏰ [TIMER] DTC Intro Call Scheduler COMPLETED")
@@ -48,7 +47,10 @@ def http_dtc_intro_call(req: func.HttpRequest) -> func.HttpResponse:
         if not campaign_id:
             return func.HttpResponse(
                 json.dumps(
-                    {"success": False, "error": "campaign_id is required in the request body."}
+                    {
+                        "success": False,
+                        "error": "campaign_id is required in the request body.",
+                    }
                 ),
                 status_code=400,
                 mimetype="application/json",
@@ -64,7 +66,9 @@ def http_dtc_intro_call(req: func.HttpRequest) -> func.HttpResponse:
         status_code = 200 if result.get("success") else 500
 
         return func.HttpResponse(
-            json.dumps(result, default=str), status_code=status_code, mimetype="application/json"
+            json.dumps(result, default=str),
+            status_code=status_code,
+            mimetype="application/json",
         )
 
     except json.JSONDecodeError:

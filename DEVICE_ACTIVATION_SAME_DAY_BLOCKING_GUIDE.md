@@ -181,10 +181,10 @@ WITH TodayActiveAttempts AS (
     -- Block same-day retries: One attempt per member per day regardless of outcome
     -- Uses UTC date range for "today" (00:00:00 - 23:59:59 UTC)
     SELECT DISTINCT e.member_id
-    FROM engage360.member_campaign_enrollments_enhanced e
-    INNER JOIN engage360.outreach_attempts oa ON e.enrollment_id = oa.enrollment_id
-    INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
-    INNER JOIN engage360.campaigns_enhanced c ON ob.campaign_id = c.campaign_id
+    FROM ioe.member_campaign_enrollments_enhanced e
+    INNER JOIN ioe.outreach_attempts oa ON e.enrollment_id = oa.enrollment_id
+    INNER JOIN ioe.outreach_batches ob ON oa.batch_id = ob.batch_id
+    INNER JOIN ioe.campaigns_enhanced c ON ob.campaign_id = c.campaign_id
     WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
       AND oa.attempt_ts >= CAST(CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AS DATE) AS DATETIMEOFFSET)
       AND oa.attempt_ts < DATEADD(day, 1, CAST(CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AS DATE) AS DATETIMEOFFSET))
@@ -208,7 +208,7 @@ WITH TodayActiveAttempts AS (
 
 ```sql
 SELECT ...
-FROM engage360.member_campaign_enrollments_enhanced e
+FROM ioe.member_campaign_enrollments_enhanced e
 ...
 -- Same-day blocking: Exclude members with attempts today
 LEFT JOIN TodayActiveAttempts taa ON e.member_id = taa.member_id
@@ -330,8 +330,8 @@ pytest tests/test_device_activation_same_day_blocking.py --cov=af_code/device_ac
 ```sql
 -- Check if member enrolled in multiple campaigns
 SELECT c.name, e.enrollment_id, e.current_status
-FROM engage360.member_campaign_enrollments_enhanced e
-JOIN engage360.campaigns_enhanced c ON e.campaign_id = c.campaign_id
+FROM ioe.member_campaign_enrollments_enhanced e
+JOIN ioe.campaigns_enhanced c ON e.campaign_id = c.campaign_id
 WHERE e.member_id = 'member-uuid-here'
   AND c.campaign_type = 'Device Activation'
   AND e.current_status = 'ENROLLED';
@@ -343,7 +343,7 @@ WHERE e.member_id = 'member-uuid-here'
 ```sql
 -- Check if attempt was properly recorded in outreach_attempts table
 SELECT oa.attempt_ts, oa.disposition, oa.enrollment_id
-FROM engage360.outreach_attempts oa
+FROM ioe.outreach_attempts oa
 WHERE oa.enrollment_id = 'enrollment-uuid-here'
 ORDER BY oa.attempt_ts DESC;
 ```
@@ -354,7 +354,7 @@ ORDER BY oa.attempt_ts DESC;
 ```sql
 -- Check if attempt_ts is stored in UTC
 SELECT attempt_ts, CONVERT(VARCHAR, attempt_ts AT TIME ZONE 'UTC', 120) as attempt_ts_utc
-FROM engage360.outreach_attempts
+FROM ioe.outreach_attempts
 WHERE enrollment_id = 'enrollment-uuid-here'
 ORDER BY attempt_ts DESC;
 ```
@@ -376,10 +376,10 @@ ORDER BY attempt_ts DESC;
 -- Manually run the CTE to see if member is in it
 WITH TodayActiveAttempts AS (
     SELECT DISTINCT e.member_id
-    FROM engage360.member_campaign_enrollments_enhanced e
-    INNER JOIN engage360.outreach_attempts oa ON e.enrollment_id = oa.enrollment_id
-    INNER JOIN engage360.outreach_batches ob ON oa.batch_id = ob.batch_id
-    INNER JOIN engage360.campaigns_enhanced c ON ob.campaign_id = c.campaign_id
+    FROM ioe.member_campaign_enrollments_enhanced e
+    INNER JOIN ioe.outreach_attempts oa ON e.enrollment_id = oa.enrollment_id
+    INNER JOIN ioe.outreach_batches ob ON oa.batch_id = ob.batch_id
+    INNER JOIN ioe.campaigns_enhanced c ON ob.campaign_id = c.campaign_id
     WHERE (c.campaign_type = 'Device Activation' OR c.campaign_type = 'Operations')
       AND oa.attempt_ts >= CAST(CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AS DATE) AS DATETIMEOFFSET)
       AND oa.attempt_ts < DATEADD(day, 1, CAST(CAST(SYSDATETIMEOFFSET() AT TIME ZONE 'UTC' AS DATE) AS DATETIMEOFFSET))
@@ -397,7 +397,7 @@ SELECT * FROM TodayActiveAttempts WHERE member_id = 'member-uuid-here';
 -- Check when member was last called
 SELECT TOP 1 attempt_ts, disposition,
        DATEDIFF(day, attempt_ts, SYSDATETIMEOFFSET()) as days_since_attempt
-FROM engage360.outreach_attempts oa
+FROM ioe.outreach_attempts oa
 WHERE oa.enrollment_id = 'enrollment-uuid-here'
 ORDER BY attempt_ts DESC;
 ```
@@ -428,20 +428,20 @@ grep "⏰ TIME CHECK for member member-uuid-here" /var/log/azure-functions.log
 -- Verify index exists
 SELECT name, type_desc
 FROM sys.indexes
-WHERE object_id = OBJECT_ID('engage360.outreach_attempts')
+WHERE object_id = OBJECT_ID('ioe.outreach_attempts')
   AND name LIKE '%attempt_ts%';
 
 -- Create index if missing
 CREATE NONCLUSTERED INDEX IX_outreach_attempts_attempt_ts_disposition
-ON engage360.outreach_attempts (attempt_ts, disposition)
+ON ioe.outreach_attempts (attempt_ts, disposition)
 INCLUDE (enrollment_id, batch_id);
 ```
 
 #### Check 2: Statistics Update
 ```sql
 -- Update statistics for better query plan
-UPDATE STATISTICS engage360.outreach_attempts WITH FULLSCAN;
-UPDATE STATISTICS engage360.member_campaign_enrollments_enhanced WITH FULLSCAN;
+UPDATE STATISTICS ioe.outreach_attempts WITH FULLSCAN;
+UPDATE STATISTICS ioe.member_campaign_enrollments_enhanced WITH FULLSCAN;
 ```
 
 #### Check 3: Query Execution Plan

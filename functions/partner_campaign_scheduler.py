@@ -10,11 +10,15 @@ partner_campaign_bp = func.Blueprint()
 
 # Import services (following your existing pattern)
 try:
-    from af_code.partner_campaign_scheduler.services.campaign_qualifier import CampaignQualifier
+    from af_code.partner_campaign_scheduler.services.campaign_qualifier import (
+        CampaignQualifier,
+    )
     from af_code.partner_campaign_scheduler.services.member_eligibility import (
         MemberEligibilityService,
     )
-    from af_code.partner_campaign_scheduler.services.batch_orchestrator import BatchOrchestrator
+    from af_code.partner_campaign_scheduler.services.batch_orchestrator import (
+        BatchOrchestrator,
+    )
     from af_code.partner_campaign_scheduler.services.status_tracker import StatusTracker
     from af_code.bland_ai_webhook.services.config_manager import ConfigManager
     from af_code.bland_ai_webhook.services.database_service import DatabaseService
@@ -185,7 +189,11 @@ def _execute_partner_campaign_scheduler(
                 "📋 [PARTNER-SCHEDULER] Step 2: No qualified Partner campaigns found - execution complete"
             )
             _log_execution_summary(request_id, start_time, 0, 0, 0, trigger_type)
-            return {"campaigns_processed": 0, "members_found": 0, "batches_submitted": 0}
+            return {
+                "campaigns_processed": 0,
+                "members_found": 0,
+                "batches_submitted": 0,
+            }
 
         logging.info(
             f"📊 [PARTNER-SCHEDULER] Step 2: Found {len(qualified_campaigns)} qualified campaigns"

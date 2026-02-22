@@ -41,7 +41,7 @@ This document summarizes the progress on the Device Activation system implementa
 
 2. **`functions/device_activation_file_processor.py`** (91 lines)
    - Azure Function blob trigger
-   - Blob path: `fs-device-activation/landing/{name}`
+   - Blob path: `fs-ops/landing/{name}`
    - Filename validation: `MedicalGuardian_DeviceActivation_YYYYMMDD_Delta.csv`
    - ✅ Registered in `function_app.py` (lines 41-46)
 
@@ -71,7 +71,7 @@ This document summarizes the progress on the Device Activation system implementa
 #### Completed Tasks:
 
 1. ✅ **Database Campaign Setup SQL** - `database/create_device_activation_campaign.sql`
-   - Creates Device Activation campaign record in `engage360.campaigns_enhanced`
+   - Creates Device Activation campaign record in `ioe.campaigns_enhanced`
    - Configures dual-timezone mode (operating_tz + member_tz)
    - Operating hours: 9 AM - 5 PM EST
    - Campaign dates: 2025-12-01 to 2026-12-31
@@ -88,7 +88,7 @@ This document summarizes the progress on the Device Activation system implementa
 
 3. ⏳ **Integration Testing with Sample CSV**
    - **Action Required:** Upload `SAMPLE_DEVICE_ACTIVATION.csv` to blob storage
-   - **Location:** `fs-device-activation/landing/`
+   - **Location:** `fs-ops/landing/`
    - **Expected:** File processes successfully, moves to `processed/` folder
    - **Verification:** Check database for 10 member enrollments
 
@@ -98,7 +98,7 @@ This document summarizes the progress on the Device Activation system implementa
    - **Verification:** Check Application Insights logs for successful registration
 
 #### Manual Setup Required (You will do):
-- ✅ Create Azure Blob Storage container `fs-device-activation`
+- ✅ Create Azure Blob Storage container `fs-ops`
 - ✅ Create folder structure: `landing/`, `staging/`, `processed/`, `error/`
 - ✅ Execute SQL script: `database/create_device_activation_campaign.sql`
 - ⏳ Test CSV upload and processing
@@ -176,7 +176,7 @@ This document summarizes the progress on the Device Activation system implementa
 #### Completed Tasks:
 
 1. ✅ **Callback Queue Table SQL** - `database/create_callback_queue_table.sql` (325 lines)
-   - Creates `engage360.outreach_callback_queue` table
+   - Creates `ioe.outreach_callback_queue` table
    - Tracks callback requests from AI calls
    - 3-attempt limit within 24-hour window
    - Status lifecycle: PENDING → IN_PROGRESS → COMPLETED/FAILED/TIMED_OUT
@@ -294,7 +294,7 @@ This document summarizes the progress on the Device Activation system implementa
 
 1. **Execute Database Scripts**
    ```sql
-   -- Run in Azure SQL Database (engage360 schema)
+   -- Run in Azure SQL Database (ioe schema)
    -- 1. Create campaign record
    RUN: database/create_device_activation_campaign.sql
 
@@ -305,11 +305,11 @@ This document summarizes the progress on the Device Activation system implementa
 2. **Create Azure Blob Storage Container**
    ```bash
    # Option 1: Azure Portal
-   # - Container name: fs-device-activation
+   # - Container name: fs-ops
    # - Folders: landing/, staging/, processed/, error/
 
    # Option 2: Azure CLI (see AZURE_INFRASTRUCTURE_SETUP_NOTES.md)
-   az storage container create --name fs-device-activation
+   az storage container create --name fs-ops
    ```
 
 3. **Update Bland AI Configuration**
@@ -318,7 +318,7 @@ This document summarizes the progress on the Device Activation system implementa
    - Update `batch_orchestrator.py` lines 262-264 with actual values
 
 4. **Test CSV Upload**
-   - Upload `SAMPLE_DEVICE_ACTIVATION.csv` to `fs-device-activation/landing/`
+   - Upload `SAMPLE_DEVICE_ACTIVATION.csv` to `fs-ops/landing/`
    - Monitor Application Insights logs
    - Verify file moves to `processed/` folder
    - Check database for 10 member enrollments
@@ -338,7 +338,7 @@ This document summarizes the progress on the Device Activation system implementa
 ## Integration Points
 
 ### Existing Systems Integration:
-- ✅ **Database:** Uses existing `engage360` schema tables
+- ✅ **Database:** Uses existing `ioe` schema tables
 - ✅ **Bland AI Client:** Uses shared `BlandAIClient` from `af_code/shared/bland_ai_client.py`
 - ✅ **Business Hours Utils:** Uses `business_hours_utils.can_make_call()` for dual-timezone validation
 - ✅ **Phone Utils:** Uses `standardize_phone()` for E.164 format
@@ -359,7 +359,7 @@ This document summarizes the progress on the Device Activation system implementa
 ### Infrastructure TODOs:
 1. **CRITICAL:** Execute `create_device_activation_campaign.sql` on Azure SQL Database
 2. **CRITICAL:** Execute `create_callback_queue_table.sql` on Azure SQL Database
-3. **CRITICAL:** Create Azure Blob Storage container `fs-device-activation`
+3. **CRITICAL:** Create Azure Blob Storage container `fs-ops`
 4. **HIGH:** Test CSV file upload and processing
 5. **MEDIUM:** Deploy to Azure Function App and verify registration
 
@@ -371,7 +371,7 @@ This document summarizes the progress on the Device Activation system implementa
 
 - [ ] Database campaign record created (`campaigns_enhanced`)
 - [ ] Callback queue table created (`outreach_callback_queue`)
-- [ ] Blob storage container created (`fs-device-activation`)
+- [ ] Blob storage container created (`fs-ops`)
 - [ ] Folder structure created (landing/, staging/, processed/, error/)
 - [ ] Sample CSV processed successfully
 - [ ] 10 member enrollments created in database
@@ -388,10 +388,10 @@ This document summarizes the progress on the Device Activation system implementa
 
 **For Issues:**
 - Check Application Insights for error logs
-- Review `engage360_stg.file_processing_log` table
-- Review `engage360_stg.stg_device_activation_delta` table
-- Review `engage360.outreach_batches` for batch status
-- Review `engage360.outreach_attempts` for call attempts
+- Review `ioe_stg.file_processing_log` table
+- Review `ioe_stg.stg_device_activation_delta` table
+- Review `ioe.outreach_batches` for batch status
+- Review `ioe.outreach_attempts` for call attempts
 
 **Contact:**
 - AI-POD Team - Data Science at Medical Guardian
