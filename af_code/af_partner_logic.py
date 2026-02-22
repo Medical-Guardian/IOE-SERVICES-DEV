@@ -7,8 +7,6 @@ Follows modular architecture with comprehensive validation and database logging.
 """
 
 import os
-from azure.keyvault.secrets import SecretClient
-from azure.identity import DefaultAzureCredential
 import logging
 import time
 import pandas as pd
@@ -430,25 +428,12 @@ class PartnerCampaignRules:
 
 def get_blob_service_client():
     """
-    Educational: Gets authenticated connection to Azure Blob Storage.
-    This follows the same secure pattern as your DTC processor.
+    Gets authenticated connection to Azure Blob Storage via BLOB_STORAGE_CONNECTION app setting.
     """
-    try:
-        # LOGGING: Added detailed logging for Key Vault access
-        logging.info("Attempting to get Azure Storage connection string from Key Vault...")
-        key_vault_url = os.environ.get("KEY_VAULT_URL")
-        secret_name_storage = "AzureStorageConnectionString"  # nosec B105 - This is a Key Vault secret name, not a password
-
-        credential = DefaultAzureCredential()
-        client = SecretClient(vault_url=key_vault_url, credential=credential)
-        secret_storage = client.get_secret(secret_name_storage)
-        secure_connection_string_storage = secret_storage.value
-        logging.info("Successfully retrieved Azure Storage connection string.")
-
-        return BlobServiceClient.from_connection_string(secure_connection_string_storage)
-    except Exception as e:
-        logging.error(f"Failed to get BlobServiceClient: {e}")
-        raise
+    connection_string = os.environ.get("BLOB_STORAGE_CONNECTION")
+    if not connection_string:
+        raise ValueError("BLOB_STORAGE_CONNECTION environment variable is not set")
+    return BlobServiceClient.from_connection_string(connection_string)
 
 
 def download_blob_as_dataframe(blob_name: str, container_name: str) -> pd.DataFrame:

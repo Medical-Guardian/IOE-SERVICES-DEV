@@ -351,8 +351,6 @@ NOTES:
 """
 
 import os
-from azure.keyvault.secrets import SecretClient
-from azure.identity import DefaultAzureCredential
 import logging
 import uuid
 import pandas as pd
@@ -443,24 +441,21 @@ def safe_value(value, default=None):
 
 def get_blob_service_client():
     """
-    Get Azure Blob Storage client using Key Vault credentials
+    Get Azure Blob Storage client using BLOB_STORAGE_CONNECTION app setting.
 
     BusinessCaseID: BC-DA-002
 
-    Retrieves Azure Storage connection string from Key Vault and creates BlobServiceClient.
-    Used for downloading CSV files and moving blobs between folders.
+    Reads the storage connection string directly from the environment variable
+    (same connection used by the blob trigger binding). Used for downloading
+    CSV files and moving blobs between folders.
 
     Returns:
         BlobServiceClient: Azure Blob Storage client authenticated via connection string
     """
-    key_vault_url = os.environ.get("KEY_VAULT_URL")
-    secret_name_storage = "AzureStorageConnectionString"  # nosec B105
-
-    credential = DefaultAzureCredential()
-    client = SecretClient(vault_url=key_vault_url, credential=credential)
-    secret_storage = client.get_secret(secret_name_storage)
-    secure_connection_string_storage = secret_storage.value
-    return BlobServiceClient.from_connection_string(secure_connection_string_storage)
+    connection_string = os.environ.get("BLOB_STORAGE_CONNECTION")
+    if not connection_string:
+        raise ValueError("BLOB_STORAGE_CONNECTION environment variable is not set")
+    return BlobServiceClient.from_connection_string(connection_string)
 
 
 def download_blob_as_dataframe(blob_name: str, container_name: str) -> pd.DataFrame:

@@ -65,17 +65,10 @@ logger.info("🔄 [MODULE-LOAD] This version includes checkin_time validation wi
 
 
 def get_blob_service_client():
-
-    # Securely fetch connection string from Key Vault
-    key_vault_url = os.environ.get("KEY_VAULT_URL")
-    secret_name_storage = "AzureStorageConnectionString"  # nosec B105 - This is a Key Vault secret name, not a password
-
-    credential = DefaultAzureCredential()
-    client = SecretClient(vault_url=key_vault_url, credential=credential)
-    secret_storage = client.get_secret(secret_name_storage)
-    secure_connection_string_storage = secret_storage.value
-    # conn_str = os.environ["AZURE_STORAGE_CONNECTION_STRING"]
-    return BlobServiceClient.from_connection_string(secure_connection_string_storage)
+    connection_string = os.environ.get("BLOB_STORAGE_CONNECTION")
+    if not connection_string:
+        raise ValueError("BLOB_STORAGE_CONNECTION environment variable is not set")
+    return BlobServiceClient.from_connection_string(connection_string)
 
 
 def download_blob_as_dataframe(blob_name: str, container_name: str) -> pd.DataFrame:
