@@ -91,7 +91,7 @@ class ConfigManager:
         Raises:
             ValueError: If the connection string cannot be found.
         """
-        secret_name = self.get_config("DB_CONNECTION_SECRET_NAME", "SqlConnectionStringIOE")
+        secret_name = self.get_config("DB_CONNECTION_SECRET_NAME", "SqlConnectionString")
 
         # Use get_config to handle the logic of checking cache/KV/env
         connection_string = self.get_config(secret_name)

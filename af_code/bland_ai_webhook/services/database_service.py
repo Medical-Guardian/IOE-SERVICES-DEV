@@ -1,6 +1,5 @@
 import logging
 import pyodbc
-import os
 from typing import List, Dict, Optional, Any, Tuple
 
 from .config_manager import ConfigManager
@@ -8,10 +7,8 @@ from .config_manager import ConfigManager
 logger = logging.getLogger(__name__)
 
 
-def _get_pyodbc_connection() -> pyodbc.Connection:
+def _get_pyodbc_connection(conn_str: str) -> pyodbc.Connection:
     """Create pyodbc connection using Managed Identity via ActiveDirectoryMsi."""
-    conn_str = os.environ.get("SqlConnectionString", "")
-
     params = {}
     for part in conn_str.split(";"):
         if "=" in part:
@@ -23,7 +20,7 @@ def _get_pyodbc_connection() -> pyodbc.Connection:
 
     connection_string = (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
-        f"Server={server};"
+        f"Server=tcp:{server},1433;"
         f"Database={database};"
         "Authentication=ActiveDirectoryMsi;"
         "Encrypt=yes;"
@@ -63,7 +60,8 @@ class DatabaseService:
         logger.info(f"💾 [DB-SERVICE] Executing single query (Fetch={fetch_results}).")
         conn = None
         try:
-            conn = _get_pyodbc_connection()
+            conn_str = self.config_manager.get_db_connection_string()
+            conn = _get_pyodbc_connection(conn_str)
             conn.autocommit = True
             with conn.cursor() as cursor:
                 cursor.execute(query, params)
@@ -96,7 +94,8 @@ class DatabaseService:
         total_rows_affected = 0
         conn = None
         try:
-            conn = _get_pyodbc_connection()
+            conn_str = self.config_manager.get_db_connection_string()
+            conn = _get_pyodbc_connection(conn_str)
             conn.autocommit = False
             with conn.cursor() as cursor:
                 for query, params in queries:
