@@ -78,7 +78,10 @@ class DatabaseService:
             conn = _get_pyodbc_connection(conn_str)
             conn.autocommit = True
             with conn.cursor() as cursor:
-                cursor.execute(query, params)
+                if params is not None:
+                    cursor.execute(query, params)
+                else:
+                    cursor.execute(query)
                 if fetch_results:
                     return _fetchall_as_dicts(cursor)
                 else:
