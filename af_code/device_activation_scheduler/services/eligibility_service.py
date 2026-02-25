@@ -349,6 +349,7 @@ class EligibilityService:
     FROM {IOE_SCHEMA}.member_campaign_enrollments_enhanced e
     JOIN {IOE_SCHEMA}.members m ON e.member_id = m.member_id
     JOIN {IOE_SCHEMA}.member_devices md ON m.member_id = md.member_id
+        AND md.service_status = 'In Service'
     JOIN {IOE_SCHEMA}.campaigns_enhanced c ON e.campaign_id = c.campaign_id
     LEFT JOIN {IOE_SCHEMA}.campaign_call_configs_enhanced cc
         ON c.campaign_id = cc.campaign_id

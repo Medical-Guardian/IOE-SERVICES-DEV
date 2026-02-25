@@ -397,6 +397,7 @@ class CallbackScheduler:
     FROM {IOE_SCHEMA}.outreach_callback_queue cq
     JOIN {IOE_SCHEMA}.members m ON cq.member_id = m.member_id
     JOIN {IOE_SCHEMA}.member_devices md ON m.member_id = md.member_id
+        AND md.service_status = 'In Service'
     JOIN {IOE_SCHEMA}.member_campaign_enrollments_enhanced e ON cq.enrollment_id = e.enrollment_id
 
     WHERE
