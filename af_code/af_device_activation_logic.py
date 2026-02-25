@@ -1688,13 +1688,15 @@ def validate_and_cleanse_data_before_insert(
             WHERE md.device_id IN ({placeholders});
             """
 
-            cursor = context.db_service.execute_query(
+            existing_devices = context.db_service.execute_query(
                 ownership_check_sql, tuple(device_udis), fetch_results=True
             )
-            existing_devices = cursor.fetchall()
 
             # Build lookup: device_udi → (existing_member_id, existing_account)
-            existing_ownership = {row[0]: (str(row[1]), row[2]) for row in existing_devices}
+            existing_ownership = {
+                row["device_udi"]: (str(row["existing_member_id"]), row["existing_account"])
+                for row in existing_devices
+            }
 
             conflicts = []
 
