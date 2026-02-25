@@ -571,7 +571,7 @@ def get_db_connection(timeout: int = 30):
 
     connection_string = (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
-        f"Server={server};"
+        f"Server=tcp:{server},1433;"
         f"Database={database};"
         "Authentication=ActiveDirectoryMsi;"
         "Encrypt=yes;"
@@ -1989,6 +1989,7 @@ def load_to_staging(df: pd.DataFrame, context: ProcessingContext) -> ProcessingR
 
         # Step 3: Get database connection
         conn = get_db_connection()
+        logger.info("✅ [LOAD-STAGING] Database connection established successfully")
         cursor = conn.cursor()
 
         # Step 4: Insert all rows (including errors for tracking)
