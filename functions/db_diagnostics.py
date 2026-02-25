@@ -102,6 +102,7 @@ def run_db_diagnostics(req: func.HttpRequest) -> func.HttpResponse:
     database = params.get("database", params.get("initial catalog", ""))
     result["sql_server"] = server or "UNKNOWN"
     result["sql_database"] = database or "UNKNOWN"
+    result["conn_str_keys"] = list(params.keys())
     logger.info(f"🔍 [DB-DIAG] Connection string keys: {list(params.keys())}")
     logger.info(f"🔍 [DB-DIAG] Parsed server='{server}' database='{database}'")
 
@@ -203,6 +204,7 @@ def _build_response(result: dict, errors: list, partial: bool) -> func.HttpRespo
         f"{sql_icon} SQL Database",
         f"   Server:   {result['sql_server']}",
         f"   Database: {result['sql_database']}",
+        f"   Conn keys: {result.get('conn_str_keys', '(not parsed)')}",
         f"   DNS:      {result['sql_dns'] or '(not attempted)'}",
         f"   TCP:      {result['sql_tcp'] or '(not attempted)'}",
     ]
