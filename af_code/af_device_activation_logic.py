@@ -2759,7 +2759,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 m.last_name,
                 mi.id_type,
                 mi.id_value,
-                mi.created_ts
+                CONVERT(VARCHAR(50), mi.created_ts, 126) AS created_ts
             FROM {IOE_SCHEMA}.member_identifiers mi
             INNER JOIN {IOE_SCHEMA}.members m ON mi.member_id = m.member_id
             WHERE mi.member_id IN (
@@ -2782,7 +2782,7 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 for row in verify_results:
                     logger.info(
                         f"   identifier_id={row[0]}, member='{row[1]} {row[2]}', "
-                        f"type={row[3]}, value={row[4]}"
+                        f"type={row[3]}, value={row[4]}, created={row[5]}"
                     )
             else:
                 logger.warning("⚠️ [TRANSFORM] Verification query returned no results")
