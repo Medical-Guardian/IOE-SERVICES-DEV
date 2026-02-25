@@ -26,7 +26,7 @@ db_diagnostics_bp = func.Blueprint()
 @db_diagnostics_bp.route(route="db-diagnostics", methods=[func.HttpMethod.GET], auth_level=func.AuthLevel.ANONYMOUS)
 def run_db_diagnostics(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Diagnostic endpoint that tests Key Vault access and SQL connectivity.
+    Diagnostic endpoint that tests Key Vault access and SQL connectivity.`
 
     Returns a plain-text report showing:
     - MSI credential acquisition status
@@ -68,7 +68,7 @@ def run_db_diagnostics(req: func.HttpRequest) -> func.HttpResponse:
 
     # ── Step 2: Key Vault → fetch connection string ───────────────────────────
     key_vault_url = os.environ.get("KEY_VAULT_URL", "")
-    db_secret_name = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
+    db_secret_name = os.environ.get("DB_SECRET_NAME", "SqlConnectionString")
     result["key_vault_url"] = key_vault_url or "NOT SET"
 
     if not key_vault_url:

@@ -2788,7 +2788,7 @@ def process_dtc_file_complete(
     # Fetch DB conn string from Key Vault
     # -------------------------------------------------------------------------
     key_vault_url = os.environ["KEY_VAULT_URL"]
-    secret_name = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
+    secret_name = os.environ.get("DB_SECRET_NAME", "SqlConnectionString")
     cred = DefaultAzureCredential()
     kv_client = SecretClient(vault_url=key_vault_url, credential=cred)
     secure_conn = kv_client.get_secret(secret_name).value

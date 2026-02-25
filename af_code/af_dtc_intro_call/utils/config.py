@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 # Environment variables
 KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL")
-DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
+DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionString")
 
 # Verify critical environment variables
 logger.info("🔍 [DTC-CONFIG] Environment check:")

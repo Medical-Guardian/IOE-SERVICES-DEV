@@ -7,7 +7,7 @@ logging.info("🔄 [FUNCTION-APP] Loading function_app.py - FORCING MODULE RELOA
 
 # Verify critical environment variables at startup
 KEY_VAULT_URL = os.environ.get("KEY_VAULT_URL")
-DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionStringIOE")
+DB_SECRET_NAME = os.environ.get("DB_SECRET_NAME", "SqlConnectionString")
 
 logging.info("🔍 Environment check:")
 logging.info(f"   KEY_VAULT_URL: {'✅ Set' if KEY_VAULT_URL else '❌ Missing'}")
