@@ -561,12 +561,17 @@ def get_db_connection(timeout: int = 30):
     conn_str = ConfigManager().get_db_connection_string()
 
     params = {}
+    raw_server = ""
     for part in conn_str.split(";"):
+        part = part.strip()
         if "=" in part:
             key, value = part.split("=", 1)
             params[key.strip()] = value.strip()
+        elif part.startswith("tcp:") and not raw_server:
+            # Bare tcp:host,port segment (no "Server=" key prefix)
+            raw_server = part
 
-    server = params.get("Server", "").replace("tcp:", "").split(",")[0]
+    server = (params.get("Server", "") or raw_server).replace("tcp:", "").split(",")[0]
     database = params.get("Database", "") or params.get("Initial Catalog", "")
 
     connection_string = (
