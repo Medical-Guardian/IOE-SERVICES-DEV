@@ -1,5 +1,7 @@
 import logging
+import struct
 import pyodbc
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional, Any, Tuple
 
 from .config_manager import ConfigManager
@@ -41,8 +43,28 @@ def _get_pyodbc_connection(conn_str: str) -> pyodbc.Connection:
         "Login Timeout=30"
     )
     conn = pyodbc.connect(connection_string)
+    conn.add_output_converter(-155, _handle_datetimeoffset)  # DATETIMEOFFSET → datetime
     logger.info(f"✅ [DB-SERVICE] TCP connection established to '{server}'")
     return conn
+
+
+def _handle_datetimeoffset(dto_value: bytes) -> datetime:
+    """Deserialize a SQL Server DATETIMEOFFSET value received as raw bytes from pyodbc.
+
+    pyodbc does not natively support ODBC type -155 (DATETIMEOFFSET). This converter
+    is registered via conn.add_output_converter(-155, ...) so every DATETIMEOFFSET
+    column on the connection is automatically deserialized into a timezone-aware datetime.
+
+    Binary layout (little-endian): year(2) month(2) day(2) hour(2) min(2) sec(2)
+                                   nanoseconds(4) tz_hour(2) tz_min(2)
+    """
+    tup = struct.unpack("<6hI2h", dto_value)
+    return datetime(
+        tup[0], tup[1], tup[2],  # year, month, day
+        tup[3], tup[4], tup[5],  # hour, minute, second
+        tup[6] // 1000,           # nanoseconds → microseconds
+        timezone(timedelta(hours=tup[7], minutes=tup[8])),
+    )
 
 
 def _fetchall_as_dicts(cursor: pyodbc.Cursor) -> list[dict]:
