@@ -395,6 +395,8 @@ from af_code.shared.language_mapper import map_language_code
 from af_code.shared.business_hours_utils import add_business_days, is_business_day
 from af_code.shared.phone_utils import standardize_phone_device_activation
 from af_code.shared.schema_config import IOE_SCHEMA, IOE_SCHEMA_STG
+from af_code.bland_ai_webhook.services.config_manager import ConfigManager
+from af_code.bland_ai_webhook.services.database_service import DatabaseService
 
 # Module load verification
 logger = logging.getLogger(__name__)
@@ -714,6 +716,7 @@ class ProcessingContext:
     campaign_id: Optional[str] = None  # Explicit campaign UUID for Operations flow
     campaign_name: Optional[str] = None  # Campaign display name
     blob_content: Optional[bytes] = None  # Raw CSV bytes from blob trigger
+    db_service: Optional[DatabaseService] = None
 
     def __post_init__(self):
         if self.correlation_id is None:
@@ -725,43 +728,38 @@ class ProcessingContext:
 # ============================================================================
 
 
-def get_org_id_for_partner(partner_name: str) -> Optional[str]:
-    f"""
-    Look up org_id from {IOE_SCHEMA}.orgs table based on partner name.
+def get_org_id_for_partner(partner_name: str, db_service: DatabaseService) -> Optional[str]:
+    """
+    Look up org_id from ioe.orgs table based on partner name.
     Specifically looks up DTC org_type for Device Activation operations.
 
     Args:
         partner_name: Partner organization name (e.g., "Medical Guardian")
+        db_service: DatabaseService instance for database access
 
     Returns:
-        org_id as string UUID for DTC org, or None if not found
+        org_id as string UUID for DTC org, or None if not found or on DB error
+    """
+    query = f"""
+    SELECT org_id
+    FROM {IOE_SCHEMA}.orgs
+    WHERE org_name = ?
+      AND org_type = 'DTC'
     """
     try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-
-        query = f"""
-        SELECT org_id
-        FROM {IOE_SCHEMA}.orgs
-        WHERE org_name = ?
-          AND org_type = 'DTC'
-        """
-
-        cursor.execute(query, (partner_name,))
-        result = cursor.fetchone()
-
-        cursor.close()
-        conn.close()
-
-        if result:
-            org_id = str(result[0])  # Convert UUID to string
+        results = db_service.execute_query(query, (partner_name,), fetch_results=True)
+        if results:
+            org_id = str(results[0]["org_id"])
             logger.info(f"✅ [ORG-LOOKUP] Found DTC org_id for '{partner_name}': {org_id}")
             return org_id
         else:
             logger.error(f"❌ [ORG-LOOKUP] No DTC org_id found for partner: '{partner_name}'")
             return None
     except Exception as e:
-        logger.error(f"❌ [ORG-LOOKUP] Error looking up org_id: {e}")
+        logger.error(
+            f"❌ [ORG-LOOKUP] DB connection/query failed for org_id lookup "
+            f"(NOT a missing row — check DB connectivity): {e}"
+        )
         return None
 
 
@@ -1061,7 +1059,7 @@ def validate_and_cleanse_data_before_insert(
             )
         else:
             # NEW: Look up org_id for this partner (CRITICAL - Required for MERGE)
-            org_id = get_org_id_for_partner(partner_name)
+            org_id = get_org_id_for_partner(partner_name, context.db_service)
             if org_id:
                 df.at[idx, "org_id"] = org_id
             else:
@@ -2942,6 +2940,7 @@ def process_device_activation_file_complete(
         campaign_id=campaign_id,
         campaign_name=campaign_name,
         blob_content=blob_content,
+        db_service=DatabaseService(ConfigManager()),
     )
 
     processing_details = {}
