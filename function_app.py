@@ -139,12 +139,21 @@ try:
 except Exception as e:
     logging.error(f"❌ Failed to import/register operations_device_activation_bp: {str(e)}")
 
+try:
+    from functions.db_diagnostics import db_diagnostics_bp
+
+    logging.info("✅ Successfully imported db_diagnostics_bp")
+    app.register_functions(db_diagnostics_bp)
+    logging.info("✅ Successfully registered DB Diagnostics endpoint")
+except Exception as e:
+    logging.error(f"❌ Failed to import/register db_diagnostics_bp: {str(e)}")
+
 logging.info("Function registration process completed.")
 
 # Log total registered functions for deployment verification
 total_functions = len(app._function_builders) if hasattr(app, "_function_builders") else 0
 logging.info(f"📊 [FUNCTION-APP] Total functions registered: {total_functions}")
-logging.info("🎯 [FUNCTION-APP] Expected: 15 functions (11 existing + 4 Device Activation)")
+logging.info("🎯 [FUNCTION-APP] Expected: 16 functions (15 existing + 1 DB Diagnostics)")
 if total_functions >= 15:
     logging.info("✅ [FUNCTION-APP] Device Activation functions successfully registered!")
 else:
