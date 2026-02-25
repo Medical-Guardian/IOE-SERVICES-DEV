@@ -95,12 +95,14 @@ def run_db_diagnostics(req: func.HttpRequest) -> func.HttpResponse:
     for part in sql_conn_str.split(";"):
         if "=" in part:
             key, value = part.split("=", 1)
-            params[key.strip()] = value.strip()
+            params[key.strip().lower()] = value.strip()
 
-    server = params.get("Server", "").replace("tcp:", "").split(",")[0]
-    database = params.get("Database", "")
+    raw_server = params.get("server", params.get("data source", ""))
+    server = raw_server.replace("tcp:", "").split(",")[0]
+    database = params.get("database", params.get("initial catalog", ""))
     result["sql_server"] = server or "UNKNOWN"
     result["sql_database"] = database or "UNKNOWN"
+    logger.info(f"🔍 [DB-DIAG] Connection string keys: {list(params.keys())}")
     logger.info(f"🔍 [DB-DIAG] Parsed server='{server}' database='{database}'")
 
     # ── Step 4: Socket pre-checks (DNS + TCP) ─────────────────────────────────
