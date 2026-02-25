@@ -82,14 +82,24 @@ def run_db_diagnostics(req: func.HttpRequest) -> func.HttpResponse:
         lines += ["❌ Key Vault", f"   URL: {key_vault_url}", f"   Error: {e}", ""]
         return _respond(lines, errors=[msg], ok=False)
 
-    # ── Step 3: Parse connection string (exact Test_AI-dbdev pattern) ─────────
+    # ── Step 3: Parse connection string ──────────────────────────────────────
+    # The Key Vault secret starts with a bare server address (no 'Server=' key):
+    #   tcp:hostname,1433;Database=MGNEXUSdev;Authentication=...
     params = {}
+    server = ''
     for part in sql_conn_str.split(';'):
+        part = part.strip()
         if '=' in part:
             key, value = part.split('=', 1)
             params[key.strip()] = value.strip()
+        elif part:
+            # Bare segment — treat as server address
+            server = part.replace('tcp:', '').split(',')[0]
 
-    server = params.get('Server', '').replace('tcp:', '').split(',')[0]
+    # Fallback: if server was in a standard 'Server=...' key
+    if not server:
+        server = params.get('Server', '').replace('tcp:', '').split(',')[0]
+
     database = params.get('Database', '')
 
     # Debug: show raw keys and masked value prefix so we can see the format
