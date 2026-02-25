@@ -362,19 +362,19 @@ def create_device_activation_batch(
 
         for member in eligible_members:
             # Call attempt distribution
-            attempt_num = member.get("call_attempt_number", 1)
+            attempt_num = member.get("call_attempt_number") or 1
             call_attempt_summary[attempt_num] = call_attempt_summary.get(attempt_num, 0) + 1
 
             # Timezone distribution
-            tz = member.get("timezone", "Unknown")
+            tz = member.get("timezone") or "Unknown"
             timezone_summary[tz] = timezone_summary.get(tz, 0) + 1
 
             # Customer type distribution
-            cust_type = member.get("customer_type", "Unknown")
+            cust_type = member.get("customer_type") or "Unknown"
             customer_type_summary[cust_type] = customer_type_summary.get(cust_type, 0) + 1
 
             # Device brand distribution
-            device_brand = member.get("device_brand", "Unknown")
+            device_brand = member.get("device_brand") or "Unknown"
             device_brand_summary[device_brand] = device_brand_summary.get(device_brand, 0) + 1
 
         logger.info("📊 [MAIN-LOGIC] ============================================")
