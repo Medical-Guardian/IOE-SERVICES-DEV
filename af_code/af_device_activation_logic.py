@@ -1703,14 +1703,14 @@ def validate_and_cleanse_data_before_insert(
             # Check each validated row
             for idx, row in validated_rows.iterrows():
                 device_udi = row["device_udi"]
-                incoming_member_id = str(row["member_id"])
+                incoming_member_id = str(row["salesforce_account_number"])
                 incoming_account = row["salesforce_account_number"]
 
                 if device_udi in existing_ownership:
                     existing_member_id, existing_account = existing_ownership[device_udi]
 
-                    # Check if member_id is DIFFERENT
-                    if existing_member_id != incoming_member_id:
+                    # Check if salesforce_account_number is DIFFERENT (apples-to-apples)
+                    if existing_account != incoming_member_id:
                         conflict = {
                             "device_udi": device_udi,
                             "incoming_member_id": incoming_member_id,
