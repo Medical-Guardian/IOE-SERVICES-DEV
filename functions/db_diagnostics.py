@@ -10,7 +10,6 @@ Auth:   ANONYMOUS (no function key required)
 
 import logging
 import os
-import socket
 
 import azure.functions as func
 from azure.identity import DefaultAzureCredential
@@ -26,121 +25,102 @@ db_diagnostics_bp = func.Blueprint()
 @db_diagnostics_bp.route(route="db-diagnostics", methods=[func.HttpMethod.GET], auth_level=func.AuthLevel.ANONYMOUS)
 def run_db_diagnostics(req: func.HttpRequest) -> func.HttpResponse:
     """
-    Diagnostic endpoint that tests Key Vault access and SQL connectivity.`
+    Diagnostic endpoint that tests Key Vault access and SQL connectivity.
 
-    Returns a plain-text report showing:
-    - MSI credential acquisition status
-    - Key Vault secret retrieval status
-    - DNS resolution for the SQL server hostname
-    - TCP port 1433 reachability
-    - Row counts from ioe.members, ioe.member_devices, ioe_stg.stg_device_activation_delta
+    Mirrors the exact connection pattern from Test_AI-dbdev/function_app.py.
 
     BusinessCaseID: DIAG-001
     """
     logger.info("🔍 [DB-DIAG] DB Diagnostics endpoint called")
 
-    result = {
-        "credential": None,
-        "key_vault_url": None,
-        "key_vault_secret": None,
-        "key_vault_ok": False,
-        "sql_server": None,
-        "sql_database": None,
-        "sql_dns": None,
-        "sql_tcp": None,
-        "sql_ok": False,
-        "members_count": None,
-        "member_devices_count": None,
-        "stg_count": None,
-    }
+    lines = [
+        "🔍 IOE-SERVICES-DEV DB Diagnostics",
+        "━" * 40,
+        "",
+    ]
     errors = []
+    sql_conn_str = None
 
     # ── Step 1: Managed Identity credential ──────────────────────────────────
     try:
         credential = DefaultAzureCredential()
-        result["credential"] = "DefaultAzureCredential acquired"
         logger.info("✅ [DB-DIAG] DefaultAzureCredential acquired")
     except Exception as e:
         msg = f"DefaultAzureCredential FAILED: {e}"
         logger.error(f"❌ [DB-DIAG] {msg}")
-        errors.append(msg)
-        return _build_response(result, errors, partial=True)
+        lines += [f"❌ Credential", f"   {msg}", ""]
+        return _respond(lines, errors=[msg], ok=False)
 
-    # ── Step 2: Key Vault → fetch connection string ───────────────────────────
+    # ── Step 2: Key Vault → list secrets + fetch connection string ────────────
     key_vault_url = os.environ.get("KEY_VAULT_URL", "")
     db_secret_name = os.environ.get("DB_SECRET_NAME", "SqlConnectionString")
-    result["key_vault_url"] = key_vault_url or "NOT SET"
 
     if not key_vault_url:
         msg = "KEY_VAULT_URL environment variable is not set"
         logger.error(f"❌ [DB-DIAG] {msg}")
-        errors.append(msg)
-        return _build_response(result, errors, partial=True)
+        lines += [f"❌ Key Vault", f"   {msg}", ""]
+        return _respond(lines, errors=[msg], ok=False)
 
     try:
         secret_client = SecretClient(vault_url=key_vault_url, credential=credential)
+        # List secrets to verify Secrets User RBAC (same as Test_AI-dbdev)
+        secret_properties = list(secret_client.list_properties_of_secrets())
+        secret_count = len(secret_properties)
+        # Fetch the DB connection string
         sql_conn_str = secret_client.get_secret(db_secret_name).value
-        result["key_vault_secret"] = f"{db_secret_name} ✅"
-        result["key_vault_ok"] = True
-        logger.info(f"✅ [DB-DIAG] Key Vault secret '{db_secret_name}' retrieved")
+        lines += [
+            "✅ Key Vault",
+            f"   URL: {key_vault_url}",
+            f"   Secrets accessible: {secret_count}",
+            f"   Secret fetched: {db_secret_name} ✅",
+            "",
+        ]
+        logger.info(f"✅ [DB-DIAG] Key Vault OK — {secret_count} secrets, '{db_secret_name}' retrieved")
     except Exception as e:
-        msg = f"Key Vault secret retrieval FAILED: {e}"
+        msg = f"Key Vault FAILED: {e}"
         logger.error(f"❌ [DB-DIAG] {msg}")
-        errors.append(msg)
-        result["key_vault_secret"] = f"{db_secret_name} ❌ — {e}"
-        return _build_response(result, errors, partial=True)
+        lines += ["❌ Key Vault", f"   URL: {key_vault_url}", f"   Error: {e}", ""]
+        return _respond(lines, errors=[msg], ok=False)
 
-    # ── Step 3: Parse server / database from connection string ────────────────
+    # ── Step 3: Parse connection string (exact Test_AI-dbdev pattern) ─────────
     params = {}
-    for part in sql_conn_str.split(";"):
-        if "=" in part:
-            key, value = part.split("=", 1)
-            params[key.strip().lower()] = value.strip()
+    for part in sql_conn_str.split(';'):
+        if '=' in part:
+            key, value = part.split('=', 1)
+            params[key.strip()] = value.strip()
 
-    raw_server = params.get("server", params.get("data source", ""))
-    server = raw_server.replace("tcp:", "").split(",")[0]
-    database = params.get("database", params.get("initial catalog", ""))
-    result["sql_server"] = server or "UNKNOWN"
-    result["sql_database"] = database or "UNKNOWN"
-    result["conn_str_keys"] = list(params.keys())
-    logger.info(f"🔍 [DB-DIAG] Connection string keys: {list(params.keys())}")
+    server = params.get('Server', '').replace('tcp:', '').split(',')[0]
+    database = params.get('Database', '')
+
+    # Debug: show raw keys and masked value prefix so we can see the format
+    raw_preview = sql_conn_str[:120].replace('\n', '\\n').replace('\r', '\\r')
+    logger.info(f"🔍 [DB-DIAG] Conn string keys: {list(params.keys())}")
     logger.info(f"🔍 [DB-DIAG] Parsed server='{server}' database='{database}'")
+    logger.info(f"🔍 [DB-DIAG] Raw preview (120 chars): {raw_preview}")
 
-    # ── Step 4: Socket pre-checks (DNS + TCP) ─────────────────────────────────
-    # DNS resolution
-    try:
-        ip = socket.gethostbyname(server)
-        logger.info(f"✅ [DB-DIAG] DNS resolved: {server} -> {ip}")
-        result["sql_dns"] = f"DNS OK ({server} -> {ip})"
-    except Exception as e:
-        logger.error(f"❌ [DB-DIAG] DNS resolution failed: {e}")
-        result["sql_dns"] = f"DNS FAILED: {e}"
-        errors.append(f"DNS resolution failed for '{server}': {e}")
-
-    # TCP port 1433 reachability
-    try:
-        sock = socket.create_connection((server, 1433), timeout=5)
-        sock.close()
-        logger.info("✅ [DB-DIAG] TCP connection to port 1433 succeeded")
-        result["sql_tcp"] = "TCP 1433 OK"
-    except Exception as e:
-        logger.error(f"❌ [DB-DIAG] TCP connection to port 1433 failed: {e}")
-        result["sql_tcp"] = f"TCP 1433 FAILED: {e}"
-        errors.append(f"TCP port 1433 unreachable on '{server}': {e}")
-
-    # ── Step 5: pyodbc connection + queries ───────────────────────────────────
+    # ── Step 4: pyodbc connection (exact Test_AI-dbdev pattern) ──────────────
     db_schema = os.environ.get("DB_SCHEMA", "ioe")
     db_schema_stg = os.environ.get("DB_SCHEMA_STG", "ioe_stg")
+
+    if not server:
+        msg = (
+            f"Server not found in connection string. "
+            f"Keys found: {list(params.keys())}. "
+            f"Raw (120 chars): {raw_preview}"
+        )
+        logger.error(f"❌ [DB-DIAG] {msg}")
+        lines += ["❌ SQL Database", f"   {msg}", ""]
+        return _respond(lines, errors=[msg], ok=False)
 
     connection_string = (
         f"Driver={{ODBC Driver 18 for SQL Server}};"
         f"Server=tcp:{server},1433;"
         f"Database={database};"
-        "Authentication=ActiveDirectoryMsi;"
-        "Encrypt=yes;"
-        "TrustServerCertificate=no;"
-        "Connection Timeout=30;"
-        "Login Timeout=30"
+        f"Authentication=ActiveDirectoryMsi;"
+        f"Encrypt=yes;"
+        f"TrustServerCertificate=no;"
+        f"Connection Timeout=30;"
+        f"Login Timeout=30"
     )
 
     try:
@@ -149,94 +129,59 @@ def run_db_diagnostics(req: func.HttpRequest) -> func.HttpResponse:
         cursor = conn.cursor()
         logger.info("✅ [DB-DIAG] pyodbc connection established")
 
-        # ioe.members
+        cursor.execute("SELECT 1 AS test")
+        cursor.fetchone()
+
         cursor.execute(f"SELECT COUNT(*) FROM {db_schema}.members")
-        result["members_count"] = cursor.fetchone()[0]
-        logger.info(f"✅ [DB-DIAG] {db_schema}.members: {result['members_count']} records")
+        members_count = cursor.fetchone()[0]
 
-        # ioe.member_devices
         cursor.execute(f"SELECT COUNT(*) FROM {db_schema}.member_devices")
-        result["member_devices_count"] = cursor.fetchone()[0]
-        logger.info(f"✅ [DB-DIAG] {db_schema}.member_devices: {result['member_devices_count']} records")
+        member_devices_count = cursor.fetchone()[0]
 
-        # ioe_stg.stg_device_activation_delta (may not exist in all environments)
+        stg_detail = ""
         try:
             cursor.execute(f"SELECT COUNT(*) FROM {db_schema_stg}.stg_device_activation_delta")
-            result["stg_count"] = cursor.fetchone()[0]
-            logger.info(
-                f"✅ [DB-DIAG] {db_schema_stg}.stg_device_activation_delta: "
-                f"{result['stg_count']} records"
-            )
+            stg_count = cursor.fetchone()[0]
+            stg_detail = f"\n   {db_schema_stg}.stg_device_activation_delta: {stg_count} records"
         except Exception as stg_err:
-            result["stg_count"] = f"inaccessible — {stg_err}"
-            logger.warning(f"⚠️ [DB-DIAG] stg_device_activation_delta: {stg_err}")
+            stg_detail = f"\n   {db_schema_stg}.stg_device_activation_delta: inaccessible — {stg_err}"
+            logger.warning(f"⚠️ [DB-DIAG] stg table: {stg_err}")
 
         cursor.close()
         conn.close()
-        result["sql_ok"] = True
+
+        lines += [
+            "✅ SQL Database",
+            f"   Server:   {server}",
+            f"   Database: {database}",
+            f"   {db_schema}.members: {members_count} records",
+            f"   {db_schema}.member_devices: {member_devices_count} records"
+            + stg_detail,
+            "",
+        ]
+        logger.info(f"✅ [DB-DIAG] SQL OK — {members_count} members, {member_devices_count} devices")
+        return _respond(lines, errors=[], ok=True)
 
     except Exception as e:
         msg = f"pyodbc connection FAILED: {e}"
         logger.error(f"❌ [DB-DIAG] {msg}")
-        errors.append(msg)
+        lines += [
+            "❌ SQL Database",
+            f"   Server:   {server}",
+            f"   Database: {database}",
+            f"   Error: {e}",
+            "",
+        ]
+        return _respond(lines, errors=[msg], ok=False)
 
-    return _build_response(result, errors, partial=False)
 
-
-def _build_response(result: dict, errors: list, partial: bool) -> func.HttpResponse:
-    """Format the diagnostic result as a human-readable plain-text response."""
+def _respond(lines: list, errors: list, ok: bool) -> func.HttpResponse:
     sep = "━" * 40
-
-    kv_icon = "✅" if result["key_vault_ok"] else "❌"
-    sql_icon = "✅" if result["sql_ok"] else "❌"
-
-    checks_passed = sum([result["key_vault_ok"], result["sql_ok"]])
-    total_checks = 2
-
-    lines = [
-        "🔍 IOE-SERVICES-DEV DB Diagnostics",
-        sep,
-        "",
-        f"{kv_icon} Key Vault",
-        f"   URL: {result['key_vault_url']}",
-        f"   Secret: {result['key_vault_secret'] or '(not attempted)'}",
-        "",
-        f"{sql_icon} SQL Database",
-        f"   Server:   {result['sql_server']}",
-        f"   Database: {result['sql_database']}",
-        f"   Conn keys: {result.get('conn_str_keys', '(not parsed)')}",
-        f"   DNS:      {result['sql_dns'] or '(not attempted)'}",
-        f"   TCP:      {result['sql_tcp'] or '(not attempted)'}",
-    ]
-
-    db_schema = os.environ.get("DB_SCHEMA", "ioe")
-    db_schema_stg = os.environ.get("DB_SCHEMA_STG", "ioe_stg")
-
-    if result["members_count"] is not None:
-        lines.append(f"   {db_schema}.members: {result['members_count']} records")
-    if result["member_devices_count"] is not None:
-        lines.append(f"   {db_schema}.member_devices: {result['member_devices_count']} records")
-    if result["stg_count"] is not None:
-        lines.append(
-            f"   {db_schema_stg}.stg_device_activation_delta: {result['stg_count']} records"
-        )
-
     if errors:
-        lines += ["", "❌ Errors:"]
+        lines += ["❌ Errors:"]
         for err in errors:
             lines.append(f"   • {err}")
-
-    lines += [
-        "",
-        sep,
-        f"Overall Status: {checks_passed}/{total_checks} {'✅' if checks_passed == total_checks else '⚠️'}",
-    ]
-
+        lines.append("")
+    lines += [sep, f"Overall Status: {'2/2 ✅' if ok else '1/2 ⚠️'}"]
     body = "\n".join(lines) + "\n"
-    status_code = 200 if checks_passed == total_checks else 206
-
-    return func.HttpResponse(
-        body=body,
-        status_code=status_code,
-        mimetype="text/plain",
-    )
+    return func.HttpResponse(body=body, status_code=200 if ok else 206, mimetype="text/plain")
