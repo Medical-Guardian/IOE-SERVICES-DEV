@@ -556,9 +556,9 @@ def get_db_connection(timeout: int = 30):
     """Get database connection with retry logic using pyodbc and Managed Identity.
 
     Args:
-        timeout: Unused; Connection Timeout is set in the ODBC connection string (default: 30)
+        timeout: Connection and login timeout in seconds (default: 30)
     """
-    conn_str = os.environ.get("SqlConnectionString", "")
+    conn_str = ConfigManager().get_db_connection_string()
 
     params = {}
     for part in conn_str.split(";"):
@@ -576,8 +576,8 @@ def get_db_connection(timeout: int = 30):
         "Authentication=ActiveDirectoryMsi;"
         "Encrypt=yes;"
         "TrustServerCertificate=no;"
-        "Connection Timeout=30;"
-        "Login Timeout=30;"
+        f"Connection Timeout={timeout};"
+        f"Login Timeout={timeout};"
     )
     return pyodbc.connect(connection_string)
 
