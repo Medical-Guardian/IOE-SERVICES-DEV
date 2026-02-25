@@ -2368,18 +2368,21 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
                 device_phone_number = ISNULL(src.device_phone_number, tgt.device_phone_number),
                 is_device_callable = ISNULL(src.is_device_callable, tgt.is_device_callable),
                 device_name = ISNULL(src.device_name, tgt.device_name),
+                service_status = ISNULL(tgt.service_status, 'In Service'),
                 updated_ts = SYSDATETIMEOFFSET()
         WHEN NOT MATCHED THEN
             INSERT (
                 device_id, member_id, device_name, brand,
                 fall_detection, powersaver_mode,
                 device_phone_number, is_device_callable,
+                service_status,
                 created_ts
             )
             VALUES (
                 src.device_udi, src.member_id, src.device_name, src.brand,
                 src.fall_detection, src.powersaver_mode,
                 src.device_phone_number, src.is_device_callable,
+                'In Service',
                 SYSDATETIMEOFFSET()
             );
         """
@@ -2387,6 +2390,37 @@ def transform_and_load_core(context: ProcessingContext) -> ProcessingResult:
         rows_affected = cursor.rowcount
         logger.info(
             f"✅ [TRANSFORM] MERGE INTO member_devices complete - {rows_affected} rows affected"
+        )
+
+        # Step 3b: Mark old devices as 'Out of Service'
+        # For every member in this batch, any device NOT in the current batch
+        # is considered replaced and should be marked 'Out of Service'.
+        retire_old_devices_query = f"""
+        UPDATE {IOE_SCHEMA}.member_devices
+        SET service_status = 'Out of Service',
+            updated_ts = SYSDATETIMEOFFSET()
+        WHERE member_id IN (
+            SELECT DISTINCT m.member_id
+            FROM {IOE_SCHEMA_STG}.stg_device_activation_delta stg
+            INNER JOIN {IOE_SCHEMA}.members m
+                ON m.org_id = stg.org_id
+               AND m.salesforce_account_number = stg.salesforce_account_number
+            WHERE stg.file_batch_id = ?
+              AND stg.validation_status = 'VALIDATED'
+        )
+        AND device_id NOT IN (
+            SELECT DISTINCT device_udi
+            FROM {IOE_SCHEMA_STG}.stg_device_activation_delta
+            WHERE file_batch_id = ?
+              AND validation_status = 'VALIDATED'
+              AND device_udi IS NOT NULL
+        )
+        AND service_status = 'In Service';
+        """
+        cursor.execute(retire_old_devices_query, (context.file_batch_id, context.file_batch_id))
+        retired_count = cursor.rowcount
+        logger.info(
+            f"✅ [TRANSFORM] Old devices retired - {retired_count} devices marked 'Out of Service'"
         )
 
         # Debug: Verify fall_detection values were inserted correctly
